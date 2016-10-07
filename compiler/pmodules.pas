@@ -174,7 +174,7 @@ implementation
         CheckResourcesUsed:=found;
       end;
 
-    function AddUnit(const s:string): tppumodule;
+    function AddUnit(const s:string;addasused:boolean): tppumodule;
       var
         hp : tppumodule;
         unitsym : tunitsym;
@@ -192,9 +192,16 @@ implementation
         unitsym:=cunitsym.create(s,hp);
         inc(unitsym.refs);
         tabstractunitsymtable(current_module.localsymtable).insertunit(unitsym);
-        { add to used units }
-        current_module.addusedunit(hp,false,unitsym);
+        if addasused then
+          { add to used units }
+          current_module.addusedunit(hp,false,unitsym);
         result:=hp;
+      end;
+
+
+    function AddUnit(const s:string):tppumodule;
+      begin
+        result:=AddUnit(s,true);
       end;
 
 
@@ -342,7 +349,9 @@ implementation
                AddUnit('fpextres')
              else
                AddUnit('fpintres');
-         end;
+         end
+        else if (cs_checkpointer in current_settings.localswitches) then
+          AddUnit('heaptrc');
         { Objpas unit? }
         if m_objpas in current_settings.modeswitches then
           AddUnit('objpas');
@@ -774,6 +783,7 @@ implementation
 type
     tfinishstate=record
       init_procinfo:tcgprocinfo;
+      finalize_procinfo:tcgprocinfo;
     end;
     pfinishstate=^tfinishstate;
 
@@ -783,6 +793,7 @@ type
       var
          main_file: tinputfile;
          s1,s2  : ^string; {Saves stack space}
+         finalize_procinfo,
          init_procinfo : tcgprocinfo;
          unitname : ansistring;
          unitname8 : string[8];
@@ -794,6 +805,7 @@ type
          result:=true;
 
          init_procinfo:=nil;
+         finalize_procinfo:=nil;
 
          if m_mac in current_settings.modeswitches then
            current_module.mode_switch_allowed:= false;
@@ -1014,6 +1026,15 @@ type
              init_procinfo.parse_body;
              { save file pos for debuginfo }
              current_module.mainfilepos:=init_procinfo.entrypos;
+
+             { parse finalization section }
+             if token=_FINALIZATION then
+               begin
+                 { Compile the finalize }
+                 finalize_procinfo:=create_main_proc(make_mangledname('',current_module.localsymtable,'finalize'),potype_unitfinalize,current_module.localsymtable);
+                 finalize_procinfo.procdef.aliasnames.insert(make_mangledname('FINALIZE$',current_module.localsymtable,''));
+                 finalize_procinfo.parse_body;
+               end
            end;
 
          { remove all units that we are waiting for that are already waiting for
@@ -1032,6 +1053,7 @@ type
          { save all information that is needed for finishing the unit }
          New(finishstate);
          finishstate^.init_procinfo:=init_procinfo;
+         finishstate^.finalize_procinfo:=finalize_procinfo;
          current_module.finishstate:=finishstate;
 
          if result then
@@ -1106,8 +1128,7 @@ type
            internalerror(2012091801);
          finishstate:=pfinishstate(current_module.finishstate)^;
 
-         finalize_procinfo:=nil;
-
+         finalize_procinfo:=finishstate.finalize_procinfo;
          init_procinfo:=finishstate.init_procinfo;
 
          { Generate specializations of objectdefs methods }
@@ -1136,8 +1157,10 @@ type
            is it needed at all? (Sergei) }
          { it's needed in case cnodeutils.force_init = true }
          if (force_init_final or cnodeutils.force_init) and
-            assigned(init_procinfo) and
-            has_no_code(init_procinfo.code) then
+            (
+              not assigned(init_procinfo) or
+              has_no_code(init_procinfo.code)
+            ) then
            begin
              { first release the not used init procinfo }
              if assigned(init_procinfo) then
@@ -1147,16 +1170,20 @@ type
                end;
              init_procinfo:=gen_implicit_initfinal(uf_init,current_module.localsymtable);
            end;
-         { finalize? }
-         if not current_module.interface_only and (token=_FINALIZATION) then
+         if (force_init_final or cnodeutils.force_final) and
+            (
+              not assigned(finalize_procinfo) or
+              has_no_code(finalize_procinfo.code)
+            ) then
            begin
-              { Compile the finalize }
-              finalize_procinfo:=create_main_proc(make_mangledname('',current_module.localsymtable,'finalize'),potype_unitfinalize,current_module.localsymtable);
-              finalize_procinfo.procdef.aliasnames.insert(make_mangledname('FINALIZE$',current_module.localsymtable,''));
-              finalize_procinfo.parse_body;
-           end
-         else if force_init_final or cnodeutils.force_final then
-           finalize_procinfo:=gen_implicit_initfinal(uf_finalize,current_module.localsymtable);
+             { first release the not used finalize procinfo }
+             if assigned(finalize_procinfo) then
+               begin
+                 release_proc_symbol(finalize_procinfo.procdef);
+                 release_main_proc(finalize_procinfo);
+               end;
+             finalize_procinfo:=gen_implicit_initfinal(uf_finalize,current_module.localsymtable);
+           end;
 
          { Now both init and finalize bodies are read and it is known
            which variables are used in both init and finalize we can now
@@ -1502,6 +1529,15 @@ type
            already provided by one of the loaded packages }
          load_packages;
 
+         if packagelist.Count>0 then
+           begin
+             { this means the SYSTEM unit *must* be part of one of the required
+               packages, so load it }
+             AddUnit('system',false);
+             systemunit:=tglobalsymtable(symtablestack.top);
+             load_intern_types;
+           end;
+
          {Load the units used by the program we compile.}
          if (token=_ID) and (idtoken=_CONTAINS) then
            begin
@@ -1617,14 +1653,10 @@ type
 
          if target_info.system in systems_windows then
            begin
-             new_section(current_asmdata.asmlists[al_globals],sec_data,'_FPCDummy',4);
-             current_asmdata.asmlists[al_globals].concat(tai_symbol.createname_global('_FPCDummy',AT_DATA,0));
-             current_asmdata.asmlists[al_globals].concat(tai_const.create_32bit(0));
-
+             { ToDo: generate an entry dummy using higher level functionality }
              new_section(current_asmdata.asmlists[al_procedures],sec_code,'',0);
-             current_asmdata.asmlists[al_procedures].concat(tai_symbol.createname_global('_DLLMainCRTStartup',AT_FUNCTION,0));
+             current_asmdata.asmlists[al_procedures].concat(tai_symbol.createname_global('_DLLMainCRTStartup',AT_FUNCTION,0,voidcodepointertype));
              gen_fpc_dummy(current_asmdata.asmlists[al_procedures]);
-             current_asmdata.asmlists[al_procedures].concat(tai_const.createname('_FPCDummy',0));
            end;
 
          { leave when we got an error }
@@ -1808,6 +1840,8 @@ type
          main_procinfo : tcgprocinfo;
          force_init_final : boolean;
          resources_used : boolean;
+         program_uses_checkpointer : boolean;
+         initname,
          program_name : ansistring;
          consume_semicolon_after_uses : boolean;
          ps : tprogramparasym;
@@ -2023,7 +2057,19 @@ type
             if not(target_info.system in (systems_darwin+systems_aix)) then
               main_procinfo.procdef.aliasnames.insert('PASCALMAIN')
             else
-              main_procinfo.procdef.aliasnames.insert(target_info.Cprefix+'PASCALMAIN')
+              main_procinfo.procdef.aliasnames.insert(target_info.Cprefix+'PASCALMAIN');
+
+            { ToDo: systems that use indirect entry info, but check back with Windows! }
+            if target_info.system in systems_darwin then
+              { we need to call FPC_LIBMAIN in sysinit which in turn will call PascalMain }
+              initname:=target_info.cprefix+'FPC_LIBMAIN'
+            else
+              initname:=main_procinfo.procdef.mangledname;
+            { setinitname may generate a new section -> don't add to the
+              current list, because we assume this remains a text section
+              -- add to pure assembler section, so in case of special directives
+                they are directly added to the assembler output by llvm }
+            exportlib.setinitname(current_asmdata.AsmLists[al_pure_assembler],initname);
           end
          else if (target_info.system in ([system_i386_netware,system_i386_netwlibc,system_powerpc_macos]+systems_darwin+systems_aix)) then
            begin
@@ -2049,6 +2095,16 @@ type
          { save file pos for debuginfo }
          current_module.mainfilepos:=main_procinfo.entrypos;
 
+         { finalize? }
+         if token=_FINALIZATION then
+           begin
+              { Parse the finalize }
+              finalize_procinfo:=create_main_proc(make_mangledname('',current_module.localsymtable,'finalize'),potype_unitfinalize,current_module.localsymtable);
+              finalize_procinfo.procdef.aliasnames.insert(make_mangledname('FINALIZE$',current_module.localsymtable,''));
+              finalize_procinfo.procdef.aliasnames.insert('PASCALFINALIZE');
+              finalize_procinfo.parse_body;
+           end;
+
          { Generate specializations of objectdefs methods }
          generate_specialization_procs;
 
@@ -2072,23 +2128,27 @@ type
             ((current_module.flags and uf_has_exports)<>0) then
            current_asmdata.asmlists[al_procedures].concat(tai_const.createname(make_mangledname('EDATA',current_module.localsymtable,''),0));
 
-         { finalize? }
-         if token=_FINALIZATION then
+         if (force_init_final or cnodeutils.force_final) and
+            (
+              not assigned(finalize_procinfo)
+              or has_no_code(finalize_procinfo.code)
+            ) then
            begin
-              { Parse the finalize }
-              finalize_procinfo:=create_main_proc(make_mangledname('',current_module.localsymtable,'finalize'),potype_unitfinalize,current_module.localsymtable);
-              finalize_procinfo.procdef.aliasnames.insert(make_mangledname('FINALIZE$',current_module.localsymtable,''));
-              finalize_procinfo.procdef.aliasnames.insert('PASCALFINALIZE');
-              finalize_procinfo.parse_body;
-           end
-         else
-           if force_init_final or cnodeutils.force_final then
+             { first release the not used finalize procinfo }
+             if assigned(finalize_procinfo) then
+               begin
+                 release_proc_symbol(finalize_procinfo.procdef);
+                 release_main_proc(finalize_procinfo);
+               end;
              finalize_procinfo:=gen_implicit_initfinal(uf_finalize,current_module.localsymtable);
+           end;
 
           { the finalization routine of libraries is generic (and all libraries need to }
           { be finalized, so they can finalize any units they use                       }
+          { Place in "pure assembler" list so that the llvm assembler writer
+            directly emits the generated directives }
           if (islibrary) then
-            exportlib.setfininame(current_asmdata.asmlists[al_procedures],'FPC_LIB_EXIT');
+            exportlib.setfininame(current_asmdata.asmlists[al_pure_assembler],'FPC_LIB_EXIT');
 
          { all labels must be defined before generating code }
          if Errorcount=0 then
@@ -2274,6 +2334,8 @@ type
                    assembler startup files }
                  if assigned(sysinitmod) then
                    linker.AddModuleFiles(sysinitmod);
+                 { Does any unit use checkpointer function }
+                 program_uses_checkpointer:=false;
                  { insert all .o files from all loaded units and
                    unload the units, we don't need them anymore.
                    Keep the current_module because that is still needed }
@@ -2281,7 +2343,11 @@ type
                  while assigned(hp) do
                   begin
                     if (hp<>sysinitmod) and (hp.flags and uf_in_library=0) then
-                      linker.AddModuleFiles(hp);
+                      begin
+                        linker.AddModuleFiles(hp);
+                        if (hp.flags and uf_checkpointer_called)<>0 then
+                          program_uses_checkpointer:=true;
+                      end;
                     hp2:=tmodule(hp.next);
                     if assigned(hp.package) then
                       add_package_unit_ref(hp.package);
@@ -2296,6 +2362,10 @@ type
                  { free also unneeded units we didn't free before }
                  if not needsymbolinfo then
                    unloaded_units.Clear;
+                 { Does any unit use checkpointer function }
+                 if program_uses_checkpointer then
+                   Message1(link_w_program_uses_checkpointer,current_module.modulename^);
+
                  { add all directly used packages as libraries }
                  add_package_libs(linker);
                  { finally we can create a executable }

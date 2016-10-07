@@ -170,9 +170,9 @@ implementation
         make_global:=true;
 
       if make_global then
-        List.concat(Tai_symbol.Createname_global(labelname,AT_FUNCTION,0))
+        List.concat(Tai_symbol.Createname_global(labelname,AT_FUNCTION,0,procdef))
       else
-        List.concat(Tai_symbol.Createname(labelname,AT_FUNCTION,0));
+        List.concat(Tai_symbol.Createname(labelname,AT_FUNCTION,0,procdef));
 
       { set param1 interface to self  }
       g_adjust_self_value(list,procdef,ioffset);
@@ -187,7 +187,7 @@ implementation
         end
       { case 0 }
       else
-        list.concat(taicpu.op_sym(A_JMP,S_NO,current_asmdata.RefAsmSymbol(procdef.mangledname)));
+        list.concat(taicpu.op_sym(A_JMP,S_NO,current_asmdata.RefAsmSymbol(procdef.mangledname,AT_FUNCTION)));
 
       List.concat(Tai_symbol_end.Createname(labelname));
     end;

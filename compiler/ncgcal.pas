@@ -35,6 +35,8 @@ interface
     type
        tcgcallparanode = class(tcallparanode)
        protected
+          function push_zero_sized_value_para: boolean; virtual;
+
           procedure push_addr_para;
           procedure push_value_para;virtual;
           procedure push_formal_para;virtual;
@@ -153,11 +155,30 @@ implementation
       end;
 
 
+    function tcgcallparanode.push_zero_sized_value_para: boolean;
+      begin
+        { nothing to push by default }
+        result:=false;
+      end;
+
+
     procedure tcgcallparanode.push_addr_para;
+      var
+        valuedef: tdef;
       begin
         if not(left.location.loc in [LOC_CREFERENCE,LOC_REFERENCE]) then
           internalerror(200304235);
-        hlcg.a_loadaddr_ref_cgpara(current_asmdata.CurrAsmList,left.resultdef,left.location.reference,tempcgpara);
+        { see the call to keep_para_array_range in ncal: if that call returned
+          true, we overwrite the resultdef of left with its original resultdef
+          (to keep track of the range of the original array); we inserted a type
+          conversion to parasym.vardef, so that is the type this value actually
+          has }
+        if is_dynamic_array(left.resultdef) and
+           is_open_array(parasym.vardef) then
+          valuedef:=parasym.vardef
+        else
+          valuedef:=left.resultdef;
+        hlcg.a_loadaddr_ref_cgpara(current_asmdata.CurrAsmList,valuedef,left.location.reference,tempcgpara);
       end;
 
 
@@ -234,10 +255,10 @@ implementation
     procedure tcgcallparanode.push_value_para;
       begin
         { we've nothing to push when the size of the parameter is 0
-          -- except in case of the self parameter of an emptry record on e.g.
-             the JVM target }
+          -- except on platforms where the parameters are part of the signature
+             and checked by the runtime/backend compiler (e.g. JVM, LLVM) }
         if (left.resultdef.size=0) and
-           not(vo_is_self in parasym.varoptions) then
+           not push_zero_sized_value_para then
           exit;
 
         { Move flags and jump in register to make it less complex }
@@ -946,7 +967,7 @@ implementation
              if not is_interface(tprocdef(procdefinition)._class) then
                begin
                  inc(current_asmdata.NextVTEntryNr);
-                 current_asmdata.CurrAsmList.Concat(tai_symbol.CreateName('VTREF'+tostr(current_asmdata.NextVTEntryNr)+'_'+tprocdef(procdefinition).struct.vmt_mangledname+'$$'+tostr(vmtoffset div sizeof(pint)),AT_FUNCTION,0));
+                 current_asmdata.CurrAsmList.Concat(tai_symbol.CreateName('VTREF'+tostr(current_asmdata.NextVTEntryNr)+'_'+tprocdef(procdefinition).struct.vmt_mangledname+'$$'+tostr(vmtoffset div sizeof(pint)),AT_FUNCTION,0,voidpointerdef));
                end;
 {$endif vtentry}
 

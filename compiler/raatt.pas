@@ -1225,7 +1225,8 @@ unit raatt;
                commname:=actasmpattern;
                Consume(AS_ID);
                Consume(AS_COMMA);
-               curList.concat(Tai_datablock.Create(commname,BuildConstExpression(false,false)));
+               symofs:=BuildConstExpression(false,false);
+               curList.concat(Tai_datablock.Create(commname,symofs,carraydef.getreusable(u8inttype,symofs)));
                if actasmtoken<>AS_SEPARATOR then
                 Consume(AS_SEPARATOR);
              end;
@@ -1236,7 +1237,8 @@ unit raatt;
                commname:=actasmpattern;
                Consume(AS_ID);
                Consume(AS_COMMA);
-               curList.concat(Tai_datablock.Create_global(commname,BuildConstExpression(false,false)));
+               symofs:=BuildConstExpression(false,false);
+               curList.concat(Tai_datablock.Create_global(commname,symofs,carraydef.getreusable(u8inttype,symofs)));
                if actasmtoken<>AS_SEPARATOR then
                 Consume(AS_SEPARATOR);
              end;
@@ -1706,7 +1708,7 @@ unit raatt;
          begin
            oper.opr.typ:=OPR_SYMBOL;
            oper.opr.symofs:=l;
-           oper.opr.symbol:=current_asmdata.RefAsmSymbol(tempstr);
+           oper.opr.symbol:=current_asmdata.RefAsmSymbol(tempstr,tempsymtyp);
          end
         else
          begin
@@ -1733,7 +1735,7 @@ unit raatt;
                 BuildConstSymbolExpression(false,false,false,value,asmsym,asmsymtyp);
                 if asmsym<>'' then
                  begin
-                   ai:=tai_const.create_type_sym(aitconst_rva_symbol,current_asmdata.RefAsmSymbol(asmsym));
+                   ai:=tai_const.create_type_sym(aitconst_rva_symbol,current_asmdata.RefAsmSymbol(asmsym,asmsymtyp));
                    ai.value:=value;
                    curlist.concat(ai);
                  end

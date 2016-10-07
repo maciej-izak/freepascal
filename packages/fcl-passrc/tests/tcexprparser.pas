@@ -210,13 +210,16 @@ Var
 begin
   DeclareVar('record a : array[1..2] of integer; end ','b');
   ParseExpression('b.a[1]');
-  P:=TParamsExpr(AssertExpression('Simple identifier',theExpr,pekArrayParams,TParamsExpr));
-  B:=AssertExpression('Name of array',P.Value,pekBinary,TBInaryExpr) as TBInaryExpr;
-  AssertEquals('name is Subident',eopSubIdent,B.Opcode);
+  B:=AssertExpression('Binary of record',TheExpr,pekBinary,TBinaryExpr) as TBinaryExpr;
+  AssertEquals('Name is Subident',eopSubIdent,B.Opcode);
   AssertExpression('Name of array',B.Left,pekIdent,'b');
-  AssertExpression('Name of array',B.Right,pekIdent,'a');
-  AssertEquals('One dimension',1,Length(p.params));
-  AssertExpression('Simple identifier',p.params[0],pekNumber,'1');
+  P:=TParamsExpr(AssertExpression('Simple identifier',B.right,pekArrayParams,TParamsExpr));
+  AssertExpression('Name of array',P.Value,pekIdent,'a');
+  TAssert.AssertSame('P.value.parent=P',P,P.Value.Parent);
+  AssertEquals('One dimension',1,Length(P.params));
+  AssertExpression('Simple identifier',P.params[0],pekNumber,'1');
+  TAssert.AssertSame('B.left.parent=B',B,B.left.Parent);
+  TAssert.AssertSame('B.right.parent=B',B,B.right.Parent);
 end;
 
 procedure TTestExpressions.TestArrayElement2Dims;
@@ -291,6 +294,9 @@ begin
   B:=TBinaryExpr(AssertExpression('First element is range',P.Params[0],pekRange,TBinaryExpr));
   AssertExpression('Left is 0',B.Left,pekNumber,'0');
   AssertExpression('Right is 10',B.Right,pekNumber,'10');
+  B:=TBinaryExpr(TheExpr);
+  TAssert.AssertSame('B.left.parent=B',B,B.left.Parent);
+  TAssert.AssertSame('B.right.parent=B',B,B.right.Parent);
 end;
 
 procedure TTestExpressions.TestBracketsTotal;
@@ -868,7 +874,7 @@ Var
   I : Integer;
 
 begin
-  StartProgram('afile');
+  StartProgram(ExtractFileUnitName(MainFilename));
   if FVariables.Count=0 then
     DeclareVar('integer');
   Add('Var');
@@ -913,6 +919,8 @@ begin
   ARight:=Result.Right;
   AssertNotNull('Have left',ALeft);
   AssertNotNull('Have right',ARight);
+  TAssert.AssertSame('Result.left.parent=B',Result,Result.left.Parent);
+  TAssert.AssertSame('Result.right.parent=B',Result,Result.right.Parent);
 end;
 
 function TTestExpressions.AssertUnaryExpr(const Msg: String; Op: TExprOpCode;

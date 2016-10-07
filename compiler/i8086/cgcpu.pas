@@ -68,7 +68,8 @@ unit cgcpu;
         procedure a_load_const_reg(list : TAsmList; tosize: tcgsize; a : tcgint;reg : tregister);override;
         procedure a_load_const_ref(list : TAsmList; tosize: tcgsize; a : tcgint;const ref : treference);override;
         procedure a_load_reg_ref(list : TAsmList;fromsize,tosize: tcgsize; reg : tregister;const ref : treference);override;
-        procedure a_load_ref_reg(list : TAsmList;fromsize,tosize: tcgsize;const ref : treference;reg : tregister);override;
+        { use a_load_ref_reg_internal() instead }
+        //procedure a_load_ref_reg(list : TAsmList;fromsize,tosize: tcgsize;const ref : treference;reg : tregister);override;
         procedure a_load_reg_reg(list : TAsmList;fromsize,tosize: tcgsize;reg1,reg2 : tregister);override;
 
         {  comparison operations }
@@ -96,6 +97,8 @@ unit cgcpu;
         procedure get_32bit_ops(op: TOpCG; out op1,op2: TAsmOp);
 
         procedure add_move_instruction(instr:Taicpu);override;
+     protected
+        procedure a_load_ref_reg_internal(list : TAsmList;fromsize,tosize: tcgsize;const ref : treference;reg : tregister;isdirect:boolean);override;
      end;
 
       tcg64f8086 = class(tcg64f32)
@@ -190,9 +193,9 @@ unit cgcpu;
         sym : tasmsymbol;
       begin
         if not(weak) then
-          sym:=current_asmdata.RefAsmSymbol(s)
+          sym:=current_asmdata.RefAsmSymbol(s,AT_FUNCTION)
         else
-          sym:=current_asmdata.WeakRefAsmSymbol(s);
+          sym:=current_asmdata.WeakRefAsmSymbol(s,AT_FUNCTION);
         list.concat(taicpu.op_sym(A_CALL,S_FAR,sym));
       end;
 
@@ -210,7 +213,7 @@ unit cgcpu;
       var
         sym : tasmsymbol;
       begin
-        sym:=current_asmdata.RefAsmSymbol(s);
+        sym:=current_asmdata.RefAsmSymbol(s,AT_FUNCTION);
         list.concat(taicpu.op_sym(A_CALL,S_FAR,sym));
       end;
 
@@ -1249,7 +1252,7 @@ unit cgcpu;
       end;
 
 
-    procedure tcg8086.a_load_ref_reg(list : TAsmList;fromsize,tosize: tcgsize;const ref : treference;reg : tregister);
+    procedure tcg8086.a_load_ref_reg_internal(list : TAsmList;fromsize,tosize: tcgsize;const ref : treference;reg : tregister;isdirect:boolean);
 
         procedure add_mov(instr: Taicpu);
           begin
@@ -1264,7 +1267,7 @@ unit cgcpu;
         tmpref  : treference;
       begin
         tmpref:=ref;
-        make_simple_ref(list,tmpref);
+        make_simple_ref(list,tmpref,isdirect);
         check_register_size(tosize,reg);
 
         if (tcgsize2size[fromsize]>32) or (tcgsize2size[tosize]>32) or (fromsize=OS_NO) or (tosize=OS_NO) then
@@ -1282,19 +1285,29 @@ unit cgcpu;
             case fromsize of
               OS_8:
                 begin
-                  reg := makeregsize(list, reg, OS_8);
-                  list.concat(taicpu.op_ref_reg(A_MOV, S_B, tmpref, reg));
-                  setsubreg(reg, R_SUBH);
-                  list.concat(taicpu.op_const_reg(A_MOV, S_B, 0, reg));
-                  makeregsize(list, reg, OS_16);
+                  if current_settings.cputype>=cpu_386 then
+                    list.concat(taicpu.op_ref_reg(A_MOVZX, S_BW, tmpref, reg))
+                  else
+                    begin
+                      reg := makeregsize(list, reg, OS_8);
+                      list.concat(taicpu.op_ref_reg(A_MOV, S_B, tmpref, reg));
+                      setsubreg(reg, R_SUBH);
+                      list.concat(taicpu.op_const_reg(A_MOV, S_B, 0, reg));
+                      makeregsize(list, reg, OS_16);
+                    end;
                 end;
               OS_S8:
                 begin
-                  getcpuregister(list, NR_AX);
-                  list.concat(taicpu.op_ref_reg(A_MOV, S_B, tmpref, NR_AL));
-                  list.concat(taicpu.op_none(A_CBW));
-                  add_mov(taicpu.op_reg_reg(A_MOV, S_W, NR_AX, reg));
-                  ungetcpuregister(list, NR_AX);
+                  if current_settings.cputype>=cpu_386 then
+                    list.concat(taicpu.op_ref_reg(A_MOVSX, S_BW, tmpref, reg))
+                  else
+                    begin
+                      getcpuregister(list, NR_AX);
+                      list.concat(taicpu.op_ref_reg(A_MOV, S_B, tmpref, NR_AL));
+                      list.concat(taicpu.op_none(A_CBW));
+                      add_mov(taicpu.op_reg_reg(A_MOV, S_W, NR_AX, reg));
+                      ungetcpuregister(list, NR_AX);
+                    end;
                 end;
               OS_16,OS_S16:
                 list.concat(taicpu.op_ref_reg(A_MOV, S_W, tmpref, reg));
@@ -1306,11 +1319,16 @@ unit cgcpu;
               OS_8:
                 begin
                   list.concat(taicpu.op_const_reg(A_MOV,S_W,0,GetNextReg(reg)));
-                  reg := makeregsize(list, reg, OS_8);
-                  list.concat(taicpu.op_ref_reg(A_MOV, S_B, tmpref, reg));
-                  setsubreg(reg, R_SUBH);
-                  list.concat(taicpu.op_const_reg(A_MOV, S_B, 0, reg));
-                  makeregsize(list, reg, OS_16);
+                  if current_settings.cputype>=cpu_386 then
+                    list.concat(taicpu.op_ref_reg(A_MOVZX, S_BW, tmpref, reg))
+                  else
+                    begin
+                      reg := makeregsize(list, reg, OS_8);
+                      list.concat(taicpu.op_ref_reg(A_MOV, S_B, tmpref, reg));
+                      setsubreg(reg, R_SUBH);
+                      list.concat(taicpu.op_const_reg(A_MOV, S_B, 0, reg));
+                      makeregsize(list, reg, OS_16);
+                    end;
                 end;
               OS_S8:
                 begin
@@ -1393,20 +1411,30 @@ unit cgcpu;
                 case fromsize of
                   OS_8:
                     begin
-                      reg2 := makeregsize(list, reg2, OS_8);
-                      if reg1<>reg2 then
-                        add_mov(taicpu.op_reg_reg(A_MOV, S_B, reg1, reg2));
-                      setsubreg(reg2,R_SUBH);
-                      list.concat(taicpu.op_const_reg(A_MOV, S_B, 0, reg2));
-                      makeregsize(list, reg2, OS_16);
+                      if current_settings.cputype>=cpu_386 then
+                        add_mov(taicpu.op_reg_reg(A_MOVZX, S_BW, reg1, reg2))
+                      else
+                        begin
+                          reg2 := makeregsize(list, reg2, OS_8);
+                          if reg1<>reg2 then
+                            add_mov(taicpu.op_reg_reg(A_MOV, S_B, reg1, reg2));
+                          setsubreg(reg2,R_SUBH);
+                          list.concat(taicpu.op_const_reg(A_MOV, S_B, 0, reg2));
+                          makeregsize(list, reg2, OS_16);
+                        end;
                     end;
                   OS_S8:
                     begin
-                      getcpuregister(list, NR_AX);
-                      add_mov(taicpu.op_reg_reg(A_MOV, S_B, reg1, NR_AL));
-                      list.concat(taicpu.op_none(A_CBW));
-                      add_mov(taicpu.op_reg_reg(A_MOV, S_W, NR_AX, reg2));
-                      ungetcpuregister(list, NR_AX);
+                      if current_settings.cputype>=cpu_386 then
+                        add_mov(taicpu.op_reg_reg(A_MOVSX, S_BW, reg1, reg2))
+                      else
+                        begin
+                          getcpuregister(list, NR_AX);
+                          add_mov(taicpu.op_reg_reg(A_MOV, S_B, reg1, NR_AL));
+                          list.concat(taicpu.op_none(A_CBW));
+                          add_mov(taicpu.op_reg_reg(A_MOV, S_W, NR_AX, reg2));
+                          ungetcpuregister(list, NR_AX);
+                        end;
                     end;
                   OS_16,OS_S16:
                     begin
@@ -1421,12 +1449,17 @@ unit cgcpu;
                   OS_8:
                     begin
                       list.concat(taicpu.op_const_reg(A_MOV, S_W, 0, GetNextReg(reg2)));
-                      reg2 := makeregsize(list, reg2, OS_8);
-                      if reg1<>reg2 then
-                        add_mov(taicpu.op_reg_reg(A_MOV, S_B, reg1, reg2));
-                      setsubreg(reg2,R_SUBH);
-                      list.concat(taicpu.op_const_reg(A_MOV, S_B, 0, reg2));
-                      makeregsize(list, reg2, OS_16);
+                      if current_settings.cputype>=cpu_386 then
+                        add_mov(taicpu.op_reg_reg(A_MOVZX, S_BW, reg1, reg2))
+                      else
+                        begin
+                          reg2 := makeregsize(list, reg2, OS_8);
+                          if reg1<>reg2 then
+                            add_mov(taicpu.op_reg_reg(A_MOV, S_B, reg1, reg2));
+                          setsubreg(reg2,R_SUBH);
+                          list.concat(taicpu.op_const_reg(A_MOV, S_B, 0, reg2));
+                          makeregsize(list, reg2, OS_16);
+                        end;
                     end;
                   OS_S8:
                     begin

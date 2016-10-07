@@ -128,10 +128,26 @@ type
      { end of the above list }
      tcalo_vectorized_dead_strip_end,
      { symbol should be weakle defined }
-     tcalo_weak
+     tcalo_weak,
+     { symbol should be registered with the unit's public assembler symbols }
+     tcalo_is_public_asm,
+     { symbol should be declared with AT_DATA_FORCEINDIRECT }
+     tcalo_data_force_indirect,
+     { apply const_align() to the alignment, for user-defined data }
+     tcalo_apply_constalign
    );
    ttcasmlistoptions = set of ttcasmlistoption;
 
+   ttcdeadstripsectionsymboloption = (
+     { define the symbol }
+     tcdssso_define,
+     { register the assembler symbol either with the public or extern assembler
+       symbols of the unit }
+     tcdssso_register_asmsym,
+     { use the indirect symbol }
+     tcdssso_use_indirect
+   );
+  ttcdeadstripsectionsymboloptions = set of ttcdeadstripsectionsymboloption;
 
    { information about aggregates we are parsing }
    taggregateinformation = class
@@ -313,15 +329,16 @@ type
        the anonymous record, and insert the alignment once it's finished }
      procedure mark_anon_aggregate_alignment; virtual; abstract;
      procedure insert_marked_aggregate_alignment(def: tdef); virtual; abstract;
-     class function get_vectorized_dead_strip_section_symbol(const basename: string; st: tsymtable; define, start: boolean): tasmsymbol; virtual;
+     class function get_vectorized_dead_strip_section_symbol(const basename: string; st: tsymtable; options: ttcdeadstripsectionsymboloptions; start: boolean): tasmsymbol; virtual;
     public
      class function get_vectorized_dead_strip_custom_section_name(const basename: TSymStr; st: tsymtable; out secname: TSymStr): boolean; virtual;
      { get the start/end symbol for a dead stripable vectorized section, such
        as the resourcestring data of a unit }
-     class function get_vectorized_dead_strip_section_symbol_start(const basename: string; st: tsymtable; define: boolean): tasmsymbol; virtual;
-     class function get_vectorized_dead_strip_section_symbol_end(const basename: string; st: tsymtable; define: boolean): tasmsymbol; virtual;
+     class function get_vectorized_dead_strip_section_symbol_start(const basename: string; st: tsymtable; options: ttcdeadstripsectionsymboloptions): tasmsymbol; virtual;
+     class function get_vectorized_dead_strip_section_symbol_end(const basename: string; st: tsymtable; options: ttcdeadstripsectionsymboloptions): tasmsymbol; virtual;
 
-     class function get_dynstring_rec_name(typ: tstringtype; winlike: boolean; len: asizeint): string;
+     class function get_dynstring_rec_name(typ: tstringtype; winlike: boolean; len: asizeint): TSymStr;
+     class function get_dynstring_rec(typ: tstringtype; winlike: boolean; len: asizeint): trecorddef;
      { the datalist parameter specifies where the data for the string constant
        will be emitted (via an internal data builder) }
      function emit_ansistring_const(datalist: TAsmList; data: pchar; len: asizeint; encoding: tstringencoding): tasmlabofs;
@@ -332,7 +349,7 @@ type
      { emit a shortstring constant, and return its def }
      function emit_shortstring_const(const str: shortstring): tdef;
      { emit a pchar string constant (the characters, not a pointer to them), and return its def }
-     function emit_pchar_const(str: pchar; len: pint): tdef;
+     function emit_pchar_const(str: pchar; len: pint; copypchar: boolean): tdef;
      { emit a guid constant }
      procedure emit_guid_const(const guid: tguid);
      { emit a procdef constant }
@@ -369,7 +386,7 @@ type
        filled in with the actual data (via ttypedconstplaceholder.replace)
 
        useful in case you have table preceded by the number of elements, and
-       you cound the elements while building the table }
+       you count the elements while building the table }
      function emit_placeholder(def: tdef): ttypedconstplaceholder; virtual; abstract;
     protected
      { common code to check whether a placeholder can be added at the current
@@ -896,6 +913,8 @@ implementation
      var
        prelist: tasmlist;
      begin
+       if tcalo_apply_constalign in options then
+         alignment:=const_align(alignment);
        { have we finished all aggregates? }
        if (getcurragginfo<>nil) and
           { in case of syntax errors, the aggregate may not have been finished }
@@ -922,20 +941,27 @@ implementation
            { we always need a new section here, since if we started a new
              object file then we have to say what the section is, and otherwise
              we need a new section because that's how the dead stripping works }
-           new_section(prelist,section,secname,const_align(alignment));
+           new_section(prelist,section,secname,alignment);
          end
        else if tcalo_new_section in options then
-         new_section(prelist,section,secname,const_align(alignment))
+         new_section(prelist,section,secname,alignment)
        else
-         prelist.concat(cai_align.Create(const_align(alignment)));
+         prelist.concat(cai_align.Create(alignment));
 
        { On Darwin, use .reference to ensure the data doesn't get dead stripped.
          On other platforms, the data must be in the .fpc section (which is
          kept via the linker script) }
        if tcalo_no_dead_strip in options then
          begin
-           if target_info.system in systems_darwin then
-             prelist.concat(tai_directive.Create(asd_reference,sym.name))
+           if (target_info.system in systems_darwin) then
+             begin
+              { Objective-C section declarations contain "no_dead_strip"
+                attributes if none of their symbols need to be stripped -> don't
+                add extra ".reference" statement for their symbols (gcc/clang
+                don't either) }
+              if not(section in [low(TObjCAsmSectionType)..high(TObjCAsmSectionType)]) then
+                prelist.concat(tai_directive.Create(asd_reference,sym.name))
+             end
            else if section<>sec_fpc then
              internalerror(2015101402);
          end;
@@ -964,7 +990,9 @@ implementation
        sym: tasmsymbol;
        secname: TSymStr;
        sectype: TAsmSectiontype;
+       asmtype : TAsmsymtype;
        customsecname: boolean;
+       dsopts : ttcdeadstripsectionsymboloptions;
      begin
        fvectorized_finalize_called:=true;
        sym:=nil;
@@ -973,12 +1001,17 @@ implementation
          sectype:=sec_user
        else
          sectype:=sec_data;
+       dsopts:=[tcdssso_define];
+       if tcalo_is_public_asm in options then
+         include(dsopts,tcdssso_register_asmsym);
+       if tcalo_data_force_indirect in options then
+         include(dsopts,tcdssso_use_indirect);
        if tcalo_vectorized_dead_strip_start in options then
          begin
            { the start and end names are predefined }
            if itemname<>'' then
              internalerror(2015110801);
-           sym:=get_vectorized_dead_strip_section_symbol_start(basename,st,true);
+           sym:=get_vectorized_dead_strip_section_symbol_start(basename,st,dsopts);
            if not customsecname then
              secname:=make_mangledname(basename,st,'1_START');
          end
@@ -987,13 +1020,19 @@ implementation
            { the start and end names are predefined }
            if itemname<>'' then
              internalerror(2015110802);
-           sym:=get_vectorized_dead_strip_section_symbol_end(basename,st,true);
+           sym:=get_vectorized_dead_strip_section_symbol_end(basename,st,dsopts);
            if not customsecname then
              secname:=make_mangledname(basename,st,'3_END');
          end
        else if tcalo_vectorized_dead_strip_item in options then
          begin
-           sym:=current_asmdata.DefineAsmSymbol(make_mangledname(basename,st,itemname),AB_GLOBAL,AT_DATA);
+           if tcalo_data_force_indirect in options then
+             asmtype:=AT_DATA_FORCEINDIRECT
+           else
+             asmtype:=AT_DATA;
+           sym:=current_asmdata.DefineAsmSymbol(make_mangledname(basename,st,itemname),AB_GLOBAL,asmtype,def);
+           if tcalo_is_public_asm in options then
+             current_module.add_public_asmsym(sym);
            if not customsecname then
              secname:=make_mangledname(basename,st,'2_'+itemname);
            exclude(options,tcalo_vectorized_dead_strip_item);
@@ -1042,8 +1081,11 @@ implementation
 
 
    class function ttai_typedconstbuilder.get_string_header_size(typ: tstringtype; winlikewidestring: boolean): pint;
-     const
-       ansistring_header_size =
+     var
+       ansistring_header_size: pint;
+       unicodestring_header_size: pint;
+     begin
+       ansistring_header_size:=
          { encoding }
          2 +
          { elesize }
@@ -1053,11 +1095,10 @@ implementation
          4 +
 {$endif cpu64bitaddr}
          { reference count }
-         sizeof(pint) +
+         sizesinttype.size +
          { length }
-         sizeof(pint);
-       unicodestring_header_size = ansistring_header_size;
-     begin
+         sizesinttype.size;
+       unicodestring_header_size:=ansistring_header_size;
        case typ of
          st_ansistring:
            result:=ansistring_header_size;
@@ -1101,13 +1142,16 @@ implementation
        options: ttcasmlistoptions;
        foundsec: longint;
      begin
-       options:=[tcalo_is_lab];
-       { Add a section header if the previous one was different. We'll use the
-         same section name in case multiple items are added to the same kind of
-         section (rodata, rodata_no_rel, ...), so that everything will still
-         end up in the same section even if there are multiple section headers }
-       if finternal_data_current_section<>sectype then
-         include(options,tcalo_new_section);
+       { you can't start multiple concurrent internal data builders for the
+         same tcb, finish the first before starting another }
+       if finternal_data_current_section<>sec_none then
+         internalerror(2016082801);
+       { we don't know what was previously added to this list, so always add
+         a section header. We'll use the same section name in case multiple
+         items are added to the same kind of section (rodata, rodata_no_rel,
+         ...), so that everything will still end up in the same section even if
+         there are multiple section headers }
+       options:=[tcalo_is_lab,tcalo_new_section];
        finternal_data_current_section:=sectype;
        l:=nil;
        { did we already create a section of this type for the internal data of
@@ -1182,6 +1226,7 @@ implementation
          alignment));
        tcb.free;
        tcb:=nil;
+       finternal_data_current_section:=sec_none;
      end;
 
 
@@ -1283,10 +1328,10 @@ implementation
        emit_tai(tai_const.create_32bit(0),u32inttype);
        inc(result.ofs,4);
 {$endif cpu64bitaddr}
-       emit_tai(tai_const.create_pint(-1),ptrsinttype);
-       inc(result.ofs,sizeof(pint));
-       emit_tai(tai_const.create_pint(len),ptrsinttype);
-       inc(result.ofs,sizeof(pint));
+       emit_tai(tai_const.create_sizeint(-1),sizesinttype);
+       inc(result.ofs,sizesinttype.size);
+       emit_tai(tai_const.create_sizeint(len),sizesinttype);
+       inc(result.ofs,sizesinttype.size);
        if string_symofs=0 then
          begin
            { results in slightly more efficient code }
@@ -1332,7 +1377,9 @@ implementation
        { if we're starting an anonymous record, we can't align it yet because
          the alignment depends on the fields that will be added -> we'll do
          it at the end }
-       else if not anonymous then
+       else if not anonymous or
+          ((def.typ<>recorddef) and
+           not is_object(def)) then
          begin
            { add padding if necessary, and update the current field/offset }
            info:=curagginfo;
@@ -1373,18 +1420,31 @@ implementation
      end;
 
 
-   class function ttai_typedconstbuilder.get_vectorized_dead_strip_section_symbol(const basename: string; st: tsymtable; define, start: boolean): tasmsymbol;
+   class function ttai_typedconstbuilder.get_vectorized_dead_strip_section_symbol(const basename: string; st: tsymtable; options: ttcdeadstripsectionsymboloptions; start: boolean): tasmsymbol;
      var
        name: TSymStr;
+       asmtype : TAsmsymtype;
      begin
        if start then
          name:=make_mangledname(basename,st,'START')
        else
          name:=make_mangledname(basename,st,'END');
-       if define then
-         result:=current_asmdata.DefineAsmSymbol(name,AB_GLOBAL,AT_DATA)
+       if tcdssso_define in options then
+         begin
+           if tcdssso_use_indirect in options then
+             asmtype:=AT_DATA_FORCEINDIRECT
+           else
+             asmtype:=AT_DATA;
+           result:=current_asmdata.DefineAsmSymbol(name,AB_GLOBAL,asmtype,voidpointertype);
+           if tcdssso_register_asmsym in options then
+             current_module.add_public_asmsym(result);
+         end
        else
-         result:=current_asmdata.RefAsmSymbol(name,AT_DATA)
+         begin
+           result:=current_asmdata.RefAsmSymbol(name,AT_DATA,tcdssso_use_indirect in options);
+           if tcdssso_register_asmsym in options then
+             current_module.add_extern_asmsym(result);
+         end;
      end;
 
 
@@ -1394,19 +1454,19 @@ implementation
      end;
 
 
-   class function ttai_typedconstbuilder.get_vectorized_dead_strip_section_symbol_start(const basename: string; st: tsymtable; define: boolean): tasmsymbol;
+   class function ttai_typedconstbuilder.get_vectorized_dead_strip_section_symbol_start(const basename: string; st: tsymtable; options: ttcdeadstripsectionsymboloptions): tasmsymbol;
      begin
-       result:=get_vectorized_dead_strip_section_symbol(basename,st,define,true);
+       result:=get_vectorized_dead_strip_section_symbol(basename,st,options,true);
      end;
 
 
-   class function ttai_typedconstbuilder.get_vectorized_dead_strip_section_symbol_end(const basename: string; st: tsymtable; define: boolean): tasmsymbol;
+   class function ttai_typedconstbuilder.get_vectorized_dead_strip_section_symbol_end(const basename: string; st: tsymtable; options: ttcdeadstripsectionsymboloptions): tasmsymbol;
      begin
-       result:=get_vectorized_dead_strip_section_symbol(basename,st,define,false);
+       result:=get_vectorized_dead_strip_section_symbol(basename,st,options,false);
      end;
 
 
-   class function ttai_typedconstbuilder.get_dynstring_rec_name(typ: tstringtype; winlike: boolean; len: asizeint): string;
+   class function ttai_typedconstbuilder.get_dynstring_rec_name(typ: tstringtype; winlike: boolean; len: asizeint): TSymStr;
      begin
        case typ of
          st_ansistring:
@@ -1422,6 +1482,72 @@ implementation
            internalerror(2014080402);
        end;
        result:=result+tostr(len);
+     end;
+
+
+   class function ttai_typedconstbuilder.get_dynstring_rec(typ: tstringtype; winlike: boolean; len: asizeint): trecorddef;
+     var
+       name: TSymStr;
+       streledef: tdef;
+       strtypesym: ttypesym;
+       srsym: tsym;
+       srsymtable: tsymtable;
+     begin
+       name:=get_dynstring_rec_name(typ,winlike,len);
+       { search in the interface of all units for the type to reuse it }
+       if searchsym_type(name,srsym,srsymtable) then
+         begin
+           result:=trecorddef(ttypesym(srsym).typedef);
+           exit;
+         end
+       else
+         begin
+           { also search the implementation of the current unit }
+           strtypesym:=try_search_current_module_type(name);
+           if assigned(strtypesym) then
+             begin
+               result:=trecorddef(strtypesym.typedef);
+               exit;
+             end;
+         end;
+       if (typ<>st_widestring) or
+          not winlike then
+         begin
+           result:=crecorddef.create_global_internal('$'+name,1,1,1);
+           { encoding }
+           result.add_field_by_def('',u16inttype);
+           { element size }
+           result.add_field_by_def('',u16inttype);
+           { elements }
+           case typ of
+             st_ansistring:
+               streledef:=cansichartype;
+             st_unicodestring:
+               streledef:=cwidechartype;
+             else
+               internalerror(2016082301);
+           end;
+{$ifdef cpu64bitaddr}
+           { dummy for alignment }
+           result.add_field_by_def('',u32inttype);
+{$endif cpu64bitaddr}
+           { reference count }
+           result.add_field_by_def('',sizesinttype);
+           { length in elements }
+           result.add_field_by_def('',sizesinttype);
+         end
+       else
+         begin
+           result:=crecorddef.create_global_internal('$'+name,4,
+             targetinfos[target_info.system]^.alignment.recordalignmin,
+             targetinfos[target_info.system]^.alignment.maxCrecordalign);
+           { length in bytes }
+           result.add_field_by_def('',s32inttype);
+           streledef:=cwidechartype;
+         end;
+       { data (include zero terminator) }
+       result.add_field_by_def('',carraydef.getreusable(streledef,len+1));
+       trecordsymtable(trecorddef(result).symtable).addalignmentpadding;
      end;
 
 
@@ -1526,14 +1652,26 @@ implementation
      end;
 
 
-   function ttai_typedconstbuilder.emit_pchar_const(str: pchar; len: pint): tdef;
+   function ttai_typedconstbuilder.emit_pchar_const(str: pchar; len: pint; copypchar: boolean): tdef;
+     var
+       newstr: pchar;
      begin
        result:=carraydef.getreusable(cansichartype,len+1);
        maybe_begin_aggregate(result);
-       if len=0 then
+       if (len=0) and
+          (not assigned(str) or
+           copypchar) then
          emit_tai(Tai_const.Create_8bit(0),cansichartype)
        else
-         emit_tai(Tai_string.Create_pchar(str,len+1),result);
+         begin
+           if copypchar then
+             begin
+               getmem(newstr,len+1);
+               move(str^,newstr^,len+1);
+               str:=newstr;
+             end;
+           emit_tai(Tai_string.Create_pchar(str,len+1),result);
+         end;
        maybe_end_aggregate(result);
      end;
 

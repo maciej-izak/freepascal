@@ -406,9 +406,9 @@ unit cgcpu;
         sym: TAsmSymbol;
       begin
         if weak then
-          sym:=current_asmdata.WeakRefAsmSymbol(s)
+          sym:=current_asmdata.WeakRefAsmSymbol(s,AT_FUNCTION)
         else
-          sym:=current_asmdata.RefAsmSymbol(s);
+          sym:=current_asmdata.RefAsmSymbol(s,AT_FUNCTION);
 
         if CPUAVR_HAS_JMP_CALL in cpu_capabilities[current_settings.cputype] then
           list.concat(taicpu.op_sym(A_CALL,sym))
@@ -1674,9 +1674,9 @@ unit cgcpu;
         ai : taicpu;
       begin
         if CPUAVR_HAS_JMP_CALL in cpu_capabilities[current_settings.cputype] then
-          ai:=taicpu.op_sym(A_JMP,current_asmdata.RefAsmSymbol(s))
+          ai:=taicpu.op_sym(A_JMP,current_asmdata.RefAsmSymbol(s,AT_FUNCTION))
         else
-          ai:=taicpu.op_sym(A_RJMP,current_asmdata.RefAsmSymbol(s));
+          ai:=taicpu.op_sym(A_RJMP,current_asmdata.RefAsmSymbol(s,AT_FUNCTION));
         ai.is_jmp:=true;
         list.concat(ai);
       end;
@@ -2027,8 +2027,8 @@ unit cgcpu;
           begin
             current_asmdata.getjumplabel(l);
 
-            reference_reset(srcref,0);
-            reference_reset(dstref,0);
+            reference_reset(srcref,source.alignment);
+            reference_reset(dstref,dest.alignment);
             srcref.base:=NR_R30;
             srcref.addressmode:=AM_POSTINCREMENT;
             dstref.base:=NR_R26;

@@ -1450,6 +1450,7 @@ implementation
         newstatement  : tstatementnode;
         newblock      : tblocknode;
         tempcode      : ttempcreatenode;
+        valsinttype   : tdef;
       begin
         { for easy exiting if something goes wrong }
         result := cerrornode.create;
@@ -1473,6 +1474,9 @@ implementation
              resultdef:=voidtype;
              exit;
            end;
+
+        { retrieve the ValSInt type }
+        valsinttype:=search_system_type('VALSINT').typedef;
 
         { reverse parameters for easier processing }
         left := reverseparameters(tcallparanode(left));
@@ -1517,12 +1521,12 @@ implementation
         newblock:=internalstatements(newstatement);
 
         { do we need a temp for code? Yes, if no code specified, or if  }
-        { code is not a 32bit parameter (we already checked whether the }
-        { the code para, if specified, was an orddef)                   }
+        { code is not a valsinttype sized parameter (we already checked }
+        { whether the code para, if specified, was an orddef)           }
         if not assigned(codepara) or
-           (codepara.resultdef.size<>ptrsinttype.size) then
+           (codepara.resultdef.size<>valsinttype.size) then
           begin
-            tempcode := ctempcreatenode.create(ptrsinttype,ptrsinttype.size,tt_persistent,false);
+            tempcode := ctempcreatenode.create(valsinttype,valsinttype.size,tt_persistent,false);
             addstatement(newstatement,tempcode);
             { set the resultdef of the temp (needed to be able to get }
             { the resultdef of the tempref used in the new code para) }
@@ -1539,14 +1543,14 @@ implementation
             { we need its resultdef later on }
             codepara.get_paratype;
           end
-        else if (torddef(codepara.resultdef).ordtype <> torddef(ptrsinttype).ordtype) then
+        else if (torddef(codepara.resultdef).ordtype <> torddef(valsinttype).ordtype) then
           { because code is a var parameter, it must match types exactly    }
           { however, since it will return values >= 0, both signed and      }
           { and unsigned ints of the same size are fine. Since the formal   }
           { code para type is sinttype, insert a typecoversion to sint for  }
           { unsigned para's  }
           begin
-            codepara.left := ctypeconvnode.create_internal(codepara.left,ptrsinttype);
+            codepara.left := ctypeconvnode.create_internal(codepara.left,valsinttype);
             { make it explicit, oterwise you may get a nonsense range }
             { check error if the cardinal already contained a value   }
             { > $7fffffff                                             }
@@ -4309,9 +4313,12 @@ implementation
        var
          procname : String;
          first : tdef;
+         firstn,
+         newn : tnode;
        begin
          { determine the correct function based on the first parameter }
-         first:=tcallparanode(tcallparanode(tcallparanode(left).right).right).left.resultdef;
+         firstn:=tcallparanode(tcallparanode(tcallparanode(left).right).right).left;
+         first:=firstn.resultdef;
          if is_shortstring(first) then
            procname:='fpc_shortstr_delete'
          else if is_unicodestring(first) then
@@ -4320,6 +4327,21 @@ implementation
            procname:='fpc_widestr_delete'
          else if is_ansistring(first) then
            procname:='fpc_ansistr_delete'
+         else if is_dynamic_array(first) then
+           begin
+             procname:='fpc_dynarray_delete';
+             { recreate the parameters as array pointer, src, count, typeinfo }
+             newn:=ccallparanode.create(caddrnode.create_internal
+                  (crttinode.create(tstoreddef(first),initrtti,rdt_normal)),
+                    ccallparanode.create(tcallparanode(left).left,
+                      ccallparanode.create(tcallparanode(tcallparanode(left).right).left,
+                        ccallparanode.create(ctypeconvnode.create_internal(firstn,voidpointertype),nil))));
+             tcallparanode(tcallparanode(tcallparanode(left).right).right).left:=nil;
+             tcallparanode(tcallparanode(left).right).left:=nil;
+             tcallparanode(left).left:=nil;
+             left.free;
+             left:=newn;
+           end
          else if first.typ=undefineddef then
            { just pick one }
            procname:='fpc_ansistr_delete'
@@ -4331,6 +4353,7 @@ implementation
              if tf_winlikewidestring in target_info.flags then
                write_system_parameter_lists('fpc_widestr_delete');
              write_system_parameter_lists('fpc_ansistr_delete');
+             MessagePos1(fileinfo,sym_e_param_list,'Delete(var Dynamic Array;'+sinttype.typename+';'+sinttype.typename+');');
              exit(cerrornode.create);
            end;
          result:=ccallnode.createintern(procname,left);

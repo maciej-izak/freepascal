@@ -45,8 +45,10 @@ implementation
     globtype,systems,
     cutils,
     globals,verbose,
+    aasmbase,aasmdata,aasmcnst,
     symtype,symconst,symsym,symdef,symbase,symtable,
-    psub,
+    psub,pdecsub,
+    ncgutil,
     ppu,entfile,fpcp,
     export;
 
@@ -75,7 +77,6 @@ implementation
   procedure exportprocsym(sym:tprocsym;symtable:tsymtable);
     var
       i : longint;
-      item : TCmdStrListItem;
       pd : tprocdef;
     begin
       for i:=0 to tprocsym(sym).ProcdefList.Count-1 do
@@ -101,8 +102,6 @@ implementation
 
 
   procedure exportabstractrecordsymproc(sym:tobject;arg:pointer);
-    var
-      def : tabstractrecorddef;
     begin
       case tsym(sym).typ of
         typesym:
@@ -128,9 +127,18 @@ implementation
     end;
 
 
-  procedure exportabstractrecorddef(def:tabstractrecorddef;symtable:tsymtable);
+  procedure exportname(const s:tsymstr);
     var
       hp : texported_item;
+    begin
+      hp:=texported_item.create;
+      hp.name:=stringdup(s);
+      hp.options:=hp.options+[eo_name];
+      exportlib.exportvar(hp);
+    end;
+
+
+  procedure exportabstractrecorddef(def:tabstractrecorddef;symtable:tsymtable);
     begin
       { for cross unit type aliases this might happen }
       if def.owner<>symtable then
@@ -139,39 +147,63 @@ implementation
       if df_generic in def.defoptions then
         exit;
       def.symtable.SymList.ForEachCall(@exportabstractrecordsymproc,def.symtable);
-      if (def.typ=objectdef) and (oo_has_vmt in tobjectdef(def).objectoptions) then
+      if def.typ=objectdef then
         begin
-          hp:=texported_item.create;
-          hp.name:=stringdup(tobjectdef(def).vmt_mangledname);
-          hp.options:=hp.options+[eo_name];
-          exportlib.exportvar(hp);
+          if (oo_has_vmt in tobjectdef(def).objectoptions) then
+            exportname(tobjectdef(def).vmt_mangledname);
+          if is_interface(def) then
+            begin
+              if assigned(tobjectdef(def).iidguid) then
+                exportname(make_mangledname('IID',def.owner,def.objname^));
+              exportname(make_mangledname('IIDSTR',def.owner,def.objname^));
+            end;
         end;
+    end;
+
+
+  procedure export_typedef(def:tdef;symtable:tsymtable;global:boolean);
+    begin
+      if not (global or is_class(def)) or
+          (df_internal in def.defoptions) or
+          { happens with type renaming declarations ("abc = xyz") }
+          (def.owner<>symtable) then
+        exit;
+      if ds_rtti_table_written in def.defstates then
+        exportname(def.rtti_mangledname(fullrtti));
+      if (ds_init_table_written in def.defstates) and
+          def.needs_separate_initrtti then
+        exportname(def.rtti_mangledname(initrtti));
+      case def.typ of
+        recorddef,
+        objectdef:
+          exportabstractrecorddef(tabstractrecorddef(def),symtable);
+      end;
     end;
 
 
   procedure insert_export(sym : TObject;arg:pointer);
     var
-      i : longint;
-      item : TCmdStrListItem;
+      isglobal,
       publiconly : boolean;
     begin
       publiconly:=tsymtable(arg).symtabletype=staticsymtable;
+      isglobal:=tsymtable(arg).symtabletype=globalsymtable;
       case TSym(sym).typ of
         { ignore: }
         unitsym,
         syssym,
-        constsym,
         namespacesym,
         propertysym,
         enumsym:
           ;
+        constsym:
+          begin
+            if tconstsym(sym).consttyp=constresourcestring then
+              varexport(make_mangledname('RESSTR',tsym(sym).owner,tsym(sym).name));
+          end;
         typesym:
           begin
-            case ttypesym(sym).typedef.typ of
-              recorddef,
-              objectdef:
-                exportabstractrecorddef(tabstractrecorddef(ttypesym(sym).typedef),tsymtable(arg));
-            end;
+            export_typedef(ttypesym(sym).typedef,tsymtable(arg),isglobal);
           end;
         procsym:
           begin
@@ -183,15 +215,21 @@ implementation
               exit;
             varexport(tsym(sym).mangledname);
           end;
+        absolutevarsym:
+          ;
         else
           begin
-            writeln('unknown: ',TSym(sym).typ);
+            //writeln('unknown: ',TSym(sym).typ);
+            internalerror(2016080501);
           end;
       end;
     end;
 
 
   procedure export_unit(u: tmodule);
+    var
+      i : longint;
+      sym : tasmsymbol;
     begin
       u.globalsymtable.symlist.ForEachCall(@insert_export,u.globalsymtable);
       { check localsymtable for exports too to get public symbols }
@@ -204,6 +242,19 @@ implementation
         procexport(make_mangledname('FINALIZE$',u.globalsymtable,''));
       if (u.flags and uf_threadvars)=uf_threadvars then
         varexport(make_mangledname('THREADVARLIST',u.globalsymtable,''));
+      if (u.flags and uf_has_resourcestrings)<>0 then
+        begin
+          varexport(ctai_typedconstbuilder.get_vectorized_dead_strip_section_symbol_start('RESSTR',u.localsymtable,[]).name);
+          varexport(ctai_typedconstbuilder.get_vectorized_dead_strip_section_symbol_end('RESSTR',u.localsymtable,[]).name);
+        end;
+
+      if not (target_info.system in systems_indirect_var_imports) then
+        for i:=0 to u.publicasmsyms.count-1 do
+          begin
+            sym:=tasmsymbol(u.publicasmsyms[i]);
+            if sym.bind=AB_INDIRECT then
+              varexport(sym.name);
+          end;
     end;
 
   Function RewritePPU(const PPUFn:String;OutStream:TCStream):Boolean;
@@ -216,7 +267,6 @@ implementation
       b,
       untilb : byte;
       l,m    : longint;
-      f      : file;
       ext,
       s      : string;
       ppuversion : dword;
@@ -530,8 +580,152 @@ implementation
 
 
   procedure createimportlibfromexternals;
+    type
+      tcacheentry=record
+        pkg:tpackage;
+        sym:tasmsymbol;
+      end;
+      pcacheentry=^tcacheentry;
     var
+      cache : tfphashlist;
       alreadyloaded : tfpobjectlist;
+
+
+      function findpackagewithsym(symname:tsymstr):tcacheentry;
+        var
+          i,j : longint;
+          pkgentry : ppackageentry;
+          unitentry : pcontainedunit;
+        begin
+          for i:=0 to packagelist.count-1 do
+            begin
+              pkgentry:=ppackageentry(packagelist[i]);
+              for j:=0 to pkgentry^.package.containedmodules.count-1 do
+                begin
+                  unitentry:=pcontainedunit(pkgentry^.package.containedmodules[j]);
+                  if not assigned(unitentry^.module) then
+                    { the unit is not loaded }
+                    continue;
+                  result.sym:=tasmsymbol(tmodule(unitentry^.module).publicasmsyms.find(symname));
+                  if assigned(result.sym) then
+                    begin
+                      { completely ignore other external symbols }
+                      if result.sym.bind in [ab_external,ab_weak_external] then
+                        begin
+                          result.sym:=nil;
+                          continue;
+                        end;
+                      { only accept global symbols of the used unit }
+                      if result.sym.bind<>ab_global then
+                        begin
+                          result.sym:=nil;
+                          result.pkg:=nil;
+                        end
+                      else
+                        result.pkg:=pkgentry^.package;
+                      exit;
+                    end;
+                end;
+            end;
+          result.sym:=nil;
+          result.pkg:=nil;
+        end;
+
+
+    procedure processasmsyms(symlist:tfphashobjectlist);
+      var
+        i,j,k : longint;
+        sym : tasmsymbol;
+        cacheentry : pcacheentry;
+        psym : tsymentry;
+        pd : tprocdef;
+        found : boolean;
+        impname,symname : TSymStr;
+        suffixidx : longint;
+      begin
+        for i:=0 to symlist.count-1 do
+          begin
+            sym:=tasmsymbol(symlist[i]);
+            if not (sym.bind in [ab_external,ab_external_indirect]) then
+              continue;
+
+            { remove the indirect suffix }
+            symname:=sym.name;
+            if sym.bind=ab_external_indirect then
+              begin
+                suffixidx:=pos(suffix_indirect,symname);
+                if suffixidx=length(symname)-length(suffix_indirect)+1 then
+                  symname:=copy(symname,1,suffixidx-1)
+                else
+                  internalerror(2016062401);
+              end;
+
+            { did we already import the symbol? }
+            cacheentry:=pcacheentry(cache.find(symname));
+            if assigned(cacheentry) then
+              continue;
+
+            { was the symbol already imported in the previous pass? }
+            found:=false;
+            for j:=0 to alreadyloaded.count-1 do
+              begin
+                psym:=tsymentry(alreadyloaded[j]);
+                case psym.typ of
+                  procsym:
+                    for k:=0 to tprocsym(psym).procdeflist.count-1 do
+                      begin
+                        pd:=tprocdef(tprocsym(psym).procdeflist[k]);
+                        if has_alias_name(pd,symname) or
+                            (
+                              ([po_external,po_has_importdll]*pd.procoptions=[po_external,po_has_importdll]) and
+                              (symname=proc_get_importname(pd))
+                            ) then
+                          begin
+                            found:=true;
+                            break;
+                          end;
+                      end;
+                  staticvarsym:
+                    if tstaticvarsym(psym).mangledname=symname then
+                      found:=true;
+                  constsym:
+                    begin
+                      if tconstsym(psym).consttyp<>constresourcestring then
+                        internalerror(2016072202);
+                      if make_mangledname('RESSTR',psym.owner,psym.name)=symname then
+                        found:=true;
+                    end;
+                  else
+                    internalerror(2014101003);
+                end;
+                if found then
+                  break;
+              end;
+            if found then begin
+              { add a dummy entry }
+              new(cacheentry);
+              cacheentry^.pkg:=nil;
+              cacheentry^.sym:=sym;
+              cache.add(symname,cacheentry);
+              continue;
+            end;
+
+            new(cacheentry);
+            cacheentry^:=findpackagewithsym(symname);
+            cache.add(symname,cacheentry);
+
+            { use cacheentry^.sym instead of sym, because for the later typ
+              is always at_none in case of an external symbol }
+            if assigned(cacheentry^.pkg) then
+              begin
+                impname:=symname;
+                if cacheentry^.sym.typ=AT_DATA then
+                  { import as the $indirect symbol if it as a variable }
+                  impname:=symname+suffix_indirect;
+                current_module.addexternalimport(cacheentry^.pkg.pplfilename,symname,impname,0,cacheentry^.sym.typ=at_data,false);
+              end;
+          end;
+      end;
 
 
     procedure import_proc_symbol(pd:tprocdef;pkg:tpackage);
@@ -564,7 +758,11 @@ implementation
         for i:=0 to syms.count-1 do
           begin
             sym:=tsymentry(syms[i]);
-            if not (sym.typ in [staticvarsym,procsym]) then
+            if not (sym.typ in [staticvarsym,procsym,constsym]) or
+                (
+                  (sym.typ=constsym) and
+                  (tconstsym(sym).consttyp<>constresourcestring)
+                ) then
               continue;
             if alreadyloaded.indexof(sym)>=0 then
               continue;
@@ -594,6 +792,13 @@ implementation
                     if unitentry^.module=module then
                       begin
                         case sym.typ of
+                          constsym:
+                            begin
+                              if tconstsym(sym).consttyp<>constresourcestring then
+                                internalerror(2016072201);
+                              name:=make_mangledname('RESSTR',sym.owner,sym.name);
+                              current_module.addexternalimport(pkgentry^.package.pplfilename,name,name+suffix_indirect,0,true,false);
+                            end;
                           staticvarsym:
                             begin
                               name:=tstaticvarsym(sym).mangledname;
@@ -613,7 +818,7 @@ implementation
                                 end;
                             end;
                           else
-                            internalerror(2014101001);
+                            internalerror(2014101002);
                         end;
                         alreadyloaded.add(sym);
                       end;
@@ -624,9 +829,10 @@ implementation
 
 
     var
-      unitentry : pcontainedunit;
       module : tmodule;
+      i : longint;
     begin
+      cache:=tfphashlist.create;
       { check each external asm symbol of each unit of the package whether it is
         contained in the unit of a loaded package (and thus an import entry
         is needed) }
@@ -641,7 +847,19 @@ implementation
           module:=tmodule(module.next);
         end;
 
+      { second pass to find all symbols that were loaded by asm name }
+      module:=tmodule(loaded_units.first);
+      while assigned(module) do
+        begin
+          if not assigned(module.package) then
+            processasmsyms(module.externasmsyms);
+          module:=tmodule(module.next);
+        end;
+
       alreadyloaded.free;
+      for i:=0 to cache.count-1 do
+        dispose(pcacheentry(cache[i]));
+      cache.free;
     end;
 
 

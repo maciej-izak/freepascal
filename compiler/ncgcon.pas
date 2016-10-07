@@ -32,10 +32,6 @@ interface
        node,ncon;
 
     type
-       tcgdataconstnode = class(tdataconstnode)
-          procedure pass_generate_code;override;
-       end;
-
        tcgrealconstnode = class(trealconstnode)
           procedure pass_generate_code;override;
        end;
@@ -83,30 +79,6 @@ implementation
       ncgutil,hlcgobj,cclasses,tgobj
       ;
 
-
-{*****************************************************************************
-                           TCGDATACONSTNODE
-*****************************************************************************}
-
-    procedure tcgdataconstnode.pass_generate_code;
-      var
-        l : tasmlabel;
-        i : longint;
-        b : byte;
-      begin
-        location_reset_ref(location,LOC_CREFERENCE,OS_NO,const_align(maxalign));
-        current_asmdata.getglobaldatalabel(l);
-        maybe_new_object_file(current_asmdata.asmlists[al_typedconsts]);
-        new_section(current_asmdata.asmlists[al_typedconsts],sec_rodata_norel,l.name,const_align(maxalign));
-        current_asmdata.asmlists[al_typedconsts].concat(Tai_label.Create(l));
-        data.seek(0);
-        for i:=0 to data.size-1 do
-          begin
-            data.read(b,1);
-            current_asmdata.asmlists[al_typedconsts].concat(Tai_const.Create_8bit(b));
-          end;
-        location.reference.symbol:=l;
-      end;
 
 {*****************************************************************************
                            TCGREALCONSTNODE
@@ -325,7 +297,7 @@ implementation
               { :-(, we must generate a new entry }
               if not assigned(entry^.Data) then
                 begin
-                  datatcb:=ctai_typedconstbuilder.create([tcalo_is_lab,tcalo_make_dead_strippable]);
+                  datatcb:=ctai_typedconstbuilder.create([tcalo_is_lab,tcalo_make_dead_strippable,tcalo_apply_constalign]);
                    case cst_type of
                       cst_ansistring:
                         begin
@@ -454,7 +426,7 @@ implementation
         current_asmdata.getglobaldatalabel(lab);
         result:=lab;
         lab_set:=lab;
-        tcb:=ctai_typedconstbuilder.create([tcalo_is_lab,tcalo_make_dead_strippable]);
+        tcb:=ctai_typedconstbuilder.create([tcalo_is_lab,tcalo_make_dead_strippable,tcalo_apply_constalign]);
         tcb.maybe_begin_aggregate(resultdef);
         if (source_info.endian=target_info.endian) then
           for i:=0 to resultdef.size-1 do
@@ -562,7 +534,7 @@ implementation
              if not assigned(entry^.Data) then
                begin
                  current_asmdata.getglobaldatalabel(lastlabel);
-                 datatcb:=ctai_typedconstbuilder.create([tcalo_is_lab,tcalo_make_dead_strippable]);
+                 datatcb:=ctai_typedconstbuilder.create([tcalo_is_lab,tcalo_make_dead_strippable,tcalo_apply_constalign]);
                  datatcb.emit_guid_const(value);
                  current_asmdata.asmlists[al_typedconsts].concatList(
                    datatcb.get_final_asmlist(lastlabel,rec_tguid,sec_rodata_norel,lastlabel.name,const_align(16)));
@@ -576,7 +548,6 @@ implementation
 
 
 begin
-   cdataconstnode:=tcgdataconstnode;
    crealconstnode:=tcgrealconstnode;
    cordconstnode:=tcgordconstnode;
    cpointerconstnode:=tcgpointerconstnode;

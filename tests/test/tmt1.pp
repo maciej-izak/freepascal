@@ -1,13 +1,13 @@
-{ %skiptarget=go32v2 }
+{ %skiptarget=$nothread }
 { %version=1.1 }
 
 {$mode objfpc}
 
 uses
-  sysutils
 {$ifdef unix}
-  ,cthreads
+  cthreads,
 {$endif}
+  sysutils
   ;
 
 const

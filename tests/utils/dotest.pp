@@ -20,6 +20,7 @@
 program dotest;
 uses
   sysutils,
+  strutils,
   dos,
 {$ifdef macos}
   macutils,
@@ -119,6 +120,22 @@ const
   TargetAmigaLike : boolean = false;
   TargetIsMacOS : boolean = false;
   TargetIsUnix : boolean = false;
+
+
+const
+  NoSharedLibSupportPattern='$nosharedlib';
+  TargetHasNoSharedLibSupport = 'msdos,go32v2';
+  NoWorkingUnicodeSupport='$nounicode';
+  TargetHasNoWorkingUnicodeSupport = 'msdos';
+  NoWorkingThread='$nothread';
+  TargetHasNoWorkingThreadSupport = 'go32v2,msdos';
+
+procedure TranslateConfig(var AConfig: TConfig);
+begin
+  AConfig.SkipTarget:=ReplaceText(AConfig.SkipTarget, NoSharedLibSupportPattern, TargetHasNoSharedLibSupport);
+  AConfig.SkipTarget:=ReplaceText(AConfig.SkipTarget, NoWorkingUnicodeSupport, TargetHasNoWorkingUnicodeSupport);
+  AConfig.SkipTarget:=ReplaceText(AConfig.SkipTarget, NoWorkingThread, TargetHasNoWorkingThreadSupport);
+end;
 
 { extracted from rtl/macos/macutils.inc }
 
@@ -830,7 +847,8 @@ begin
   while not eof(t) do
    begin
      readln(t,s);
-     if pos('Fatal: Internal error ',s)>0 then
+     if (pos('Fatal: Internal error ',s)>0) or
+        (pos('Error: Compilation raised exception internally',s)>0) then
       begin
         ExitWithInternalError:=true;
         break;
@@ -1296,21 +1314,18 @@ var
 begin
   if RemoteAddr='' then
     begin
-      If UniqueSuffix<>'' then
+      FileList:=BuildFileList;
+      if assigned(FileList) then
         begin
-          FileList:=BuildFileList;
-          if assigned(FileList) then
+          LocalPath:=SplitPath(PPFile[current]);
+          if Length(LocalPath) > 0 then
+            LocalPath:=LocalPath+'/';
+          for i:=0 to FileList.count-1 do
             begin
-              LocalPath:=SplitPath(PPFile[current]);
-              if Length(LocalPath) > 0 then
-                LocalPath:=LocalPath+'/';
-              for i:=0 to FileList.count-1 do
-                begin
-                  LocalFile:=FileList[i];
-                  CopyFile(LocalPath+LocalFile,TestOutputDir+'/'+LocalFile,false);
-                end;
-              FileList.Free;
+              LocalFile:=FileList[i];
+              CopyFile(LocalPath+LocalFile,TestOutputDir+'/'+LocalFile,false);
             end;
+          FileList.Free;
         end;
       exit(true);
     end;
@@ -1833,6 +1848,7 @@ var
   Res : boolean;
 begin
   Res:=GetConfig(PPFile[current],Config);
+  TranslateConfig(Config);
 
   if Res then
     begin

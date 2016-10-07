@@ -148,6 +148,9 @@ interface
     { excludes the flags passed in nf from the node tree passed }
     procedure node_reset_flags(p : tnode;nf : tnodeflags);
 
+    { include or exclude cs from p.localswitches }
+    procedure node_change_local_switch(p : tnode;cs : tlocalswitch;enable : boolean);
+
 implementation
 
     uses
@@ -414,6 +417,8 @@ implementation
             typeconvn,
             subscriptn :
               hp:=tunarynode(hp).left;
+            blockn:
+              hp:=laststatement(tblocknode(hp)).left
             else
               break;
           end;
@@ -1353,7 +1358,7 @@ implementation
     function is_const(node : tnode) : boolean;
       begin
         result:=is_constnode(node) or
-          ((node.nodetype=temprefn) and (ti_const in ttemprefnode(node).tempinfo^.flags)) or
+          ((node.nodetype=temprefn) and (ti_const in ttemprefnode(node).tempflags)) or
           ((node.nodetype=loadn) and (tloadnode(node).symtableentry.typ=paravarsym) and (tparavarsym(tloadnode(node).symtableentry).varspez in [vs_const,vs_constref]));
       end;
 
@@ -1400,6 +1405,32 @@ implementation
     procedure node_reset_flags(p : tnode; nf : tnodeflags);
       begin
         foreachnodestatic(p,@do_node_reset_flags,@nf);
+      end;
+
+    type
+       tlocalswitchchange = record
+         cs : tlocalswitch;
+         enable : boolean;
+       end;
+       plocalswitchchange = ^tlocalswitchchange;
+
+
+    function do_change_local_settings(var p : tnode;plsc : pointer) : foreachnoderesult;
+      begin
+        if plocalswitchchange(plsc)^.enable then
+          include(p.localswitches, plocalswitchchange(plsc)^.cs)
+        else
+          exclude(p.localswitches, plocalswitchchange(plsc)^.cs);
+        result:=fen_true;
+     end;
+   
+    procedure node_change_local_switch(p : tnode;cs : tlocalswitch;enable : boolean);
+      var
+        lsc : tlocalswitchchange;
+      begin
+        lsc.cs:=cs;
+        lsc.enable:=enable;
+        foreachnodestatic(p,@do_change_local_settings,@lsc);
       end;
 
 end.

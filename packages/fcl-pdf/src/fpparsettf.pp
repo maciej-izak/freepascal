@@ -34,6 +34,9 @@ type
   TSmallintArray = Packed Array of Int16;
   TWordArray = Packed Array of UInt16;
 
+  { Signed Fixed 16.16 Float }
+  TF16Dot16 = type Int32;
+
   TFixedVersionRec = packed record
     case Integer of
       0:  (Minor, Major: Word);
@@ -65,7 +68,7 @@ type
 Type
   TPostScript = Packed Record
     Format : TFixedVersionRec;
-    ItalicAngle : LongWord;
+    ItalicAngle : TF16Dot16;
     UnderlinePosition : SmallInt;
     underlineThickness : SmallInt;
     isFixedPitch : Cardinal;
@@ -288,7 +291,7 @@ Type
     Function CapHeight: SmallInt;
     { Returns the glyph advance width, based on the AIndex (glyph index) value. The result is in font units. }
     function GetAdvanceWidth(AIndex: word): word;
-    function ItalicAngle: LongWord;
+    function ItalicAngle: single;
     { max glyph bounding box values - as space separated values }
     function BBox: string;
     property MissingWidth: Integer read GetMissingWidth;
@@ -356,6 +359,8 @@ implementation
 
 resourcestring
   rsFontEmbeddingNotAllowed = 'Font licence does not allow embedding';
+  rsErrNoFormat4MapTable = 'No Format 4 map (unicode) table found <%s - %s>';
+  rsErrUnexpectedUnicodeSubtable = 'Unexpected unicode subtable format, expected 4, got %s';
 
 Function GetTableType(Const AName : String) : TTTFTableType;
 begin
@@ -522,12 +527,12 @@ begin
   While (UE>=0) and ((FSubtables[UE].PlatformID<>3) or (FSubtables[UE].EncodingID<> 1)) do
     Dec(UE);
   if (UE=-1) then
-    Raise ETTF.Create('No Format 4 map (unicode) table found <'+FFileName + ' - ' + PostScriptName+'>');
+    Raise ETTF.CreateFmt(rsErrNoFormat4MapTable, [FFileName, PostScriptName]);
   TT:=TableStartPos+FSubtables[UE].Offset;
   AStream.Position:=TT;
   FUnicodeMap.Format:= ReadUShort(AStream);               // 2 bytes - Format of subtable
   if (FUnicodeMap.Format<>4) then
-    Raise ETTF.CreateFmt('Unexpected unicode subtable format, expected 4, got %s',[FUnicodeMap.Format]);
+    Raise ETTF.CreateFmt(rsErrUnexpectedUnicodeSubtable, [FUnicodeMap.Format]);
   FUnicodeMap.Length:=ReadUShort(AStream);
   S:=TMemoryStream.Create;
   try
@@ -898,9 +903,9 @@ begin
   Result := Widths[AIndex].AdvanceWidth;
 end;
 
-function TTFFileInfo.ItalicAngle: LongWord;
+function TTFFileInfo.ItalicAngle: single;
 begin
-  Result := FPostScript.ItalicAngle;
+  Result := FPostScript.ItalicAngle / 65536.0;
 end;
 
 function TTFFileInfo.BBox: string;
@@ -936,7 +941,7 @@ function TTFFileInfo.GetMissingWidth: integer;
 begin
   if FMissingWidth = 0 then
   begin
-    FMissingWidth := Widths[Chars[CharCodes^[32]]].AdvanceWidth;  // Char(32) - Space character
+    FMissingWidth := Widths[Chars[CharCodes^[32]]].AdvanceWidth;  // 32 is in reference to the Space character
   end;
   Result := FMissingWidth;
 end;

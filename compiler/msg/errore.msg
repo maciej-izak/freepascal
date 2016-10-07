@@ -139,7 +139,7 @@ general_e_exception_raised=01026_E_Compilation raised exception internally
 #
 # Scanner
 #
-# 02099 is the last used one
+# 02101 is the last used one
 #
 % \section{Scanner messages.}
 % This section lists the messages that the scanner emits. The scanner takes
@@ -413,6 +413,11 @@ scan_e_illegal_hugepointernormalization=02098_E_Illegal argument for HUGEPOINTER
 scan_e_illegal_asmcpu_specifier=02099_E_Illegal assembler CPU instruction set specified "$1"
 % When you specify an assembler CPU with the \var{\{\$ASMCPU xxx\}} directive,
 % the compiler didn't recognize the CPU you specified.
+scan_w_syscall_convention_not_useable_on_target=02100_W_Specified syscall convention is not useable on this target
+% The specified syscall convention using the \var{\{\$SYSCALL xxx\}} directive,
+% is not useable on the current target system.
+scan_w_syscall_convention_invalid=02101_W_Invalid syscall convention specified
+% The compiler did not recognize the syscall convention specified by the \var{\{\$SYSCALL xxx\}} directive.
 % \end{description}
 #
 # Parser
@@ -2973,7 +2978,7 @@ execinfo_x_stackcommit=09134_X_Stack space committed: $1 bytes
 #
 # Internal linker messages
 #
-# 09207 is the last used one
+# 09208 is the last used one
 #
 # BeginOfTeX
 % \section{Linker messages}
@@ -3002,6 +3007,7 @@ link_e_com_program_uses_segment_relocations=09207_E_Cannot create a .COM file, b
 % might be caused by the use of the Seg() function or by the SEG assembler
 % directive (either in pascal's built-in inline assembler, or in an externally
 % linked assembly module).
+link_w_program_uses_checkpointer=09208_W_Program "$1" uses experimental CheckPointer function
 %\end{description}
 # EndOfTeX
 
@@ -3221,7 +3227,7 @@ unit_u_loading_from_package=10064_U_Loading unit $1 from package $2
 #
 #  Options
 #
-# 11057 is the last used one
+# 11058 is the last used one
 #
 option_usage=11000_O_$1 [options] <inputfile> [options]
 # BeginOfTeX
@@ -3367,7 +3373,8 @@ option_malformed_para=11055_E_malformed parameter: $1
 % Given argument is not valid for parameter.
 option_smart_link_requires_external_linker=11056_W_Smart linking requires external linker
 option_com_files_require_tiny_model=11057_E_Creating .COM files is not supported in the current memory model. Only the tiny memory model supports making .COM files.
-
+% Do not enable experimental -gc option if -Ur option is given.
+option_gc_incompatible_with_release_flag=11058_W_Experimental CheckPointer option not enabled because it is incomptatible with -Ur option.
 
 %\end{description}
 # EndOfTeX
@@ -3452,7 +3459,7 @@ wpo_cant_create_feedback_file=12019_E_Cannot create specified whole program opti
 #
 # Package loading and handling
 #
-# 13028 is the last used one
+# 13029 is the last used one
 #
 # BeginOfTeX
 % \section{Package loading messages.}
@@ -3535,6 +3542,9 @@ package_e_unit_already_contained_in_package=13027_E_Unit $1 is already contained
 package_w_unit_from_indirect_package=13028_W_Unit $1 is imported from indirectly required package $2
 % If a unit from a package that is not part of the \var{requires} section is used then the package
 % should require this unit directly to avoid confusion.
+package_u_ppl_filename=13029_U_PPL filename $1
+% The name of the binary package library that is stored in the PCP.
+%
 % \end{description}
 # EndOfTeX
 
@@ -3754,13 +3764,14 @@ J*2Cv_Var/out parameter copy-out checking
 **2FW<x>_Store generated whole-program optimization feedback in <x>
 **2Fw<x>_Load previously stored whole-program optimization feedback from <x>
 *g1g_Generate debug information (default format for target)
-*g2gc_Generate checks for pointers
+*g2gc_Generate checks for pointers (experimental, only available on some targets, might generate false positive)
 *g2gh_Use heaptrace unit (for memory leak/corruption debugging)
 *g2gl_Use line info unit (show more info with backtraces)
 *g2go<x>_Set debug information options
 *g3godwarfsets_ Enable DWARF 'set' type debug information (breaks gdb < 6.5)
 *g3gostabsabsincludes_ Store absolute/full include file paths in Stabs
 *g3godwarfmethodclassprefix_ Prefix method names in DWARF with class name
+*g3godwarfcpp_ Simulate C++ debug information in DWARF
 *g2gp_Preserve case in stabs symbol names
 *g2gs_Generate Stabs debug information
 *g2gt_Trash local variables (to detect uninitialized uses; multiple 't' changes the trashing value)
@@ -3816,12 +3827,16 @@ J*2Cv_Var/out parameter copy-out checking
 F*1P<x>_Target CPU / compiler related options:
 F*2PB_Show default compiler binary
 F*2PP_Show default target cpu
-F*2P<x>_Set target CPU (arm,avr,i386,i8086,jvm,m68k,mips,mipsel,powerpc,powerpc64,sparc,x86_64)
+F*2P<x>_Set target CPU (aarch64,arm,avr,i386,i8086,jvm,m68k,mips,mipsel,powerpc,powerpc64,sparc,x86_64)
 **1R<x>_Assembler reading style:
 **2Rdefault_Use default assembler for target
 3*2Ratt_Read AT&T style assembler
 3*2Rintel_Read Intel style assembler
-6*2RMOT_Read motorola style assembler
+4*2Ratt_Read AT&T style assembler
+4*2Rintel_Read Intel style assembler
+8*2Ratt_Read AT&T style assembler
+8*2Rintel_Read Intel style assembler
+6*2RMOT_Read Motorola style assembler
 **1S<x>_Syntax options:
 **2S2_Same as -Mobjfpc
 **2Sc_Support operators like C (*=,+=,/= and -=)
@@ -3900,6 +3915,7 @@ A*2Twince_Windows CE
 J*2Tandroid_Android
 J*2Tjava_Java
 m*2Tembedded_Embedded
+m*2Tlinux_Linux
 M*2Tandroid_Android
 M*2Tembedded_Embedded
 M*2Tlinux_Linux

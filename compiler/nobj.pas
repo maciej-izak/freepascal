@@ -837,7 +837,7 @@ implementation
                 easily triggered in case the definition of the VMT would
                 change) }
               if (systemvmt.typ<>recorddef) or
-                 (trecorddef(systemvmt).symtable.SymList.count<>25) then
+                 (trecorddef(systemvmt).symtable.SymList.count<>27) then
                 internalerror(2015052601);
               { system.tvmt is a record that represents the VMT of TObject,
                 including its virtual methods. We only want the non-method
@@ -846,6 +846,8 @@ implementation
               for i:=0 to 11 do
                 begin
                   sym:=tsym(trecorddef(systemvmt).symtable.SymList[i]);
+                  if sym.typ in [procsym,propertysym] then
+                    continue;
                   if sym.typ<>fieldvarsym then
                     internalerror(2015052602);
                   vmtdef.add_field_by_def('',tfieldvarsym(sym).vardef);
@@ -857,8 +859,8 @@ implementation
           odt_object:
             begin
               { size, -size, parent vmt [, dmt ] (same names as for class) }
-              vmtdef.add_field_by_def('vInstanceSize',ptrsinttype);
-              vmtdef.add_field_by_def('vInstanceSize2',ptrsinttype);
+              vmtdef.add_field_by_def('vInstanceSize',sizesinttype);
+              vmtdef.add_field_by_def('vInstanceSize2',sizesinttype);
               vmtdef.add_field_by_def('vParent',voidpointertype);
 {$ifdef WITHDMT}
               vmtdef.add_field_by_def('',voidpointertype);

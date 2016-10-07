@@ -28,7 +28,7 @@ unit hlcgppc;
 interface
 
 uses
-  globals,
+  globtype,globals,
   aasmdata,
   symtype,symdef,
   cgbase,cgutils,hlcgobj,hlcg2ll;
@@ -39,7 +39,7 @@ type
     procedure a_load_subsetref_regs_noindex(list: TAsmList; subsetsize: tdef; loadbitsize: byte; const sref: tsubsetreference; valuereg, extra_value_reg: tregister); override;
    public
     procedure g_intf_wrapper(list: TAsmList; procdef: tprocdef; const labelname: string; ioffset: longint);override;
-    procedure g_external_wrapper(list: TAsmList; pd: TProcDef; const externalname: string); override;
+    procedure a_jmp_external_name(list: TAsmList; const externalname: TSymStr); override;
     procedure gen_load_para_value(list: TAsmList); override;
   end;
 
@@ -50,7 +50,7 @@ implementation
     systems,fmodule,
     symconst,
     aasmbase,aasmtai,aasmcpu,
-    cpubase,globtype,
+    cpubase,
     procinfo,cpupi,cgobj,cgppc,
     defutil;
 
@@ -163,9 +163,9 @@ implementation
         make_global:=true;
 
       if make_global then
-        List.concat(Tai_symbol.Createname_global(labelname,AT_FUNCTION,0))
+        List.concat(Tai_symbol.Createname_global(labelname,AT_FUNCTION,0,procdef))
       else
-        List.concat(Tai_symbol.Createname(labelname,AT_FUNCTION,0));
+        List.concat(Tai_symbol.Createname(labelname,AT_FUNCTION,0,procdef));
 
       { set param1 interface to self  }
       g_adjust_self_value(list,procdef,ioffset);
@@ -185,15 +185,15 @@ implementation
             list.concat(taicpu.op_sym(A_B,tcgppcgen(cg).get_darwin_call_stub(procdef.mangledname,false)));
           else if use_dotted_functions then
             {$note ts:todo add GOT change?? - think not needed :) }
-            list.concat(taicpu.op_sym(A_B,current_asmdata.RefAsmSymbol('.' + procdef.mangledname)))
+            list.concat(taicpu.op_sym(A_B,current_asmdata.RefAsmSymbol('.' + procdef.mangledname,AT_FUNCTION)))
           else
-            list.concat(taicpu.op_sym(A_B,current_asmdata.RefAsmSymbol(procdef.mangledname)))
+            list.concat(taicpu.op_sym(A_B,current_asmdata.RefAsmSymbol(procdef.mangledname,AT_FUNCTION)))
         end;
       List.concat(Tai_symbol_end.Createname(labelname));
     end;
 
 
-  procedure thlcgppcgen.g_external_wrapper(list: TAsmList; pd: TProcDef; const externalname: string);
+  procedure thlcgppcgen.a_jmp_external_name(list: TAsmList; const externalname: TSymStr);
     var
       href : treference;
     begin

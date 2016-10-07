@@ -99,6 +99,8 @@ unit llvmpara;
         paralocs }
       while assigned(paraloc) do
         begin
+          if vo_is_funcret in parasym.varoptions then
+            paraloc^.retvalloc:=true;
           { varargs parameters do not have a parasym.owner, but they're always
             by value }
           if (assigned(parasym.owner) and
@@ -121,6 +123,9 @@ unit llvmpara;
                     end;
                     paraloc^.register:=hlcg.getregisterfordef(list,paraloc^.def);
                     paraloc^.llvmvalueloc:=true;
+                    { paraloc^.reference overlaid this field, so zero it now
+                      that we turned it into a register location }
+                    paraloc^.shiftval:=0;
                   end;
                 LOC_REGISTER,
                 LOC_FPUREGISTER,
@@ -197,7 +202,7 @@ unit llvmpara;
       paralocnr:=0;
       repeat
         paraloc^.llvmloc.loc:=LOC_REFERENCE;
-        paraloc^.llvmloc.sym:=current_asmdata.DefineAsmSymbol(llvmparaname(hp,paralocnr),AB_TEMP,AT_DATA);
+        paraloc^.llvmloc.sym:=current_asmdata.DefineAsmSymbol(llvmparaname(hp,paralocnr),AB_TEMP,AT_DATA,paraloc^.def);
         { byval: a pointer to a type that should actually be passed by
             value (e.g. a record that should be passed on the stack) }
         paraloc^.llvmvalueloc:=

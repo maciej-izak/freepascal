@@ -50,7 +50,6 @@ implementation
         datalist     : tasmlist;
         restree,
         previnit     : tnode;
-        symind       : tasmsymbol;
       begin
         { mark the staticvarsym as typedconst }
         include(sym.varoptions,vo_is_typed_const);
@@ -93,7 +92,7 @@ implementation
            (
             (
              (token = _ID) and
-             (idtoken in [_EXPORT,_EXTERNAL,_WEAKEXTERNAL,_PUBLIC,_CVAR]) and
+             ((idtoken in [_EXPORT,_EXTERNAL,_PUBLIC,_CVAR]) or (idtoken = _WEAKEXTERNAL)) and
              (m_cvar_support in current_settings.modeswitches)
             ) or
             (
@@ -124,6 +123,9 @@ implementation
               end;
           end;
 
+        if vo_is_public in sym.varoptions then
+          current_module.add_public_asmsym(sym.mangledname,AB_GLOBAL,AT_DATA);
+
         if not(target_info.system in systems_typed_constants_node_init) then
           begin
             { only now get the final asmlist, because inserting the symbol
@@ -134,17 +136,6 @@ implementation
             { and pointed data, if any }
             current_asmdata.asmlists[al_const].concatlist(datalist);
             { the (empty) lists themselves are freed by tcbuilder }
-
-            if (tf_supports_packages in target_info.flags) then
-              begin
-                { add indirect symbol }
-                { ToDo: do we also need this for the else part? }
-                new_section(list,sec_rodata,lower(sym.mangledname),const_align(sym.vardef.alignment));
-                symind:=current_asmdata.DefineAsmSymbol(sym.mangledname,AB_INDIRECT,AT_DATA);
-                list.concat(Tai_symbol.Create_Global(symind,0));
-                list.concat(Tai_const.Createname(sym.mangledname,AT_DATA,0));
-                list.concat(tai_symbol_end.Create(symind));
-              end;
           end
         else
           begin

@@ -29,6 +29,7 @@ unit hlcgcpu;
 interface
 
   uses
+    globtype,
     aasmdata,
     symdef,
     hlcg2ll;
@@ -42,7 +43,7 @@ interface
     end;
 
     tthumbhlcgcpu = class(tbasehlcgarm)
-      procedure g_external_wrapper(list : TAsmList; procdef : tprocdef; const externalname : string); override;
+      procedure a_jmp_external_name(list: TAsmList; const externalname: TSymStr); override;
     end;
 
   procedure create_hlcodegen;
@@ -50,7 +51,7 @@ interface
 implementation
 
   uses
-    globals,globtype,verbose,
+    globals,verbose,
     procinfo,fmodule,
     symconst,
     aasmbase,aasmtai,aasmcpu, cpuinfo,
@@ -176,9 +177,9 @@ implementation
         make_global:=true;
 
       if make_global then
-        list.concat(Tai_symbol.Createname_global(labelname,AT_FUNCTION,0))
+        list.concat(Tai_symbol.Createname_global(labelname,AT_FUNCTION,0,procdef))
       else
-        list.concat(Tai_symbol.Createname(labelname,AT_FUNCTION,0));
+        list.concat(Tai_symbol.Createname(labelname,AT_FUNCTION,0,procdef));
 
       { the wrapper might need aktlocaldata for the additional data to
         load the constant }
@@ -207,7 +208,7 @@ implementation
           current_procinfo.aktlocaldata.Concat(tai_align.Create(4));
           cg.a_label(current_procinfo.aktlocaldata,l);
           tmpref.symboldata:=current_procinfo.aktlocaldata.last;
-          current_procinfo.aktlocaldata.concat(tai_const.Create_sym(current_asmdata.RefAsmSymbol(procdef.mangledname)));
+          current_procinfo.aktlocaldata.concat(tai_const.Create_sym(current_asmdata.RefAsmSymbol(procdef.mangledname,AT_FUNCTION)));
 
           tmpref.symbol:=l;
           tmpref.base:=NR_PC;
@@ -217,7 +218,7 @@ implementation
           list.concat(taicpu.op_reg(A_BX,NR_R12));
         end
       else
-        list.concat(taicpu.op_sym(A_B,current_asmdata.RefAsmSymbol(procdef.mangledname)));
+        list.concat(taicpu.op_sym(A_B,current_asmdata.RefAsmSymbol(procdef.mangledname,AT_FUNCTION)));
       list.concatlist(current_procinfo.aktlocaldata);
 
       current_procinfo.Free;
@@ -229,7 +230,7 @@ implementation
 
   { tthumbhlcgcpu }
 
-  procedure tthumbhlcgcpu.g_external_wrapper(list: TAsmList; procdef: tprocdef; const externalname: string);
+  procedure tthumbhlcgcpu.a_jmp_external_name(list: TAsmList; const externalname: TSymStr);
     var
       tmpref : treference;
       l : tasmlabel;
@@ -251,7 +252,7 @@ implementation
       { append const entry }
       list.Concat(tai_align.Create(4));
       list.Concat(tai_label.create(l));
-      list.concat(tai_const.Create_sym(current_asmdata.RefAsmSymbol(externalname)));
+      list.concat(tai_const.Create_sym(current_asmdata.RefAsmSymbol(externalname,AT_FUNCTION)));
     end;
 
 

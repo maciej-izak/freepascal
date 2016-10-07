@@ -343,8 +343,8 @@ implementation
         else
           secname:=secnames[atype];
 {$ifdef m68k}
-        { old Amiga GNU AS doesn't support .section .fpc }
-        if (atype=sec_fpc) and (target_info.system = system_m68k_amiga) then
+        { Amiga/Atari GNU AS doesn't support .section .fpc }
+        if (atype=sec_fpc) and (target_info.system in [system_m68k_amiga, system_m68k_atari]) then
             secname:=secnames[sec_data];
 {$endif}
         if (atype=sec_fpc) and (Copy(aname,1,3)='res') then
@@ -448,6 +448,7 @@ implementation
         case target_info.system of
          system_i386_OS2,
          system_i386_EMX,
+         system_m68k_atari, { atari tos/mint GNU AS also doesn't seem to like .section (KB) }
          system_m68k_amiga: ; { amiga has old GNU AS (2.14), which blews up from .section (KB) }
          system_powerpc_darwin,
          system_i386_darwin,
@@ -563,7 +564,7 @@ implementation
                 assigned(hp.next) and
                  (tai(hp.next).typ in [ait_const,ait_datablock,ait_realconst])
               ) or
-              (hp.sym.typ=AT_DATA);
+              (hp.sym.typ in [AT_DATA,AT_METADATA]);
 
         end;
 

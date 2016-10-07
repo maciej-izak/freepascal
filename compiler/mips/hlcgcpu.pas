@@ -43,7 +43,7 @@ uses
       procedure a_load_regconst_subsetreg_intern(list: TAsmList; fromsize, subsetsize: tdef; fromreg: tregister; const sreg: tsubsetregister; slopt: tsubsetloadopt); override;
     public
       procedure g_intf_wrapper(list: tasmlist; procdef: tprocdef; const labelname: string; ioffset: longint); override;
-      procedure g_external_wrapper(list : TAsmList; procdef: tprocdef; const externalname: string);override;
+      procedure a_jmp_external_name(list: TAsmList; const externalname: TSymStr);override;
   end;
 
   procedure create_hlcodegen;
@@ -67,15 +67,15 @@ implementation
       sym: tasmsymbol;
     begin
       if weak then
-        sym:=current_asmdata.WeakRefAsmSymbol(s)
+        sym:=current_asmdata.WeakRefAsmSymbol(s,AT_FUNCTION)
       else
-        sym:=current_asmdata.RefAsmSymbol(s);
+        sym:=current_asmdata.RefAsmSymbol(s,AT_FUNCTION);
 
       if (po_external in pd.procoptions) then
         begin
           if not (cs_create_pic in current_settings.moduleswitches) then
             begin
-              reference_reset_symbol(ref,current_asmdata.RefAsmSymbol('_gp'),0,sizeof(aint));
+              reference_reset_symbol(ref,current_asmdata.RefAsmSymbol('_gp',AT_DATA),0,sizeof(aint));
               list.concat(tai_comment.create(strpnew('Using PIC code for a_call_name')));
               cg.a_loadaddr_ref_reg(list,ref,NR_GP);
             end;
@@ -148,11 +148,11 @@ implementation
     end;
 
 
-  procedure thlcgmips.g_external_wrapper(list: TAsmList; procdef: tprocdef; const externalname: string);
+  procedure thlcgmips.a_jmp_external_name(list: TAsmList; const externalname: TSymStr);
     var
       href: treference;
     begin
-      reference_reset_symbol(href,current_asmdata.RefAsmSymbol(externalname),0,sizeof(aint));
+      reference_reset_symbol(href,current_asmdata.RefAsmSymbol(externalname,AT_DATA),0,sizeof(aint));
       { Always do indirect jump using $t9, it won't harm in non-PIC mode }
       if (cs_create_pic in current_settings.moduleswitches) then
         begin
@@ -202,9 +202,9 @@ implementation
       make_global := True;
 
     if make_global then
-      List.concat(Tai_symbol.Createname_global(labelname, AT_FUNCTION, 0))
+      List.concat(Tai_symbol.Createname_global(labelname, AT_FUNCTION, 0, procdef))
     else
-      List.concat(Tai_symbol.Createname(labelname, AT_FUNCTION, 0));
+      List.concat(Tai_symbol.Createname(labelname, AT_FUNCTION, 0, procdef));
 
     IsVirtual:=(po_virtualmethod in procdef.procoptions) and
         not is_objectpascal_helper(procdef.struct);
@@ -258,11 +258,11 @@ implementation
       list.concat(taicpu.op_reg(A_JR, NR_PIC_FUNC));
     end
     else if not (cs_create_pic in current_settings.moduleswitches) then
-      list.concat(taicpu.op_sym(A_J,current_asmdata.RefAsmSymbol(procdef.mangledname)))
+      list.concat(taicpu.op_sym(A_J,current_asmdata.RefAsmSymbol(procdef.mangledname,AT_FUNCTION)))
     else
       begin
         { GAS does not expand "J symbol" into PIC sequence }
-        reference_reset_symbol(href,current_asmdata.RefAsmSymbol(procdef.mangledname),0,sizeof(pint));
+        reference_reset_symbol(href,current_asmdata.RefAsmSymbol(procdef.mangledname,AT_FUNCTION),0,sizeof(pint));
         href.base:=NR_GP;
         href.refaddr:=addr_pic_call16;
         list.concat(taicpu.op_reg_ref(A_LW,NR_PIC_FUNC,href));

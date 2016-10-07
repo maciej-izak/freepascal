@@ -13,6 +13,12 @@
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
+
+    LOCALISATION NOTICE:
+       Most of the string constants in this unit should NOT be localised,
+       as they are specific constants used in the PDF Specification document.
+       If you do localise anything, make sure you know what you are doing.
+
  **********************************************************************}
 unit fpPDF;
 
@@ -33,10 +39,23 @@ uses
   fpparsettf;
 
 Const
-  clBlack = $000000;
-  clBlue  = $0000FF;
-  clGreen = $00FF00;
-  clRed   = $FF0000;
+  { Some popular predefined colors. Channel format is: RRGGBB }
+  clBlack   = $000000;
+  clWhite   = $FFFFFF;
+  clBlue    = $0000FF;
+  clGreen   = $008000;
+  clRed     = $FF0000;
+  clAqua    = $00FFFF;
+  clMagenta = $FF00FF;
+  clYellow  = $FFFF00;
+  clLtGray  = $C0C0C0;
+  clMaroon  = $800000;
+  clOlive   = $808000;
+  clDkGray  = $808080;
+  clTeal    = $008080;
+  clNavy    = $000080;
+  clPurple  = $800080;
+  clLime    = $00FF00;
 
 type
   TPDFPaperType = (ptCustom, ptA4, ptA5, ptLetter, ptLegal, ptExecutive, ptComm10, ptMonarch, ptDL, ptC5, ptB5);
@@ -45,7 +64,7 @@ type
   TPDFPageLayout = (lSingle, lTwo, lContinuous);
   TPDFUnitOfMeasure = (uomInches, uomMillimeters, uomCentimeters, uomPixels);
 
-  TPDFOption = (poOutLine, poCompressText, poCompressFonts, poCompressImages, poUseRawJPEG);
+  TPDFOption = (poOutLine, poCompressText, poCompressFonts, poCompressImages, poUseRawJPEG, poNoEmbeddedFonts);
   TPDFOptions = set of TPDFOption;
 
   EPDF = Class(Exception);
@@ -641,7 +660,6 @@ type
 
   TPDFFont = CLass(TCollectionItem)
   private
-    FColor: TARGBColor;
     FIsStdFont: boolean;
     FName: String;
     FFontFilename: String;
@@ -657,7 +675,6 @@ type
     procedure   AddTextToMappingList(const AText: UnicodeString);
     Property    FontFile: string read FFontFilename write SetFontFilename;
     Property    Name: String Read FName Write FName;
-    Property    Color: TARGBColor Read FColor Write FColor;
     property    TextMapping: TTextMappingList read FTextMappingList;
     property    IsStdFont: boolean read FIsStdFont write FIsStdFont;
   end;
@@ -908,8 +925,8 @@ type
     Function CreateXRef : TPDFXRef;
     Function CreateArray : TPDFArray;
     Function CreateImage(const ALeft, ABottom, AWidth, AHeight: TPDFFloat; ANumber: integer) : TPDFImage;
-    Function AddFont(AName : String; AColor : TARGBColor = clBlack) : Integer; overload;
-    Function AddFont(AFontFile: String; AName : String; AColor : TARGBColor = clBlack) : Integer; overload;
+    Function AddFont(AName : String) : Integer; overload;
+    Function AddFont(AFontFile: String; AName : String) : Integer; overload;
     Function AddLineStyleDef(ALineWidth : TPDFFloat; AColor : TARGBColor = clBlack; APenStyle : TPDFPenStyle = ppsSolid) : Integer;
     Property Options : TPDFOptions Read FOptions Write FOPtions;
     property PageLayout: TPDFPageLayout read FPageLayout write FPageLayout default lSingle;
@@ -987,14 +1004,14 @@ function PDFCoord(x, y: TPDFFloat): TPDFCoord;
 implementation
 
 
-Resourcestring
+resourcestring
   rsErrReportFontFileMissing = 'Font File "%s" does not exist.';
-  SErrDictElementNotFound = 'Error: Dictionary element "%s" not found.';
-  SerrInvalidSectionPage = 'Error: Invalid section page index.';
-  SErrNoGlobalDict = 'Error: no global XRef named "%s".';
-  SErrInvalidPageIndex = 'Invalid page index: %d';
-  SErrInvalidAnnotIndex = 'Invalid annot index: %d';
-  SErrNoFontIndex = 'No FontIndex was set - please use SetFont() first.';
+  rsErrDictElementNotFound = 'Error: Dictionary element "%s" not found.';
+  rsErrInvalidSectionPage = 'Error: Invalid section page index.';
+  rsErrNoGlobalDict = 'Error: no global XRef named "%s".';
+  rsErrInvalidPageIndex = 'Invalid page index: %d';
+  rsErrInvalidAnnotIndex = 'Invalid annot index: %d';
+  rsErrNoFontIndex = 'No FontIndex was set - please use SetFont() first.';
 
 type
   // to get access to protected methods
@@ -1564,7 +1581,7 @@ begin
   if Assigned(Flist) then
     Result:=TPDFPage(FList[Aindex])
   else
-    Raise EListError.CreateFmt(SErrInvalidPageIndex,[AIndex]);
+    Raise EListError.CreateFmt(rsErrInvalidPageIndex,[AIndex]);
 end;
 
 function TPDFPages.GetPageCount: integer;
@@ -1625,7 +1642,7 @@ begin
   if Assigned(FList) then
     Result := TPDFAnnot(FList[AIndex])
   else
-    raise EListError.CreateFmt(SErrInvalidAnnotIndex, [AIndex]);
+    raise EListError.CreateFmt(rsErrInvalidAnnotIndex, [AIndex]);
 end;
 
 destructor TPDFAnnotList.Destroy;
@@ -1847,7 +1864,7 @@ var
   p: TPDFCoord;
 begin
   if FFontIndex = -1 then
-    raise EPDF.Create(SErrNoFontIndex);
+    raise EPDF.Create(rsErrNoFontIndex);
   p := Matrix.Transform(X, Y);
   DoUnitConversion(p);
   if Document.Fonts[FFontIndex].IsStdFont then
@@ -2034,7 +2051,7 @@ begin
   If Assigned(FPages) then
     Result:=TPDFPage(FPages[Aindex])
   else
-    Raise EPDF.CreateFmt(SerrInvalidSectionPage,[AIndex]);
+    Raise EPDF.CreateFmt(rsErrInvalidSectionPage,[AIndex]);
 end;
 
 function TPDFSection.GetP: INteger;
@@ -2188,7 +2205,6 @@ begin
 end;
 
 procedure TPDFImageItem.CreateStreamedData(AUseCompression: Boolean);
-
 Var
   X,Y : Integer;
   C : TFPColor;
@@ -2221,7 +2237,7 @@ begin
 
         Str.WriteByte(C.Red shr 8);
         Str.WriteByte(C.Green shr 8);
-        Str.WriteByte(C.blue shr 8);
+        Str.WriteByte(C.Blue shr 8);
         end;
     if Str<>MS then
       Str.Free;
@@ -2237,10 +2253,8 @@ begin
 end;
 
 function TPDFImageItem.WriteImageStream(AStream: TStream): int64;
-
 var
   Img : TBytes;
-
 begin
   TPDFObject.WriteString(CRLF+'stream'+CRLF,AStream);
   Img:=StreamedData;
@@ -2259,7 +2273,12 @@ begin
     Result := False;
     exit;
   end;
-  Result := True;
+
+  { if dimensions don't match, we know we can exit early }
+  Result := (Image.Width = AImage.Width) and (Image.Height = AImage.Height);
+  if not Result then
+    Exit;
+
   for x := 0 to Image.Width-1 do
     for y := 0 to Image.Height-1 do
       if Image.Colors[x, y] <> AImage.Colors[x, y] then
@@ -2268,8 +2287,6 @@ begin
         Exit;
       end;
 end;
-
-
 
 { TPDFImages }
 
@@ -3148,7 +3165,7 @@ function TPDFDictionary.ElementByName(const AKey: String): TPDFDictionaryItem;
 begin
   Result:=FindElement(AKey);
   If (Result=Nil) then
-    Raise EPDF.CreateFmt(SErrDictElementNotFound,[AKey]);
+    Raise EPDF.CreateFmt(rsErrDictElementNotFound,[AKey]);
 end;
 
 function TPDFDictionary.ValueByName(const AKey: String): TPDFObject;
@@ -3194,7 +3211,7 @@ end;
 constructor TPDFInfos.Create;
 begin
   inherited Create;
-  FProducer := 'fpGUI Toolkit 0.8';
+  FProducer := 'fpGUI Toolkit 1.4';
 end;
 
 
@@ -3430,12 +3447,9 @@ end;
 
 function TPDFDocument.CreatePageEntry(Parent, PageNum: integer): integer;
 var
-
   PDict,ADict: TPDFDictionary;
   Arr : TPDFArray;
   PP : TPDFPage;
-  AnnotArr: TPDFArray;
-
 begin
   // add xref entry
   PP:=Pages[PageNum];
@@ -3579,9 +3593,16 @@ begin
   CreateTTFDescendantFont(EmbeddedFontNum);
   Arr := CreateArray;
   FDict.AddElement('DescendantFonts', Arr);
-  Arr.AddItem(TPDFReference.Create(self, GlobalXRefCount-4));
-  CreateToUnicode(EmbeddedFontNum);
-  FDict.AddReference('ToUnicode', GlobalXRefCount-1);
+  if (poNoEmbeddedFonts in Options) then
+  begin
+    Arr.AddItem(TPDFReference.Create(self, GlobalXRefCount-3));
+  end
+  else
+  begin
+    Arr.AddItem(TPDFReference.Create(self, GlobalXRefCount-4));
+    CreateToUnicode(EmbeddedFontNum);
+    FDict.AddReference('ToUnicode', GlobalXRefCount-1);
+  end;
   FontFiles.Add(Fonts[EmbeddedFontNum].FTrueTypeFile.Filename);
 end;
 
@@ -3601,7 +3622,10 @@ begin
 
   // add fontdescriptor reference to font dictionary
   CreateFontDescriptor(EmbeddedFontNum);
-  FDict.AddReference('FontDescriptor',GlobalXRefCount-2);
+  if (poNoEmbeddedFonts in Options) then
+    FDict.AddReference('FontDescriptor',GlobalXRefCount-1)
+  else
+    FDict.AddReference('FontDescriptor',GlobalXRefCount-2);
 
   Arr := CreateArray;
   FDict.AddElement('W',Arr);
@@ -3639,11 +3663,18 @@ begin
   Arr:=CreateArray;
   FDict.AddElement('FontBBox',Arr);
   Arr.AddIntArray(Fonts[EmbeddedFontNum].FTrueTypeFile.BBox);
-  FDict.AddInteger('ItalicAngle',Fonts[EmbeddedFontNum].FTrueTypeFile.ItalicAngle);
+  FDict.AddInteger('ItalicAngle', trunc(Fonts[EmbeddedFontNum].FTrueTypeFile.ItalicAngle));
   FDict.AddInteger('StemV', Fonts[EmbeddedFontNum].FTrueTypeFile.StemV);
   FDict.AddInteger('MissingWidth', Fonts[EmbeddedFontNum].FTrueTypeFile.MissingWidth);
-  CreateFontFileEntry(EmbeddedFontNum);
-  FDict.AddReference('FontFile2',GlobalXRefCount-1);
+  if (poNoEmbeddedFonts in Options) then
+  begin
+    // do nothing
+  end
+  else
+  begin
+    CreateFontFileEntry(EmbeddedFontNum);
+    FDict.AddReference('FontFile2',GlobalXRefCount-1);
+  end;
 end;
 
 procedure TPDFDocument.CreateToUnicode(const EmbeddedFontNum: integer);
@@ -3666,12 +3697,10 @@ begin
 end;
 
 procedure TPDFDocument.CreateImageEntry(ImgWidth, ImgHeight, NumImg: integer);
-
 var
   N: TPDFName;
   IDict,ADict: TPDFDictionary;
   i: integer;
-
 begin
   IDict:=CreateGlobalXRef.Dict;
   IDict.AddName('Type','XObject');
@@ -3789,7 +3818,7 @@ function TPDFDocument.GlobalXRefByName(const AName: String): TPDFXRef;
 begin
   Result:=FindGlobalXRef(AName);
   if Result=Nil then
-    Raise EPDF.CreateFmt(SErrNoGlobalDict,[AName]);
+    Raise EPDF.CreateFmt(rsErrNoGlobalDict,[AName]);
 end;
 
 function TPDFDocument.CreateLineStyles: TPDFLineStyleDefs;
@@ -4036,10 +4065,8 @@ begin
 end;
 
 procedure TPDFDocument.CreateImageEntries;
-
 Var
   I : Integer;
-
 begin
   for i:=0 to Images.Count-1 do
     CreateImageEntry(Images[i].Width,Images[i].Height,i);
@@ -4063,10 +4090,8 @@ begin
 end;
 
 procedure TPDFDocument.SaveToStream(const AStream: TStream);
-
 var
   i, XRefPos: integer;
-
 begin
   CreateSectionsOutLine;
   CreateFontEntries;
@@ -4188,7 +4213,7 @@ begin
   Result:=TPDFImage.Create(Self,ALeft,ABottom,AWidth,AHeight,ANumber);
 end;
 
-function TPDFDocument.AddFont(AName: String; AColor : TARGBColor = clBlack): Integer;
+function TPDFDocument.AddFont(AName: String): Integer;
 var
   F: TPDFFont;
   i: integer;
@@ -4204,12 +4229,11 @@ begin
   end;
   F := Fonts.AddFontDef;
   F.Name := AName;
-  F.Color := AColor;
   F.IsStdFont := True;
   Result := Fonts.Count-1;
 end;
 
-function TPDFDocument.AddFont(AFontFile: String; AName: String; AColor: TARGBColor): Integer;
+function TPDFDocument.AddFont(AFontFile: String; AName: String): Integer;
 var
   F: TPDFFont;
   i: integer;
@@ -4233,7 +4257,6 @@ begin
     lFName := IncludeTrailingPathDelimiter(FontDirectory)+AFontFile;
   F.FontFile := lFName;
   F.Name := AName;
-  F.Color := AColor;
   F.IsStdFont := False;
   Result := Fonts.Count-1;
 end;

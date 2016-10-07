@@ -320,12 +320,12 @@ interface
        systems_indirect_var_imports = systems_all_windows+[system_i386_nativent];
 
        { all systems that support indirect entry information }
-       systems_indirect_entry_information = systems_darwin+[system_i386_win32];
+       systems_indirect_entry_information = systems_darwin+[system_i386_win32,system_x86_64_win64];
 
        { all systems for which weak linking has been tested/is supported }
        systems_weak_linking = systems_darwin + systems_solaris + systems_linux + systems_android;
 
-       systems_internal_sysinit = [system_i386_linux,system_i386_win32,
+       systems_internal_sysinit = [system_i386_linux,system_i386_win32,system_x86_64_win64,
                                    system_powerpc64_linux]+systems_darwin;
 
        { all systems that use garbage collection for reference-counted types }
@@ -374,7 +374,7 @@ interface
          and can never work for libc-based targets or any other program
          linking to an external library)
        }
-       systems_support_checkpointer = [system_i386_linux,system_powerpc_linux]
+       systems_support_checkpointer = systems_linux
                              + [system_i386_win32]
                              + [system_i386_GO32V2]
                              + [system_i386_os2]

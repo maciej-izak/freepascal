@@ -97,7 +97,11 @@ implementation
     SysUtils,
     cfileutl,
     cpuinfo,cgutils,dbgbase,
-    owar,ogbase,ogcoff;
+    owar,ogbase
+{$ifdef SUPPORT_OMF}
+    ,ogomf
+{$endif SUPPORT_OMF}
+    ,ogcoff;
 
 
   const
@@ -130,20 +134,25 @@ implementation
       hp           : tmodule;
       linkcygwin : boolean;
     begin
-      hp:=tmodule(loaded_units.first);
-      while assigned(hp) do
-       begin
-         linkcygwin := hp.linkothersharedlibs.find('cygwin') or hp.linkotherstaticlibs.find('cygwin');
-         if linkcygwin then
-           break;
-         hp:=tmodule(hp.next);
-       end;
-      if cs_profile in current_settings.moduleswitches then
-        linker.sysinitunit:='sysinitgprof'
-      else if linkcygwin or (Linker.SharedLibFiles.Find('cygwin')<>nil) or (Linker.StaticLibFiles.Find('cygwin')<>nil) then
-        linker.sysinitunit:='sysinitcyg'
-      else
-        linker.sysinitunit:='sysinitpas';
+      if target_info.system=system_i386_win32 then
+        begin
+          hp:=tmodule(loaded_units.first);
+          while assigned(hp) do
+           begin
+             linkcygwin := hp.linkothersharedlibs.find('cygwin') or hp.linkotherstaticlibs.find('cygwin');
+             if linkcygwin then
+               break;
+             hp:=tmodule(hp.next);
+           end;
+          if cs_profile in current_settings.moduleswitches then
+            linker.sysinitunit:='sysinitgprof'
+          else if linkcygwin or (Linker.SharedLibFiles.Find('cygwin')<>nil) or (Linker.StaticLibFiles.Find('cygwin')<>nil) then
+            linker.sysinitunit:='sysinitcyg'
+          else
+            linker.sysinitunit:='sysinitpas';
+        end
+      else if target_info.system=system_x86_64_win64 then
+        linker.sysinitunit:='sysinit';
     end;
 
 
@@ -511,9 +520,9 @@ implementation
                     { place jump in al_procedures }
                     new_section(current_asmdata.asmlists[al_imports],sec_code,'',0);
                     if ImportSymbol.Name <> '' then
-                      current_asmdata.asmlists[al_imports].concat(Tai_symbol.Createname_global(ImportSymbol.MangledName,AT_FUNCTION,0))
+                      current_asmdata.asmlists[al_imports].concat(Tai_symbol.Createname_global(ImportSymbol.MangledName,AT_FUNCTION,0,voidcodepointertype))
                     else
-                      current_asmdata.asmlists[al_imports].concat(Tai_symbol.Createname_global(ExtractFileName(ImportLibrary.Name)+'_index_'+tostr(ImportSymbol.ordnr),AT_FUNCTION,0));
+                      current_asmdata.asmlists[al_imports].concat(Tai_symbol.Createname_global(ExtractFileName(ImportLibrary.Name)+'_index_'+tostr(ImportSymbol.ordnr),AT_FUNCTION,0,voidcodepointertype));
                     current_asmdata.asmlists[al_imports].concat(tai_function_name.create(''));
                   {$ifdef ARM}
                     reference_reset_symbol(href,l5,0,sizeof(pint));
@@ -545,7 +554,7 @@ implementation
                                 inc(suffix);
                                 importname:='__imp_'+ImportSymbol.MangledName+'_'+tostr(suffix);
                               end;
-                            current_asmdata.asmlists[al_imports].concat(tai_symbol.createname(importname,AT_FUNCTION,4));
+                            current_asmdata.asmlists[al_imports].concat(tai_symbol.createname(importname,AT_FUNCTION,4,voidcodepointertype));
                           end
                         else
                           begin
@@ -556,13 +565,13 @@ implementation
                                 inc(suffix);
                                 importname:='__imp_by_ordinal'+tostr(ImportSymbol.ordnr)+'_'+tostr(suffix);
                               end;
-                            current_asmdata.asmlists[al_imports].concat(tai_symbol.createname(importname,AT_FUNCTION,4));
+                            current_asmdata.asmlists[al_imports].concat(tai_symbol.createname(importname,AT_FUNCTION,4,voidcodepointertype));
                           end;
                       end;
                      current_asmdata.asmlists[al_imports].concat(Tai_label.Create(l4));
                   end
                 else
-                  current_asmdata.asmlists[al_imports].concat(Tai_symbol.Createname_global(ImportSymbol.MangledName,AT_DATA,0));
+                  current_asmdata.asmlists[al_imports].concat(Tai_symbol.Createname_global(ImportSymbol.MangledName,AT_DATA,0,voidpointertype));
                 current_asmdata.asmlists[al_imports].concat(Tai_const.Create_rva_sym(TAsmLabel(Importlabels[j])));
                 if target_info.system=system_x86_64_win64 then
                   current_asmdata.asmlists[al_imports].concat(Tai_const.Create_32bit(0));
@@ -784,7 +793,7 @@ implementation
          new_section(current_asmdata.asmlists[al_exports],sec_edata,'',0);
          { create label to reference from main so smartlink will include
            the .edata section }
-         current_asmdata.asmlists[al_exports].concat(Tai_symbol.Createname_global(make_mangledname('EDATA',current_module.localsymtable,''),AT_DATA,0));
+         current_asmdata.asmlists[al_exports].concat(Tai_symbol.Createname_global(make_mangledname('EDATA',current_module.localsymtable,''),AT_METADATA,0,voidpointertype));
          { export flags }
          current_asmdata.asmlists[al_exports].concat(Tai_const.Create_32bit(0));
          { date/time stamp }
@@ -874,14 +883,14 @@ implementation
               if assigned(hp.sym) and not (eo_no_sym_name in hp.options) then
                 case hp.sym.typ of
                   staticvarsym :
-                    asmsym:=current_asmdata.RefAsmSymbol(tstaticvarsym(hp.sym).mangledname);
+                    asmsym:=current_asmdata.RefAsmSymbol(tstaticvarsym(hp.sym).mangledname,AT_DATA);
                   procsym :
-                    asmsym:=current_asmdata.RefAsmSymbol(tprocdef(tprocsym(hp.sym).ProcdefList[0]).mangledname)
+                    asmsym:=current_asmdata.RefAsmSymbol(tprocdef(tprocsym(hp.sym).ProcdefList[0]).mangledname,AT_FUNCTION)
                   else
                     internalerror(200709272);
                 end
               else
-                asmsym:=current_asmdata.RefAsmSymbol(hp.name^);
+                asmsym:=current_asmdata.RefAsmSymbol(hp.name^,AT_DATA);
               address_table.concat(Tai_const.Create_rva_sym(asmsym));
               inc(current_index);
               hp:=texported_item(hp.next);
@@ -1079,8 +1088,7 @@ implementation
 
     procedure TInternalLinkerWin.InitSysInitUnitName;
       begin
-        if target_info.system=system_i386_win32 then
-          GlobalInitSysInitUnitName(self);
+        GlobalInitSysInitUnitName(self)
       end;
 
     procedure TInternalLinkerWin.ConcatEntryName;
@@ -1763,8 +1771,7 @@ implementation
 
     procedure TExternalLinkerWin.InitSysInitUnitName;
       begin
-        if target_info.system=system_i386_win32 then
-          GlobalInitSysInitUnitName(self);
+        GlobalInitSysInitUnitName(self);
       end;
 
 

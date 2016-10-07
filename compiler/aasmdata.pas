@@ -159,6 +159,8 @@ interface
         FAsmCFI        : TAsmCFI;
         FConstPools    : array[TConstPoolType] of THashSet;
         function GetConstPools(APoolType: TConstPoolType): THashSet;
+      protected
+        function  DefineAsmSymbolByClassBase(symclass: TAsmSymbolClass; const s : TSymStr;_bind:TAsmSymBind;_typ:Tasmsymtype; def: tdef; out wasdefined: boolean) : TAsmSymbol;
       public
         name          : pshortstring;       { owned by tmodule }
         NextVTEntryNr : longint;
@@ -170,10 +172,10 @@ interface
         constructor create(n: pshortstring);
         destructor  destroy;override;
         { asmsymbol }
-        function  DefineAsmSymbolByClass(symclass: TAsmSymbolClass; const s : TSymStr;_bind:TAsmSymBind;_typ:Tasmsymtype) : TAsmSymbol;
-        function  DefineAsmSymbol(const s : TSymStr;_bind:TAsmSymBind;_typ:Tasmsymtype) : TAsmSymbol;
-        function  WeakRefAsmSymbol(const s : TSymStr;_typ:Tasmsymtype=AT_NONE) : TAsmSymbol;
-        function  RefAsmSymbol(const s : TSymStr;_typ:Tasmsymtype=AT_NONE;indirect:boolean=false) : TAsmSymbol;
+        function  DefineAsmSymbolByClass(symclass: TAsmSymbolClass; const s : TSymStr;_bind:TAsmSymBind;_typ:Tasmsymtype; def: tdef) : TAsmSymbol; virtual;
+        function  DefineAsmSymbol(const s : TSymStr;_bind:TAsmSymBind;_typ:Tasmsymtype; def: tdef) : TAsmSymbol;
+        function  WeakRefAsmSymbol(const s : TSymStr;_typ:Tasmsymtype) : TAsmSymbol;
+        function  RefAsmSymbol(const s : TSymStr;_typ:Tasmsymtype;indirect:boolean=false) : TAsmSymbol;
         function  GetAsmSymbol(const s : TSymStr) : TAsmSymbol;
         { create new assembler label }
         procedure getlabel(out l : TAsmLabel;alt:TAsmLabeltype);
@@ -205,11 +207,12 @@ interface
         sym: tsym;
         offset: aint;
         datalabel: TAsmSymbol;
-        constructor Create(asym: tsym; aoffset: aint; alabel: TAsmSymbol);
+        datadef: TDef;
+        constructor Create(asym: tsym; aoffset: aint; alabel: TAsmSymbol; alabeldef: tdef);
       end;
 
-    const
-      casmdata: TAsmDataClass = TAsmData;
+    var
+      casmdata: TAsmDataClass;
 
 
     var
@@ -285,12 +288,13 @@ implementation
 *****************************************************************************}
 
 
-    constructor TTCInitItem.Create(asym: tsym; aoffset: aint; alabel: TAsmSymbol);
+    constructor TTCInitItem.Create(asym: tsym; aoffset: aint; alabel: TAsmSymbol; alabeldef: tdef);
       begin
         inherited Create;
         sym:=asym;
         offset:=aoffset;
         datalabel:=alabel;
+        datadef:=alabeldef;
       end;
 
 {*****************************************************************************
@@ -343,6 +347,59 @@ implementation
           end;
         Result := FConstPools[APoolType];
       end;
+
+
+    function TAsmData.DefineAsmSymbolByClassBase(symclass: TAsmSymbolClass; const s: TSymStr; _bind: TAsmSymBind; _typ: Tasmsymtype; def: tdef; out wasdefined: boolean): TAsmSymbol;
+      var
+        hp : TAsmSymbol;
+        namestr : TSymStr;
+      begin
+        { this difference is only necessary to determine whether we always need
+          indirect references or not }
+        if _typ=AT_DATA_FORCEINDIRECT then
+          _typ:=AT_DATA;
+        namestr:=s;
+        if _bind in asmsymbindindirect then
+          namestr:=namestr+suffix_indirect;
+        hp:=TAsmSymbol(FAsmSymbolDict.Find(namestr));
+        if assigned(hp) then
+         begin
+           { Redefine is allowed, but the types must be the same. The redefine
+             is needed for Darwin where the labels are first allocated }
+           wasdefined:=not(hp.bind in [AB_EXTERNAL,AB_WEAK_EXTERNAL]);
+           if wasdefined then
+             begin
+               if (hp.bind<>_bind) and
+                  (hp.typ<>_typ) then
+                 internalerror(200603261);
+             end;
+           hp.typ:=_typ;
+           { Changing bind from AB_GLOBAL to AB_LOCAL is wrong
+             if bind is already AB_GLOBAL or AB_EXTERNAL,
+             GOT might have been used, so change might be harmful. }
+           if (_bind<>hp.bind) and (hp.getrefs>0) then
+             begin
+{$ifdef extdebug}
+               { the changes that matter must become internalerrors, the rest
+                 should be ignored; a used cannot change anything about this,
+                 so printing a warning/hint is not useful }
+               if (_bind=AB_LOCAL) then
+                 Message3(asmw_w_changing_bind_type,namestr,asmsymbindname[hp.bind],asmsymbindname[_bind])
+               else
+                 Message3(asmw_h_changing_bind_type,namestr,asmsymbindname[hp.bind],asmsymbindname[_bind]);
+{$endif extdebug}
+             end;
+           hp.bind:=_bind;
+         end
+        else
+         begin
+           wasdefined:=false;
+           { Not found, insert it. }
+           hp:=symclass.create(AsmSymbolDict,namestr,_bind,_typ);
+         end;
+        result:=hp;
+      end;
+
 
     constructor TAsmData.create(n:pshortstring);
       var
@@ -407,56 +464,17 @@ implementation
            FConstPools[hp].Free;
       end;
 
-
-    function TAsmData.DefineAsmSymbolByClass(symclass: TAsmSymbolClass; const s : TSymStr;_bind:TAsmSymBind;_typ:Tasmsymtype) : TAsmSymbol;
+    function TAsmData.DefineAsmSymbolByClass(symclass: TAsmSymbolClass; const s: TSymStr; _bind: TAsmSymBind; _typ: Tasmsymtype; def: tdef): TAsmSymbol;
       var
-        hp : TAsmSymbol;
-        namestr : TSymStr;
+        wasdefined: boolean;
       begin
-        namestr:=s;
-        if _bind in asmsymbindindirect then
-          namestr:=namestr+suffix_indirect;
-        hp:=TAsmSymbol(FAsmSymbolDict.Find(namestr));
-        if assigned(hp) then
-         begin
-           { Redefine is allowed, but the types must be the same. The redefine
-             is needed for Darwin where the labels are first allocated }
-           if not(hp.bind in [AB_EXTERNAL,AB_WEAK_EXTERNAL]) then
-             begin
-               if (hp.bind<>_bind) and
-                  (hp.typ<>_typ) then
-                 internalerror(200603261);
-             end;
-           hp.typ:=_typ;
-           { Changing bind from AB_GLOBAL to AB_LOCAL is wrong
-             if bind is already AB_GLOBAL or AB_EXTERNAL,
-             GOT might have been used, so change might be harmful. }
-           if (_bind<>hp.bind) and (hp.getrefs>0) then
-             begin
-{$ifdef extdebug}
-               { the changes that matter must become internalerrors, the rest
-                 should be ignored; a used cannot change anything about this,
-                 so printing a warning/hint is not useful }
-               if (_bind=AB_LOCAL) then
-                 Message3(asmw_w_changing_bind_type,namestr,asmsymbindname[hp.bind],asmsymbindname[_bind])
-               else
-                 Message3(asmw_h_changing_bind_type,namestr,asmsymbindname[hp.bind],asmsymbindname[_bind]);
-{$endif extdebug}
-             end;
-           hp.bind:=_bind;
-         end
-        else
-         begin
-           { Not found, insert it. }
-           hp:=symclass.create(AsmSymbolDict,namestr,_bind,_typ);
-         end;
-        result:=hp;
+        result:=DefineAsmSymbolByClassBase(symclass,s,_bind,_typ,def,wasdefined);
       end;
 
 
-    function TAsmData.DefineAsmSymbol(const s : TSymStr;_bind:TAsmSymBind;_typ:Tasmsymtype) : TAsmSymbol;
+    function TAsmData.DefineAsmSymbol(const s: TSymStr; _bind: TAsmSymBind; _typ: Tasmsymtype; def: tdef): TAsmSymbol;
       begin
-        result:=DefineAsmSymbolByClass(TAsmSymbol,s,_bind,_typ);
+        result:=DefineAsmSymbolByClass(TAsmSymbol,s,_bind,_typ,def);
       end;
 
 
@@ -484,7 +502,7 @@ implementation
       end;
 
 
-    function TAsmData.WeakRefAsmSymbol(const s : TSymStr;_typ:Tasmsymtype=AT_NONE) : TAsmSymbol;
+    function TAsmData.WeakRefAsmSymbol(const s : TSymStr;_typ:Tasmsymtype) : TAsmSymbol;
       begin
         result:=TAsmSymbol(FAsmSymbolDict.Find(s));
         if not assigned(result) then

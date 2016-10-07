@@ -160,12 +160,18 @@ interface
 {$if defined(cpu64bitaddr)}
        aitconst_ptr = aitconst_64bit;
        aitconst_ptr_unaligned = aitconst_64bit_unaligned;
+       aitconst_sizeint = aitconst_64bit;
+       aitconst_sizeint_unaligned = aitconst_64bit_unaligned;
 {$elseif defined(cpu32bitaddr)}
        aitconst_ptr = aitconst_32bit;
        aitconst_ptr_unaligned = aitconst_32bit_unaligned;
+       aitconst_sizeint = aitconst_32bit;
+       aitconst_sizeint_unaligned = aitconst_32bit_unaligned;
 {$elseif defined(cpu16bitaddr)}
        aitconst_ptr = aitconst_16bit;
        aitconst_ptr_unaligned = aitconst_16bit_unaligned;
+       aitconst_sizeint = aitconst_16bit;
+       aitconst_sizeint_unaligned = aitconst_16bit_unaligned;
 {$endif}
 
 {$if defined(cpu64bitalu)}
@@ -497,9 +503,9 @@ interface
           has_value : boolean;
           constructor Create(_sym:tasmsymbol;siz:longint);
           constructor Create_Global(_sym:tasmsymbol;siz:longint);
-          constructor Createname(const _name : string;_symtyp:Tasmsymtype;siz:longint);
-          constructor Createname_global(const _name : string;_symtyp:Tasmsymtype;siz:longint);
-          constructor Createname_global_value(const _name : string;_symtyp:Tasmsymtype;siz:longint;val:ptruint);
+          constructor Createname(const _name : string;_symtyp:Tasmsymtype;siz:longint;def:tdef);
+          constructor Createname_global(const _name : string;_symtyp:Tasmsymtype;siz:longint;def:tdef);
+          constructor Createname_global_value(const _name : string;_symtyp:Tasmsymtype;siz:longint;val:ptruint;def:tdef);
           constructor ppuload(t:taitype;ppufile:tcompilerppufile);override;
           procedure ppuwrite(ppufile:tcompilerppufile);override;
           procedure derefimpl;override;
@@ -574,8 +580,8 @@ interface
           is_global : boolean;
           sym       : tasmsymbol;
           size      : asizeint;
-          constructor Create(const _name : string;_size : asizeint);
-          constructor Create_global(const _name : string;_size : asizeint);
+          constructor Create(const _name : string;_size : asizeint; def: tdef);
+          constructor Create_global(const _name : string;_size : asizeint; def: tdef);
           constructor ppuload(t:taitype;ppufile:tcompilerppufile);override;
           procedure ppuwrite(ppufile:tcompilerppufile);override;
           procedure derefimpl;override;
@@ -611,6 +617,8 @@ interface
           constructor Create_aint(_value : aint);
           constructor Create_pint(_value : pint);
           constructor Create_pint_unaligned(_value : pint);
+          constructor Create_sizeint(_value : asizeint);
+          constructor Create_sizeint_unaligned(_value : asizeint);
           constructor Create_sym(_sym:tasmsymbol);
 {$ifdef i8086}
           constructor Create_sym_near(_sym:tasmsymbol);
@@ -821,8 +829,6 @@ interface
         tai_align_class = class of tai_align_abstract;
 
         tai_varloc = class(tai)
-           oldlocation,
-           oldlocationhi,
            newlocation,
            newlocationhi : tregister;
            varsym : tsym;
@@ -913,9 +919,6 @@ interface
 
     procedure maybe_new_object_file(list:TAsmList);
     procedure new_section(list:TAsmList;Asectype:TAsmSectiontype;const Aname:string;Aalign:byte;Asecorder:TasmSectionorder=secorder_default);
-    procedure section_symbol_start(list:TAsmList;const Aname:string;Asymtyp:Tasmsymtype;
-                                   Aglobal:boolean;Asectype:TAsmSectiontype;Aalign:byte);
-    procedure section_symbol_end(list:TAsmList;const Aname:string);
 
     function ppuloadai(ppufile:tcompilerppufile):tai;
     procedure ppuwriteai(ppufile:tcompilerppufile;n:tai);
@@ -947,25 +950,6 @@ implementation
       begin
         list.concat(tai_section.create(Asectype,Aname,Aalign,Asecorder));
         list.concat(cai_align.create(Aalign));
-      end;
-
-
-    procedure section_symbol_start(list:TAsmList;const Aname:string;Asymtyp:Tasmsymtype;
-                                   Aglobal:boolean;Asectype:TAsmSectiontype;Aalign:byte);
-      begin
-        maybe_new_object_file(list);
-        new_section(list,Asectype,Aname,Aalign);
-        if Aglobal or
-           create_smartlink then
-          list.concat(tai_symbol.createname_global(Aname,Asymtyp,0))
-        else
-          list.concat(tai_symbol.createname(Aname,Asymtyp,0));
-      end;
-
-
-    procedure section_symbol_end(list:TAsmList;const Aname:string);
-      begin
-        list.concat(tai_symbol_end.createname(Aname));
       end;
 
 
@@ -1051,7 +1035,6 @@ implementation
         newlocation:=loc;
         newlocationhi:=NR_NO;
         varsym:=sym;
-        oldlocationhi:=NR_NO;
       end;
 
 
@@ -1218,12 +1201,12 @@ implementation
                              TAI_DATABLOCK
  ****************************************************************************}
 
-    constructor tai_datablock.Create(const _name : string;_size : asizeint);
+    constructor tai_datablock.Create(const _name : string;_size : asizeint; def: tdef);
 
       begin
          inherited Create;
          typ:=ait_datablock;
-         sym:=current_asmdata.DefineAsmSymbol(_name,AB_LOCAL,AT_DATA);
+         sym:=current_asmdata.DefineAsmSymbol(_name,AB_LOCAL,AT_DATA,def);
          { keep things aligned }
          if _size<=0 then
            _size:=sizeof(aint);
@@ -1232,11 +1215,11 @@ implementation
       end;
 
 
-    constructor tai_datablock.Create_global(const _name : string;_size : asizeint);
+    constructor tai_datablock.Create_global(const _name : string;_size : asizeint; def: tdef);
       begin
          inherited Create;
          typ:=ait_datablock;
-         sym:=current_asmdata.DefineAsmSymbol(_name,AB_GLOBAL,AT_DATA);
+         sym:=current_asmdata.DefineAsmSymbol(_name,AB_GLOBAL,AT_DATA,def);
          { keep things aligned }
          if _size<=0 then
            _size:=sizeof(aint);
@@ -1300,29 +1283,29 @@ implementation
       end;
 
 
-    constructor tai_symbol.Createname(const _name : string;_symtyp:Tasmsymtype;siz:longint);
+    constructor tai_symbol.Createname(const _name : string;_symtyp:Tasmsymtype;siz:longint;def:tdef);
       begin
          inherited Create;
          typ:=ait_symbol;
-         sym:=current_asmdata.DefineAsmSymbol(_name,AB_LOCAL,_symtyp);
+         sym:=current_asmdata.DefineAsmSymbol(_name,AB_LOCAL,_symtyp,def);
          size:=siz;
          is_global:=false;
       end;
 
 
-    constructor tai_symbol.Createname_global(const _name : string;_symtyp:Tasmsymtype;siz:longint);
+    constructor tai_symbol.Createname_global(const _name : string;_symtyp:Tasmsymtype;siz:longint;def:tdef);
       begin
          inherited Create;
          typ:=ait_symbol;
-         sym:=current_asmdata.DefineAsmSymbol(_name,AB_GLOBAL,_symtyp);
+         sym:=current_asmdata.DefineAsmSymbol(_name,AB_GLOBAL,_symtyp,def);
          size:=siz;
          is_global:=true;
       end;
 
 
-    constructor tai_symbol.createname_global_value(const _name: string;_symtyp: tasmsymtype; siz: longint; val: ptruint);
+    constructor tai_symbol.createname_global_value(const _name: string;_symtyp: tasmsymtype; siz: longint; val: ptruint;def:tdef);
       begin
-        Createname_global(_name,_symtyp,siz);
+        Createname_global(_name,_symtyp,siz,def);
         value:=val;
         has_value:=true;
       end;
@@ -1596,6 +1579,28 @@ implementation
          value:=_value;
          sym:=nil;
          endsym:=nil;
+      end;
+
+
+    constructor tai_const.Create_sizeint(_value : asizeint);
+      begin
+        inherited Create;
+        typ:=ait_const;
+        consttype:=aitconst_sizeint;
+        value:=_value;
+        sym:=nil;
+        endsym:=nil;
+      end;
+
+
+    constructor tai_const.Create_sizeint_unaligned(_value : asizeint);
+      begin
+        inherited Create;
+        typ:=ait_const;
+        consttype:=aitconst_sizeint_unaligned;
+        value:=_value;
+        sym:=nil;
+        endsym:=nil;
       end;
 
 

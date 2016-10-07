@@ -71,7 +71,7 @@ interface
       tbitpackedval = record
         curval, nextval: aword;
         curbitoffset: smallint;
-        loadbitsize,packedbitsize: byte;
+        packedbitsize: byte;
       end;
 
       tasmlisttypedconstbuilder = class(ttypedconstbuilder)
@@ -320,7 +320,6 @@ function get_next_varsym(def: tabstractrecorddef; const SymList:TFPHashObjectLis
         bp.nextval:=0;
         bp.curbitoffset:=0;
         bp.packedbitsize:=packedbitsize;
-        bp.loadbitsize:=packedbitsloadsize(bp.packedbitsize)*8;
       end;
 
 
@@ -366,8 +365,8 @@ function get_next_varsym(def: tabstractrecorddef; const SymList:TFPHashObjectLis
       begin
         if (bp.curbitoffset < AIntBits) then
           begin
-            { forced flush -> write multiple of loadsize }
-            bitstowrite:=align(bp.curbitoffset,bp.loadbitsize);
+            { forced flush -> write multiple of a byte }
+            bitstowrite:=align(bp.curbitoffset,8);
             bp.curbitoffset:=0;
           end
         else
@@ -375,29 +374,24 @@ function get_next_varsym(def: tabstractrecorddef; const SymList:TFPHashObjectLis
             bitstowrite:=AIntBits;
             dec(bp.curbitoffset,AIntBits);
           end;
-        while (bitstowrite>=bp.loadbitsize) do
+        while (bitstowrite>=8) do
           begin
             if (target_info.endian=endian_little) then
               begin
-                { write lowest "loadbitsize" bits }
-                writeval:=bp.curval and (aint(-1) shr ((sizeof(aint)*8)-bp.loadbitsize));
-                bp.curval:=bp.curval shr bp.loadbitsize;
+                { write lowest byte }
+                writeval:=byte(bp.curval);
+                bp.curval:=bp.curval shr 8;
               end
             else
               begin
-                { write highest "loadbitsize" bits }
-                writeval:=bp.curval shr (AIntBits-bp.loadbitsize);
-                bp.curval:=bp.curval shl bp.loadbitsize;
+                { write highest byte }
+                writeval:=bp.curval shr (AIntBits-8);
+{$push}{$r-,q-}
+                bp.curval:=bp.curval shl 8;
+{$pop}
               end;
-            case bp.loadbitsize of
-              8: ftcb.emit_tai(tai_const.create_8bit(writeval),u8inttype);
-              16: ftcb.emit_tai(tai_const.create_16bit(writeval),u16inttype);
-              32: ftcb.emit_tai(tai_const.create_32bit(writeval),u32inttype);
-              64: ftcb.emit_tai(tai_const.create_64bit(writeval),u64inttype);
-              else
-                internalerror(2013111101);
-            end;
-            dec(bitstowrite,bp.loadbitsize);
+            ftcb.emit_tai(tai_const.create_8bit(writeval),u8inttype);
+            dec(bitstowrite,8);
           end;
         bp.curval:=bp.nextval;
         bp.nextval:=0;
@@ -414,6 +408,7 @@ function get_next_varsym(def: tabstractrecorddef; const SymList:TFPHashObjectLis
       begin
         if not(def.elementdef.typ in [orddef,enumdef]) then
           internalerror(2007022010);
+        ftcb.maybe_begin_aggregate(def);
         { begin of the array }
         consume(_LKLAMMER);
         initbitpackval(bp,def.elepackedbitsize);
@@ -434,6 +429,7 @@ function get_next_varsym(def: tabstractrecorddef; const SymList:TFPHashObjectLis
         { flush final incomplete value if necessary }
         if (bp.curbitoffset <> 0) then
           flush_packed_value(bp);
+        ftcb.maybe_end_aggregate(def);
         consume(_RKLAMMER);
       end;
 
@@ -443,7 +439,7 @@ function get_next_varsym(def: tabstractrecorddef; const SymList:TFPHashObjectLis
       begin
         inherited;
         fsym:=sym;
-        ftcb:=ctai_typedconstbuilder.create([tcalo_make_dead_strippable]);
+        ftcb:=ctai_typedconstbuilder.create([tcalo_make_dead_strippable,tcalo_apply_constalign]);
         fdatalist:=tasmlist.create;
         curoffset:=0;
       end;
@@ -515,7 +511,7 @@ function get_next_varsym(def: tabstractrecorddef; const SymList:TFPHashObjectLis
               begin
                 current_asmdata.ResStrInits.Concat(
                   TTCInitItem.Create(tcsym,curoffset,
-                  current_asmdata.RefAsmSymbol(make_mangledname('RESSTR',hsym.owner,hsym.name),AT_DATA))
+                  current_asmdata.RefAsmSymbol(make_mangledname('RESSTR',hsym.owner,hsym.name),AT_DATA),charpointertype)
                 );
                 Include(tcsym.varoptions,vo_force_finalize);
               end;
@@ -587,7 +583,7 @@ function get_next_varsym(def: tabstractrecorddef; const SymList:TFPHashObjectLis
                            if ll.ofs<>0 then
                              internalerror(2012051704);
                            current_asmdata.WideInits.Concat(
-                              TTCInitItem.Create(tcsym,curoffset,ll.lab)
+                              TTCInitItem.Create(tcsym,curoffset,ll.lab,widecharpointertype)
                            );
                            ll.lab:=nil;
                            ll.ofs:=0;
@@ -820,7 +816,7 @@ function get_next_varsym(def: tabstractrecorddef; const SymList:TFPHashObjectLis
             begin
               { create a tcb for the string data (it's placed in a separate
                 asmlist) }
-              ftcb.start_internal_data_builder(fdatalist,sec_rodata,'',datatcb,ll);
+              ftcb.start_internal_data_builder(fdatalist,sec_rodata_norel,'',datatcb,ll);
               if node.nodetype=stringconstn then
                 varalign:=size_2_align(tstringconstnode(node).len)
               else
@@ -877,7 +873,7 @@ function get_next_varsym(def: tabstractrecorddef; const SymList:TFPHashObjectLis
                      { create a tcb for the string data (it's placed in a separate
                        asmlist) }
                      ftcb.start_internal_data_builder(fdatalist,sec_rodata,'',datatcb,ll);
-                     datatcb:=ctai_typedconstbuilder.create([tcalo_is_lab,tcalo_make_dead_strippable]);
+                     datatcb:=ctai_typedconstbuilder.create([tcalo_is_lab,tcalo_make_dead_strippable,tcalo_apply_constalign]);
                      pw:=pcompilerwidestring(tstringconstnode(node).value_str);
                      { include terminating #0 }
                      datadef:=carraydef.getreusable(cwidechartype,tstringconstnode(node).len+1);
@@ -996,6 +992,7 @@ function get_next_varsym(def: tabstractrecorddef; const SymList:TFPHashObjectLis
          Psetbytes = ^setbytes;
       var
         i: longint;
+        setval: cardinal;
       begin
         if node.nodetype=setconstn then
           begin
@@ -1011,17 +1008,55 @@ function get_next_varsym(def: tabstractrecorddef; const SymList:TFPHashObjectLis
                 ftcb.maybe_begin_aggregate(def);
                 tsetconstnode(node).adjustforsetbase;
                 { this writing is endian-dependant   }
-                if source_info.endian = target_info.endian then
+                if not is_smallset(def) then
                   begin
-                    for i:=0 to node.resultdef.size-1 do
-                      ftcb.emit_tai(tai_const.create_8bit(Psetbytes(tsetconstnode(node).value_set)^[i]),u8inttype);
+                    if source_info.endian=target_info.endian then
+                      begin
+                        for i:=0 to node.resultdef.size-1 do
+                          ftcb.emit_tai(tai_const.create_8bit(Psetbytes(tsetconstnode(node).value_set)^[i]),u8inttype);
+                      end
+                    else
+                      begin
+                        for i:=0 to node.resultdef.size-1 do
+                          ftcb.emit_tai(tai_const.create_8bit(reverse_byte(Psetbytes(tsetconstnode(node).value_set)^[i])),u8inttype);
+                      end;
                   end
                 else
                   begin
-                    for i:=0 to node.resultdef.size-1 do
-                      ftcb.emit_tai(tai_const.create_8bit(reverse_byte(Psetbytes(tsetconstnode(node).value_set)^[i])),u8inttype);
+                    { emit the set as a single constant (would be nicer if we
+                      could automatically merge the bytes inside the
+                      typed const builder, but it's not easy :/ ) }
+                    setval:=0;
+                    if source_info.endian=target_info.endian then
+                      begin
+                        for i:=0 to node.resultdef.size-1 do
+                          setval:=setval or (Psetbytes(tsetconstnode(node).value_set)^[i] shl (i*8));
+                      end
+                    else
+                      begin
+                        for i:=0 to node.resultdef.size-1 do
+                          setval:=setval or (reverse_byte(Psetbytes(tsetconstnode(node).value_set)^[i]) shl (i*8));
+                      end;
+                    case def.size of
+                      1:
+                        ftcb.emit_tai(tai_const.create_8bit(setval),def);
+                      2:
+                        begin
+                          if target_info.endian=endian_big then
+                            setval:=swapendian(word(setval));
+                          ftcb.emit_tai(tai_const.create_16bit(setval),def);
+                        end;
+                      4:
+                        begin
+                          if target_info.endian=endian_big then
+                            setval:=swapendian(cardinal(setval));
+                          ftcb.emit_tai(tai_const.create_32bit(setval),def);
+                        end;
+                      else
+                        internalerror(2015112207);
+                    end;
                   end;
-                  ftcb.maybe_end_aggregate(def);
+                ftcb.maybe_end_aggregate(def);
               end;
           end
         else
@@ -1093,10 +1128,10 @@ function get_next_varsym(def: tabstractrecorddef; const SymList:TFPHashObjectLis
                (cs_debuginfo in current_settings.moduleswitches) and
                not assigned(current_asmdata.GetAsmSymbol(fsym.name)) then
               addstabx:=true;
-            asmsym:=current_asmdata.DefineAsmSymbol(fsym.mangledname,AB_GLOBAL,AT_DATA)
+            asmsym:=current_asmdata.DefineAsmSymbol(fsym.mangledname,AB_GLOBAL,AT_DATA,tcsym.vardef)
           end
         else
-          asmsym:=current_asmdata.DefineAsmSymbol(fsym.mangledname,AB_LOCAL,AT_DATA);
+          asmsym:=current_asmdata.DefineAsmSymbol(fsym.mangledname,AB_LOCAL,AT_DATA,tcsym.vardef);
         if vo_has_section in fsym.varoptions then
           begin
             sec:=sec_user;
@@ -1118,7 +1153,7 @@ function get_next_varsym(def: tabstractrecorddef; const SymList:TFPHashObjectLis
           begin
             { see same code in ncgutil.insertbssdata }
             reslist.insert(tai_directive.Create(asd_reference,fsym.name));
-            reslist.insert(tai_symbol.Create(current_asmdata.DefineAsmSymbol(fsym.name,AB_LOCAL,AT_DATA),0));
+            reslist.insert(tai_symbol.Create(current_asmdata.DefineAsmSymbol(fsym.name,AB_LOCAL,AT_DATA,tcsym.vardef),0));
           end;
         datalist:=fdatalist;
       end;
@@ -1305,7 +1340,8 @@ function get_next_varsym(def: tabstractrecorddef; const SymList:TFPHashObjectLis
     procedure tasmlisttypedconstbuilder.parse_procvardef(def:tprocvardef);
       var
         tmpn,n : tnode;
-        pd   : tprocdef;
+        pd : tprocdef;
+        procaddrdef: tprocvardef;
         havepd,
         haveblock: boolean;
       begin
@@ -1346,8 +1382,13 @@ function get_next_varsym(def: tabstractrecorddef; const SymList:TFPHashObjectLis
           end;
         { in case of a nested procdef initialised with a global routine }
         ftcb.maybe_begin_aggregate(def);
-        { to handle type conversions }
-        ftcb.queue_init(def);
+        { get the address of the procedure, except if it's a C-block (then we
+          we will end up with a record that represents the C-block) }
+        if not is_block(def) then
+          procaddrdef:=cprocvardef.getreusableprocaddr(def)
+        else
+          procaddrdef:=def;
+        ftcb.queue_init(procaddrdef);
         { remove typeconvs, that will normally insert a lea
           instruction which is not necessary for us }
         while n.nodetype=typeconvn do
@@ -1401,7 +1442,7 @@ function get_next_varsym(def: tabstractrecorddef; const SymList:TFPHashObjectLis
           end
         else if n.nodetype=pointerconstn then
           begin
-            ftcb.queue_emit_ordconst(tpointerconstnode(n).value,def);
+            ftcb.queue_emit_ordconst(tpointerconstnode(n).value,procaddrdef);
             if not def.is_addressonly then
               ftcb.emit_tai(Tai_const.Create_sym(nil),voidpointertype);
           end
@@ -1473,13 +1514,8 @@ function get_next_varsym(def: tabstractrecorddef; const SymList:TFPHashObjectLis
         { bitpacked record? }
         is_packed:=is_packed_record_or_object(def);
         if (is_packed) then
-          begin
-            { loadbitsize = 8, bitpacked records are always padded to    }
-            { a multiple of a byte. packedbitsize will be set separately }
-            { for each field                                             }
-            initbitpackval(bp,0);
-            bp.loadbitsize:=8;
-          end;
+          { packedbitsize will be set separately for each field }
+          initbitpackval(bp,0);
         { normal record }
         consume(_LKLAMMER);
         recoffset:=0;

@@ -33,6 +33,8 @@ interface
     type
        tjvmcallparanode = class(tcgcallparanode)
         protected
+         function push_zero_sized_value_para: boolean; override;
+
          procedure push_formal_para; override;
          procedure push_copyout_para; override;
 
@@ -63,7 +65,7 @@ implementation
       verbose,globals,globtype,constexp,cutils,
       symconst,symtable,symsym,symcpu,defutil,
       cgutils,tgobj,procinfo,htypechk,
-      cpubase,aasmdata,aasmcpu,
+      cpubase,aasmbase,aasmdata,aasmcpu,
       hlcgobj,hlcgcpu,
       pass_1,nutils,nadd,nbas,ncnv,ncon,nflw,ninl,nld,nmem,
       jvmdef;
@@ -71,6 +73,13 @@ implementation
 {*****************************************************************************
                            TJVMCALLPARANODE
 *****************************************************************************}
+
+    function tjvmcallparanode.push_zero_sized_value_para: boolean;
+      begin
+        { part of the signature -> need to be pushed }
+        result:=true;
+      end;
+
 
     procedure tjvmcallparanode.push_formal_para;
       begin
@@ -378,7 +387,7 @@ implementation
         para.left:=ctemprefnode.create(tempnode);
         { inherit addr_taken flag }
         if (tabstractvarsym(para.parasym).addr_taken) then
-          include(tempnode.tempinfo^.flags,ti_addr_taken);
+          tempnode.includetempflag(ti_addr_taken);
       end;
 
 
@@ -397,7 +406,7 @@ implementation
         if (current_procinfo.procdef.proctypeoption=potype_constructor) and
            (cnf_inherited in callnodeflags) then
           exit;
-        current_asmdata.CurrAsmList.concat(taicpu.op_sym(a_new,current_asmdata.RefAsmSymbol(tabstractrecorddef(procdefinition.owner.defowner).jvm_full_typename(true))));
+        current_asmdata.CurrAsmList.concat(taicpu.op_sym(a_new,current_asmdata.RefAsmSymbol(tabstractrecorddef(procdefinition.owner.defowner).jvm_full_typename(true),AT_METADATA)));
         { the constructor doesn't return anything, so put a duplicate of the
           self pointer on the evaluation stack for use as function result
           after the constructor has run }

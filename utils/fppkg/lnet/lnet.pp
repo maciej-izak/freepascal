@@ -14,7 +14,7 @@
 
   You should have received a Copy of the GNU Library General Public License
   along with This library; if not, Write to the Free Software Foundation,
-  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
   
   This license has been modified. See File LICENSE.ADDON for more inFormation.
   Should you find these sources without a LICENSE File, please contact
@@ -157,7 +157,7 @@ type
     property SocketState: TLSocketStates read FSocketState;
     property Creator: TLComponent read FCreator;
     property Session: TLSession read FSession;
-    Property MsgBufferSize : Integer Read FMsgBufferSize Write FMsgBufferSize;
+    Property MsgBufferSize: Integer Read FMsgBufferSize Write FMsgBufferSize;
   end;
   TLSocketClass = class of TLSocket;
   
@@ -350,6 +350,7 @@ type
     FSocketNet: Integer;
     FCount: Integer;
     FReuseAddress: Boolean;
+    FMsgBufferSize: integer;
     function InitSocket(aSocket: TLSocket): TLSocket; override;
 
     function GetConnected: Boolean; override;
@@ -393,6 +394,7 @@ type
     property OnConnect: TLSocketEvent read FOnConnect write FOnConnect;
     property ReuseAddress: Boolean read FReuseAddress write SetReuseAddress;
     property SocketNet: Integer read FSocketNet write SetSocketNet;
+    property MsgBufferSize: integer read FMsgBufferSize write FMsgBufferSize;
   end;
 
   { TLSession }
@@ -648,13 +650,16 @@ begin
     Result := DoGet(aData, aSize);
 
     if Result = 0 then
+    begin
+      FConnectionStatus := scNone;
       if FSocketType = SOCK_STREAM then
         Disconnect(True)
       else begin
         Bail('Receive Error [0 on recvfrom with UDP]', 0);
         Exit(0);
       end;
-      
+    end;
+
     Result := HandleResult(Result, soReceive);
   end;
 end;
@@ -801,7 +806,10 @@ end;
 
 function TLSocket.GetPeerPort: Word;
 begin
-  Result := ntohs(FPeerAddress.IPv4.sin_port);
+  if FSocketType = SOCK_STREAM then
+    Result := ntohs(FAddress.IPv4.sin_port)
+  else
+    Result := ntohs(FPeerAddress.IPv4.sin_port);
 end;
 
 function TLSocket.Listen(const APort: Word; const AIntf: string = LADDR_ANY): Boolean;
@@ -1345,6 +1353,7 @@ begin
   
   FRootSock := InitSocket(SocketClass.Create);
   FRootSock.SetReuseAddress(FReuseAddress);
+  FRootSock.MsgBufferSize:= MsgBufferSize;
   if FRootSock.Listen(APort, AIntf) then begin
     FRootSock.SetState(ssServerSocket);
     FRootSock.FConnectionStatus := scConnected;
@@ -1418,6 +1427,8 @@ end;
 
 procedure TLTcp.Disconnect(const Forced: Boolean = True);
 begin
+  if Assigned(FOnDisconnect) then
+    FOnDisconnect(FRootSock);
   FreeSocks(Forced);
   FRootSock := nil;
   FCount := 0;

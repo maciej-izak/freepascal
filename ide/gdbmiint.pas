@@ -131,6 +131,7 @@ var
   gdb_file: Text;
 
 function GDBVersion: string;
+function GDBVersionOK: boolean;
 function inferior_pid : longint;
 
 {$ifdef windows}
@@ -327,6 +328,7 @@ label
   Ignore;
 var
   StopReason: string;
+  LocalSignalString,LocalSignalName: String;
   FileName: string = '';
   LineNumber: LongInt = 0;
   Addr: CORE_ADDR;
@@ -368,6 +370,18 @@ Ignore:
                GDB.ExecAsyncOutput.Parameters['signal-name'].AsString (e.g. 'SIGTERM')
                GDB.ExecAsyncOutput.PArameters['signal-meaning'].AsString (e.g. 'Terminated')
           }
+        LocalSignalName:=GDB.ExecAsyncOutput.Parameters['signal-name'].AsString;
+        LocalSignalString:=GDB.ExecAsyncOutput.PArameters['signal-meaning'].AsString;
+        signal_name:=@LocalSignalName;
+        signal_string:=@LocalSignalString;
+        if (user_screen_shown) then
+          begin
+            DebuggerScreen;
+            DoUserSignal;
+            UserScreen;
+          end
+        else
+          DoUserSignal;
         i_gdb_command('-exec-continue');
         if not GDB.ResultRecord.Success then
         begin
@@ -576,6 +590,7 @@ end;
 
 var
   CachedGDBVersion: string;
+  CachedGDBVersionOK : boolean;
 
 function GDBVersion: string;
 var
@@ -611,9 +626,25 @@ begin
   GDB.Free;
   CachedGDBVersion := GDBVersion;
   if GDBVersion = '' then
-    GDBVersion := 'GDB missing or does not work';
+    begin
+      GDBVersion := 'GDB missing or does not work'#13
+                   +#3'Consider using -G command line option'#13
+                   +#3'or set FPIDE_GDBPROC environment variable'#13
+                   +#3'to specify full path to GDB';
+      CachedGDBVersionOK := false;
+    end;
+end;
+
+function GDBVersionOK: boolean;
+var
+  S : string;
+begin
+  { Be sure GDBVersion is called }
+  S:=GDBVersion;
+  GDBVersionOK := CachedGDBVersionOK;
 end;
 
 begin
   CachedGDBVersion := '';
+  CachedGDBVersionOK := true;
 end.

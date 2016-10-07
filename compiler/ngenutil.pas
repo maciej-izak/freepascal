@@ -55,6 +55,13 @@ interface
       { idem for finalization }
       class function force_final: boolean; virtual;
 
+      { if the funcretsym was moved to the parentfpstruct, use this method to
+        move its value back back into the funcretsym before the function exit, as
+        the code generator is hardcoded to use to use the funcretsym when loading
+        the value to be returned; replacing it with an absolutevarsym that
+        redirects to the field in the parentfpstruct doesn't work, as the code
+        generator cannot deal with such symbols }
+       class procedure load_parentfpstruct_nested_funcret(pd: tprocdef; var stat: tstatementnode);
       { called after parsing a routine with the code of the entire routine
         as argument; can be used to modify the node tree. By default handles
         insertion of code for systems that perform the typed constant
@@ -196,35 +203,51 @@ implementation
 
   class function tnodeutils.initialize_data_node(p:tnode; force: boolean):tnode;
     begin
-      if not assigned(p.resultdef) then
-        typecheckpass(p);
-      if is_ansistring(p.resultdef) or
-         is_wide_or_unicode_string(p.resultdef) or
-         is_interfacecom_or_dispinterface(p.resultdef) or
-         is_dynamic_array(p.resultdef) then
+      { prevent initialisation of hidden syms that were moved to
+        parentfpstructs: the original symbol isn't used anymore, the version
+        in parentfpstruct will be initialised when that struct gets initialised,
+        and references to it will actually be translated into references to the
+        field in the parentfpstruct (so we'll initialise it twice) }
+      if (target_info.system in systems_fpnestedstruct) and
+         (p.nodetype=loadn) and
+         (tloadnode(p).symtableentry.typ=localvarsym) and
+         (tloadnode(p).symtableentry.visibility=vis_hidden) then
         begin
-          result:=cassignmentnode.create(
-             ctypeconvnode.create_internal(p,voidpointertype),
-             cnilnode.create
-             );
-        end
-      else if (p.resultdef.typ=variantdef) then
-        begin
-          result:=ccallnode.createintern('fpc_variant_init',
-            ccallparanode.create(
-              ctypeconvnode.create_internal(p,search_system_type('TVARDATA').typedef),
-            nil));
+          p.free;
+          result:=cnothingnode.create;
         end
       else
         begin
-          result:=ccallnode.createintern('fpc_initialize',
+          if not assigned(p.resultdef) then
+            typecheckpass(p);
+          if is_ansistring(p.resultdef) or
+             is_wide_or_unicode_string(p.resultdef) or
+             is_interfacecom_or_dispinterface(p.resultdef) or
+             is_dynamic_array(p.resultdef) then
+            begin
+              result:=cassignmentnode.create(
+                 ctypeconvnode.create_internal(p,voidpointertype),
+                 cnilnode.create
+                 );
+            end
+          else if (p.resultdef.typ=variantdef) then
+            begin
+              result:=ccallnode.createintern('fpc_variant_init',
                 ccallparanode.create(
-                    caddrnode.create_internal(
-                        crttinode.create(
-                            tstoreddef(p.resultdef),initrtti,rdt_normal)),
-                ccallparanode.create(
-                    caddrnode.create_internal(p),
-                nil)));
+                  ctypeconvnode.create_internal(p,search_system_type('TVARDATA').typedef),
+                nil));
+            end
+          else
+            begin
+              result:=ccallnode.createintern('fpc_initialize',
+                    ccallparanode.create(
+                        caddrnode.create_internal(
+                            crttinode.create(
+                                tstoreddef(p.resultdef),initrtti,rdt_normal)),
+                    ccallparanode.create(
+                        caddrnode.create_internal(p),
+                    nil)));
+            end;
         end;
     end;
 
@@ -233,41 +256,53 @@ implementation
     var
       hs : string;
     begin
-      if not assigned(p.resultdef) then
-        typecheckpass(p);
-      { 'decr_ref' suffix is somewhat misleading, all these helpers
-        set the passed pointer to nil now }
-      if is_ansistring(p.resultdef) then
-        hs:='fpc_ansistr_decr_ref'
-      else if is_widestring(p.resultdef) then
-        hs:='fpc_widestr_decr_ref'
-      else if is_unicodestring(p.resultdef) then
-        hs:='fpc_unicodestr_decr_ref'
-      else if is_interfacecom_or_dispinterface(p.resultdef) then
-        hs:='fpc_intf_decr_ref'
-      else
-        hs:='';
-      if hs<>'' then
-        result:=ccallnode.createintern(hs,
-           ccallparanode.create(
-             ctypeconvnode.create_internal(p,voidpointertype),
-             nil))
-      else if p.resultdef.typ=variantdef then
+      { see comment in initialize_data_node above }
+      if (target_info.system in systems_fpnestedstruct) and
+         (p.nodetype=loadn) and
+         (tloadnode(p).symtableentry.typ=localvarsym) and
+         (tloadnode(p).symtableentry.visibility=vis_hidden) then
         begin
-          result:=ccallnode.createintern('fpc_variant_clear',
-            ccallparanode.create(
-              ctypeconvnode.create_internal(p,search_system_type('TVARDATA').typedef),
-            nil));
+          p.free;
+          result:=cnothingnode.create;
         end
       else
-        result:=ccallnode.createintern('fpc_finalize',
-              ccallparanode.create(
-                  caddrnode.create_internal(
-                      crttinode.create(
-                          tstoreddef(p.resultdef),initrtti,rdt_normal)),
-              ccallparanode.create(
-                  caddrnode.create_internal(p),
-              nil)));
+        begin
+          if not assigned(p.resultdef) then
+            typecheckpass(p);
+          { 'decr_ref' suffix is somewhat misleading, all these helpers
+            set the passed pointer to nil now }
+          if is_ansistring(p.resultdef) then
+            hs:='fpc_ansistr_decr_ref'
+          else if is_widestring(p.resultdef) then
+            hs:='fpc_widestr_decr_ref'
+          else if is_unicodestring(p.resultdef) then
+            hs:='fpc_unicodestr_decr_ref'
+          else if is_interfacecom_or_dispinterface(p.resultdef) then
+            hs:='fpc_intf_decr_ref'
+          else
+            hs:='';
+          if hs<>'' then
+            result:=ccallnode.createintern(hs,
+               ccallparanode.create(
+                 ctypeconvnode.create_internal(p,voidpointertype),
+                 nil))
+          else if p.resultdef.typ=variantdef then
+            begin
+              result:=ccallnode.createintern('fpc_variant_clear',
+                ccallparanode.create(
+                  ctypeconvnode.create_internal(p,search_system_type('TVARDATA').typedef),
+                nil));
+            end
+          else
+            result:=ccallnode.createintern('fpc_finalize',
+                  ccallparanode.create(
+                      caddrnode.create_internal(
+                          crttinode.create(
+                              tstoreddef(p.resultdef),initrtti,rdt_normal)),
+                  ccallparanode.create(
+                      caddrnode.create_internal(p),
+                  nil)));
+        end;
     end;
 
 
@@ -464,11 +499,26 @@ implementation
     end;
 
 
+  class procedure tnodeutils.load_parentfpstruct_nested_funcret(pd: tprocdef; var stat: tstatementnode);
+    var
+      target: tnode;
+    begin
+      target:=cloadnode.create(pd.funcretsym, pd.funcretsym.owner);
+      { ensure the target of this assignment doesn't translate the
+        funcretsym also to its alias in the parentfpstruct }
+      include(target.flags, nf_internal);
+      addstatement(stat,
+        cassignmentnode.create(
+          target, cloadnode.create(pd.funcretsym, pd.funcretsym.owner)
+        )
+      );
+    end;
+
+
   class function tnodeutils.wrap_proc_body(pd: tprocdef; n: tnode): tnode;
     var
       stat: tstatementnode;
-      block,
-      target: tnode;
+      block: tnode;
       psym: tsym;
     begin
       result:=maybe_insert_trashing(pd,n);
@@ -541,26 +591,12 @@ implementation
         end;
       if target_info.system in systems_fpnestedstruct then
         begin
-          { if the funcretsym was moved to the parentfpstruct, move its value
-            back into the funcretsym now, as the code generator is hardcoded
-            to use the funcretsym when loading the value to be returned;
-            replacing it with an absolutevarsym that redirects to the field in
-            the parentfpstruct doesn't work, as the code generator cannot deal
-            with such symbols }
           if assigned(pd.funcretsym) and
              tabstractnormalvarsym(pd.funcretsym).inparentfpstruct then
             begin
               block:=internalstatements(stat);
               addstatement(stat,result);
-              target:=cloadnode.create(pd.funcretsym,pd.funcretsym.owner);
-              { ensure the target of this assignment doesn't translate the
-                funcretsym also to its alias in the parentfpstruct }
-              include(target.flags,nf_internal);
-              addstatement(stat,
-                cassignmentnode.create(
-                  target,cloadnode.create(pd.funcretsym,pd.funcretsym.owner)
-                )
-              );
+              load_parentfpstruct_nested_funcret(pd,stat);
               result:=block;
             end;
         end;
@@ -716,8 +752,6 @@ implementation
 
 
   class procedure tnodeutils.insertbsssym(list: tasmlist; sym: tstaticvarsym; size: asizeint; varalign: shortint);
-    var
-      symind : tasmsymbol;
     begin
       if sym.globalasmsym then
         begin
@@ -730,23 +764,13 @@ implementation
              (cs_debuginfo in current_settings.moduleswitches) and
              not assigned(current_asmdata.GetAsmSymbol(sym.name)) then
             begin
-              list.concat(tai_symbol.Create(current_asmdata.DefineAsmSymbol(sym.name,AB_LOCAL,AT_DATA),0));
+              list.concat(tai_symbol.Create(current_asmdata.DefineAsmSymbol(sym.name,AB_LOCAL,AT_DATA,sym.vardef),0));
               list.concat(tai_directive.Create(asd_reference,sym.name));
             end;
-          list.concat(Tai_datablock.create_global(sym.mangledname,size));
+          list.concat(Tai_datablock.create_global(sym.mangledname,size,sym.vardef));
         end
       else
-        list.concat(Tai_datablock.create(sym.mangledname,size));
-
-      if (tf_supports_packages in target_info.flags) then
-        begin
-          { add the indirect symbol if needed }
-          new_section(list,sec_rodata,lower(sym.mangledname),const_align(sym.vardef.alignment));
-          symind:=current_asmdata.DefineAsmSymbol(sym.mangledname,AB_INDIRECT,AT_DATA);
-          list.concat(Tai_symbol.Create_Global(symind,0));
-          list.concat(Tai_const.Createname(sym.mangledname,AT_DATA,0));
-          list.concat(tai_symbol_end.Create(symind));
-        end;
+        list.concat(Tai_datablock.create(sym.mangledname,size,sym.vardef));
     end;
 
 
@@ -855,6 +879,7 @@ implementation
       count : aint;
       tablecountplaceholder: ttypedconstplaceholder;
       nameinit,namefini : TSymStr;
+      tabledef: tdef;
 
       procedure write_struct_inits(u: tmodule);
         var
@@ -874,7 +899,7 @@ implementation
               begin
                 unitinits.emit_procdef_const(pd);
                 if u<>current_module then
-                  u.addimportedsym(pd.procsym);
+                  current_module.addimportedsym(pd.procsym);
               end
             else
               unitinits.emit_tai(Tai_const.Create_nil_codeptr,voidcodepointertype);
@@ -883,7 +908,7 @@ implementation
               begin
                 unitinits.emit_procdef_const(pd);
                 if u<>current_module then
-                  u.addimportedsym(pd.procsym);
+                  current_module.addimportedsym(pd.procsym);
               end
             else
               unitinits.emit_tai(Tai_const.Create_nil_codeptr,voidcodepointertype);
@@ -937,9 +962,9 @@ implementation
         targetinfos[target_info.system]^.alignment.recordalignmin,
         targetinfos[target_info.system]^.alignment.maxCrecordalign);
       { placeholder for tablecount }
-      tablecountplaceholder:=unitinits.emit_placeholder(sinttype);
+      tablecountplaceholder:=unitinits.emit_placeholder(aluuinttype);
       { initcount (initialised at run time }
-      unitinits.emit_ord_const(0,sinttype);
+      unitinits.emit_ord_const(0,aluuinttype);
       count:=0;
       hp:=tused_unit(usedunits.first);
       while assigned(hp) do
@@ -998,14 +1023,15 @@ implementation
           inc(count);
         end;
       { fill in tablecount }
-      tablecountplaceholder.replace(tai_const.Create_aint(count),sinttype);
+      tablecountplaceholder.replace(tai_const.Create_aint(count),aluuinttype);
       tablecountplaceholder.free;
       { Add to data segment }
 
+      tabledef:=unitinits.end_anonymous_record;
       current_asmdata.asmlists[al_globals].concatlist(
         unitinits.get_final_asmlist(
-          current_asmdata.DefineAsmSymbol('INITFINAL',AB_GLOBAL,AT_DATA),
-          unitinits.end_anonymous_record,
+          current_asmdata.DefineAsmSymbol('INITFINAL',AB_GLOBAL,AT_DATA,tabledef),
+          tabledef,
           sec_data,'INITFINAL',sizeof(pint)
         )
       );
@@ -1021,6 +1047,7 @@ implementation
       count: longint;
       sym: tasmsymbol;
       placeholder: ttypedconstplaceholder;
+      tabledef: tdef;
     begin
       if (tf_section_threadvars in target_info.flags) then
         exit;
@@ -1037,9 +1064,11 @@ implementation
        begin
          if (hp.u.flags and uf_threadvars)=uf_threadvars then
            begin
+             sym:=current_asmdata.RefAsmSymbol(make_mangledname('THREADVARLIST',hp.u.globalsymtable,''),AT_DATA,true);
              tcb.emit_tai(
-               tai_const.Createname(make_mangledname('THREADVARLIST',hp.u.globalsymtable,''),0),
+               tai_const.Create_sym(sym),
                voidpointertype);
+             current_module.add_extern_asmsym(sym);
              inc(count);
            end;
          hp:=tused_unit(hp.next);
@@ -1047,8 +1076,9 @@ implementation
       { Add program threadvars, if any }
       if (current_module.flags and uf_threadvars)=uf_threadvars then
         begin
+          sym:=current_asmdata.RefAsmSymbol(make_mangledname('THREADVARLIST',current_module.localsymtable,''),AT_DATA,true);
           tcb.emit_tai(
-            Tai_const.Createname(make_mangledname('THREADVARLIST',current_module.localsymtable,''),0),
+            Tai_const.Create_sym(sym),
             voidpointertype);
           inc(count);
         end;
@@ -1056,10 +1086,11 @@ implementation
       placeholder.replace(tai_const.Create_32bit(count),u32inttype);
       placeholder.free;
       { insert in data segment }
-      sym:=current_asmdata.DefineAsmSymbol('FPC_THREADVARTABLES',AB_GLOBAL,AT_DATA);
+      tabledef:=tcb.end_anonymous_record;
+      sym:=current_asmdata.DefineAsmSymbol('FPC_THREADVARTABLES',AB_GLOBAL,AT_DATA,tabledef);
       current_asmdata.asmlists[al_globals].concatlist(
         tcb.get_final_asmlist(
-          sym,tcb.end_anonymous_record,sec_data,'FPC_THREADVARTABLES',sizeof(pint)
+          sym,tabledef,sec_data,'FPC_THREADVARTABLES',sizeof(pint)
         )
       );
       tcb.free;
@@ -1094,6 +1125,7 @@ implementation
       tcb: ttai_typedconstbuilder;
       sym: tasmsymbol;
       tabledef: trecorddef;
+      add : boolean;
     begin
        if (tf_section_threadvars in target_info.flags) then
          exit;
@@ -1108,14 +1140,18 @@ implementation
          { terminator }
          tcb.emit_tai(tai_const.Create_nil_dataptr,voidpointertype);
        tcb.end_anonymous_record;
-       if trecordsymtable(tabledef.symtable).datasize<>0 then
+       add:=trecordsymtable(tabledef.symtable).datasize<>0;
+       if add then
          begin
            s:=make_mangledname('THREADVARLIST',current_module.localsymtable,'');
-           sym:=current_asmdata.DefineAsmSymbol(s,AB_GLOBAL,AT_DATA);
+           sym:=current_asmdata.DefineAsmSymbol(s,AB_GLOBAL,AT_DATA_FORCEINDIRECT,tabledef);
            current_asmdata.asmlists[al_globals].concatlist(
              tcb.get_final_asmlist(sym,tabledef,sec_data,s,sizeof(pint)));
            current_module.flags:=current_module.flags or uf_threadvars;
-         end;
+           current_module.add_public_asmsym(sym);
+         end
+       else
+         s:='';
        tcb.Free;
     end;
 
@@ -1125,6 +1161,7 @@ implementation
       hp: tused_unit;
       tcb: ttai_typedconstbuilder;
       countplaceholder: ttypedconstplaceholder;
+      tabledef: tdef;
       count: longint;
     begin
       tcb:=ctai_typedconstbuilder.create([tcalo_make_dead_strippable,tcalo_new_section]);
@@ -1133,7 +1170,7 @@ implementation
         targetinfos[target_info.system]^.alignment.maxCrecordalign
       );
       { placeholder for the count }
-      countplaceholder:=tcb.emit_placeholder(ptruinttype);
+      countplaceholder:=tcb.emit_placeholder(sizesinttype);
       count:=0;
       hp:=tused_unit(usedunits.first);
       while assigned(hp) do
@@ -1156,13 +1193,14 @@ implementation
          inc(count);
        end;
       { Insert TableCount at start }
-      countplaceholder.replace(Tai_const.Create_pint(count),ptruinttype);
+      countplaceholder.replace(Tai_const.Create_sizeint(count),sizesinttype);
       countplaceholder.free;
       { insert in data segment }
+      tabledef:=tcb.end_anonymous_record;
       current_asmdata.asmlists[al_globals].concatlist(
         tcb.get_final_asmlist(
-          current_asmdata.DefineAsmSymbol(tablename,AB_GLOBAL,AT_DATA),
-          tcb.end_anonymous_record,
+          current_asmdata.DefineAsmSymbol(tablename,AB_GLOBAL,AT_DATA,tabledef),
+          tabledef,
           sec_data,tablename,sizeof(pint)
         )
       );
@@ -1174,28 +1212,40 @@ implementation
     var
       s: string;
       item: TTCInitItem;
+      tcb: ttai_typedconstbuilder;
+      rawdatadef: tdef;
     begin
       item:=TTCInitItem(list.First);
       if item=nil then
         exit;
       s:=make_mangledname(prefix,current_module.localsymtable,'');
-      maybe_new_object_file(current_asmdata.asmlists[al_globals]);
-      new_section(current_asmdata.asmlists[al_globals],sec_data,s,sizeof(pint));
-      current_asmdata.asmlists[al_globals].concat(Tai_symbol.Createname_global(s,AT_DATA,0));
+      tcb:=ctai_typedconstbuilder.create([tcalo_make_dead_strippable,tcalo_new_section]);
+      tcb.begin_anonymous_record('',default_settings.packrecords,sizeof(pint),
+        targetinfos[target_info.system]^.alignment.recordalignmin,
+        targetinfos[target_info.system]^.alignment.maxCrecordalign  );
       repeat
         { optimize away unused local/static symbols }
         if (item.sym.refs>0) or (item.sym.owner.symtabletype=globalsymtable) then
           begin
             { address to initialize }
-            current_asmdata.asmlists[al_globals].concat(Tai_const.createname(item.sym.mangledname, item.offset));
+            tcb.queue_init(voidpointertype);
+            rawdatadef:=carraydef.getreusable(cansichartype,tstaticvarsym(item.sym).vardef.size);
+            tcb.queue_vecn(rawdatadef,item.offset);
+            tcb.queue_typeconvn(cpointerdef.getreusable(tstaticvarsym(item.sym).vardef),cpointerdef.getreusable(rawdatadef));
+            tcb.queue_emit_staticvar(tstaticvarsym(item.sym));
             { value with which to initialize }
-            current_asmdata.asmlists[al_globals].concat(Tai_const.Create_sym(item.datalabel));
+            tcb.emit_tai(Tai_const.Create_sym(item.datalabel),item.datadef)
           end;
         item:=TTCInitItem(item.Next);
       until item=nil;
       { end-of-list marker }
-      current_asmdata.asmlists[al_globals].concat(Tai_const.Create_sym(nil));
-      current_asmdata.asmlists[al_globals].concat(Tai_symbol_end.Createname(s));
+      tcb.emit_tai(Tai_const.Create_nil_dataptr,voidpointertype);
+      rawdatadef:=tcb.end_anonymous_record;
+      current_asmdata.asmlists[al_globals].concatList(
+        tcb.get_final_asmlist(
+          current_asmdata.DefineAsmSymbol(s,AB_GLOBAL,AT_DATA,rawdatadef),
+          rawdatadef,sec_data,s,sizeof(pint)));
+      tcb.free;
       current_module.flags:=current_module.flags or unitflag;
     end;
 
@@ -1230,6 +1280,7 @@ implementation
       count : longint;
       tcb : ttai_typedconstbuilder;
       countplaceholder : ttypedconstplaceholder;
+      tabledef: tdef;
     begin
       tcb:=ctai_typedconstbuilder.create([tcalo_make_dead_strippable,tcalo_new_section]);
       count:=0;
@@ -1237,17 +1288,17 @@ implementation
       tcb.begin_anonymous_record('',default_settings.packrecords,sizeof(pint),
         targetinfos[target_info.system]^.alignment.recordalignmin,
         targetinfos[target_info.system]^.alignment.maxCrecordalign);
-      countplaceholder:=tcb.emit_placeholder(ptruinttype);
+      countplaceholder:=tcb.emit_placeholder(sizesinttype);
       while assigned(hp) do
         begin
           If (hp.flags and uf_has_resourcestrings)=uf_has_resourcestrings then
             begin
               tcb.emit_tai(Tai_const.Create_sym(
-                ctai_typedconstbuilder.get_vectorized_dead_strip_section_symbol_start('RESSTR',hp.localsymtable,false)),
+                ctai_typedconstbuilder.get_vectorized_dead_strip_section_symbol_start('RESSTR',hp.localsymtable,[tcdssso_register_asmsym,tcdssso_use_indirect])),
                 voidpointertype
               );
               tcb.emit_tai(Tai_const.Create_sym(
-                ctai_typedconstbuilder.get_vectorized_dead_strip_section_symbol_end('RESSTR',hp.localsymtable,false)),
+                ctai_typedconstbuilder.get_vectorized_dead_strip_section_symbol_end('RESSTR',hp.localsymtable,[tcdssso_register_asmsym,tcdssso_use_indirect])),
                 voidpointertype
               );
               inc(count);
@@ -1255,13 +1306,14 @@ implementation
           hp:=tmodule(hp.next);
         end;
       { Insert TableCount at start }
-      countplaceholder.replace(Tai_const.Create_pint(count),ptruinttype);
+      countplaceholder.replace(Tai_const.Create_sizeint(count),sizesinttype);
       countplaceholder.free;
       { Add to data segment }
+      tabledef:=tcb.end_anonymous_record;
       current_asmdata.AsmLists[al_globals].concatList(
         tcb.get_final_asmlist(
-          current_asmdata.DefineAsmSymbol('FPC_RESOURCESTRINGTABLES',AB_GLOBAL,AT_DATA),
-          tcb.end_anonymous_record,sec_rodata,'FPC_RESOURCESTRINGTABLES',sizeof(pint)
+          current_asmdata.DefineAsmSymbol('FPC_RESOURCESTRINGTABLES',AB_GLOBAL,AT_DATA,tabledef),
+          tabledef,sec_rodata,'FPC_RESOURCESTRINGTABLES',sizeof(pint)
         )
       );
       tcb.free;
@@ -1286,7 +1338,7 @@ implementation
             tcb.emit_tai(tai_const.Create_nil_dataptr,voidpointertype);
           current_asmdata.asmlists[al_globals].concatList(
             tcb.get_final_asmlist(
-              current_asmdata.DefineAsmSymbol('FPC_RESLOCATION',AB_GLOBAL,AT_DATA),
+              current_asmdata.DefineAsmSymbol('FPC_RESLOCATION',AB_GLOBAL,AT_DATA,voidpointertype),
               voidpointertype,
               sec_rodata,
               'FPC_RESLOCATION',
@@ -1314,7 +1366,7 @@ implementation
       tcb.maybe_begin_aggregate(def);
       tcb.emit_tai(Tai_string.Create(s),def);
       tcb.maybe_end_aggregate(def);
-      sym:=current_asmdata.DefineAsmSymbol('__fpc_ident',AB_LOCAL,AT_DATA);
+      sym:=current_asmdata.DefineAsmSymbol('__fpc_ident',AB_LOCAL,AT_DATA,def);
       current_asmdata.asmlists[al_globals].concatlist(
         tcb.get_final_asmlist(sym,def,sec_fpc,'version',const_align(32))
       );
@@ -1325,8 +1377,8 @@ implementation
         begin
           { stacksize can be specified and is now simulated }
           tcb:=ctai_typedconstbuilder.create([tcalo_new_section,tcalo_make_dead_strippable]);
-          tcb.emit_tai(Tai_const.Create_pint(stacksize),ptruinttype);
-          sym:=current_asmdata.DefineAsmSymbol('__stklen',AB_GLOBAL,AT_DATA);
+          tcb.emit_tai(Tai_const.Create_int_dataptr(stacksize),ptruinttype);
+          sym:=current_asmdata.DefineAsmSymbol('__stklen',AB_GLOBAL,AT_DATA,ptruinttype);
           current_asmdata.asmlists[al_globals].concatlist(
             tcb.get_final_asmlist(sym,ptruinttype,sec_data,'__stklen',sizeof(pint))
           );
@@ -1346,7 +1398,7 @@ implementation
          tcb.maybe_begin_aggregate(def);
          tcb.emit_tai(Tai_string.Create(s),def);
          tcb.maybe_end_aggregate(def);
-         sym:=current_asmdata.DefineAsmSymbol('__stack_cookie',AB_GLOBAL,AT_DATA);
+         sym:=current_asmdata.DefineAsmSymbol('__stack_cookie',AB_GLOBAL,AT_DATA,def);
          current_asmdata.asmlists[al_globals].concatlist(
            tcb.get_final_asmlist(sym,def,sec_data,'__stack_cookie',sizeof(pint))
          );
@@ -1355,8 +1407,8 @@ implementation
 {$ENDIF POWERPC}
       { Initial heapsize }
       tcb:=ctai_typedconstbuilder.create([tcalo_new_section,tcalo_make_dead_strippable]);
-      tcb.emit_tai(Tai_const.Create_pint(heapsize),ptruinttype);
-      sym:=current_asmdata.DefineAsmSymbol('__heapsize',AB_GLOBAL,AT_DATA);
+      tcb.emit_tai(Tai_const.Create_int_dataptr(heapsize),ptruinttype);
+      sym:=current_asmdata.DefineAsmSymbol('__heapsize',AB_GLOBAL,AT_DATA,ptruinttype);
       current_asmdata.asmlists[al_globals].concatlist(
         tcb.get_final_asmlist(sym,ptruinttype,sec_data,'__heapsize',sizeof(pint))
       );
@@ -1370,13 +1422,13 @@ implementation
             is separate in the builder }
           maybe_new_object_file(current_asmdata.asmlists[al_globals]);
           new_section(current_asmdata.asmlists[al_globals],sec_bss,'__fpc_initialheap',current_settings.alignment.varalignmax);
-          current_asmdata.asmlists[al_globals].concat(tai_datablock.Create_global('__fpc_initialheap',heapsize));
+          current_asmdata.asmlists[al_globals].concat(tai_datablock.Create_global('__fpc_initialheap',heapsize,carraydef.getreusable(u8inttype,heapsize)));
         end;
 
       { Valgrind usage }
       tcb:=ctai_typedconstbuilder.create([tcalo_new_section,tcalo_make_dead_strippable]);
       tcb.emit_ord_const(byte(cs_gdb_valgrind in current_settings.globalswitches),u8inttype);
-      sym:=current_asmdata.DefineAsmSymbol('__fpc_valgrind',AB_GLOBAL,AT_DATA);
+      sym:=current_asmdata.DefineAsmSymbol('__fpc_valgrind',AB_GLOBAL,AT_DATA,u8inttype);
       current_asmdata.asmlists[al_globals].concatlist(
         tcb.get_final_asmlist(sym,ptruinttype,sec_data,'__fpc_valgrind',sizeof(pint))
       );

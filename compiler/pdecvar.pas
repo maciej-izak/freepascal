@@ -60,7 +60,7 @@ implementation
 {$endif}
        fmodule,htypechk,
        { pass 1 }
-       node,pass_1,aasmdata,
+       node,pass_1,aasmbase,aasmdata,
        ncon,nmat,nadd,ncal,nset,ncnv,ninl,nld,nflw,nmem,nutils,
        { codegen }
        ncgutil,ngenutil,
@@ -1395,7 +1395,7 @@ implementation
                end;
 
              { Check for EXTERNAL etc directives before a semicolon }
-             if (idtoken in [_EXPORT,_EXTERNAL,_WEAKEXTERNAL,_PUBLIC,_CVAR]) then
+             if (idtoken in [_EXPORT,_EXTERNAL,_PUBLIC,_CVAR]) or (idtoken = _WEAKEXTERNAL) then
                begin
                  read_public_and_external_sc(sc);
                  allowdefaultvalue:=false;
@@ -1456,7 +1456,7 @@ implementation
              { Check for EXTERNAL etc directives or, in macpas, if cs_external_var is set}
              if (
                  (
-                  (idtoken in [_EXPORT,_EXTERNAL,_WEAKEXTERNAL,_PUBLIC,_CVAR]) and
+                  ((idtoken in [_EXPORT,_EXTERNAL,_PUBLIC,_CVAR]) or (idtoken = _WEAKEXTERNAL)) and
                   (m_cvar_support in current_settings.modeswitches)
                  ) or
                  (
@@ -1498,6 +1498,8 @@ implementation
                     not(vo_is_typed_const in vs.varoptions) and
                     not(vo_is_external in vs.varoptions) then
                    cnodeutils.insertbssdata(tstaticvarsym(vs));
+                 if vo_is_public in vs.varoptions then
+                   current_module.add_public_asmsym(vs.mangledname,AB_GLOBAL,AT_DATA);
                end;
 
              first:=false;

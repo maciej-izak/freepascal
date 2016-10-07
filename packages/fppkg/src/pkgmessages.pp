@@ -18,10 +18,14 @@ Resourcestring
   SErrMissingMakefilefpc     = 'Missing configuration Makefile.fpc';
   SErrMissingDirectory       = 'Missing directory "%s"';
   SErrMissingCompilerConfig  = 'Could not find compiler configuration "%s"';
-  SErrMissingInstallPackage  = 'Could not find package "%s"';
+  SErrMissingInstallPackage  = 'Package "%s" is not installed';
+  SErrMissingAvailablePackage= 'Package "%s" is not available';
+  SErrMissingPackage         = 'Could not fin package "%s"';
+  SErrMissingInstallRepo     = 'Could not find repository "%s"';
   SErrNoPackageSpecified     = 'No package specified';
   SErrNoPackageAvailable     = 'Package %s %s is not available';
   SErrOnlyLocalDir           = 'The specified command "%s" works only on current dir, not on a (remote) package';
+  SErrIllConfRepository      = 'Invalid configured repository "%s"';
   SErrExecutionFPMake        = 'Execution of FPMake %s failed';
   SErrException              = 'The FPC Package tool encountered the following error:';
   SErrActionAlreadyRegistered= 'Action "%s" is already registered';
@@ -31,7 +35,7 @@ Resourcestring
   SErrNoFTPDownload          = 'This binary has no support for FTP downloads.';
   SErrNoHTTPDownload         = 'This binary has no support for HTTP downloads.';
   SErrBackupFailed           = 'Backup of file "%s" to file "%s" failed.';
-  SErrUnknownProtocol        = 'Unknown download protocol: "%s"';
+  SErrUnknownProtocol        = 'Unknown download protocol "%s" in url "%s"';
   SErrNoSuchFile             = 'File "%s" does not exist.';
   SErrDownloadFailed         = '%s Download of "%s" failed: %s';
   SErrInvalidLogLevels       = 'Invalid verbosity string: "%s"';
@@ -42,7 +46,7 @@ Resourcestring
   SErrPackageIsLocal         = 'Operation not supported for local packages';
   SErrConvertFPMakeExists    = 'Found existing fpmake.pp, aborting conversion';
   SErrFailedToSelectMirror   = 'Could not select a mirror, run update and retry';
-  SErrUnsupportedConfigVersion = 'Configuration file "%s" is too old, delete file manual and retry';
+  SErrUnsupportedConfigVersion = 'Configuration file is too old, delete file manual and retry';
   SErrPackageDoesNotSupportTarget = 'Package %s does not support %s';
   SErrHTTPGetFailed          = 'HTTP Download failed.';
   SErrLoginFailed            = 'FTP LOGIN command failed.';
@@ -60,7 +64,7 @@ Resourcestring
   SLogDownloading            = 'Downloading "%s" to "%s"';
   SLogUnzippping             = 'Unzipping "%s"';
   SLogZippping               = 'Zipping "%s"';
-  SLogLoadingGlobalConfig    = 'Loading global configuration from "%s"';
+  SLogLoadingGlobalConfig    = 'Loaded global configuration from "%s"';
   SLogLoadingCompilerConfig  = 'Loading compiler configuration from "%s"';
   SLogLoadingFPMakeCompilerConfig = 'Loading compiler configuration for fpmake building from "%s"';
   SLogGeneratingGlobalConfig = 'Generating default global configuration in "%s"';
@@ -76,21 +80,26 @@ Resourcestring
   SLogFPMKUnitDepVersion     = 'Checking for %s %s, installed %s, available %s';
   SLogFPMKUnitDepTooOld      = 'Minimum version of %s is not installed, using internal fpmkunit with limited functionality';
   SLogSelectedMirror         = 'Selected mirror "%s"';
+  SLogStartLoadingConfFile   = 'Start loading configuration file "%s"';
   SLogUpgradingConfig        = 'Configuration file "%s" is updated with new configuration settings';
+  SLogOldConfigFileFormat    = 'Configuration file is in an old format';
   SLogPackageDependency      = 'Dependency on package %s %s, installed %s, available %s  (%s)';
   SLogPackageChecksumChanged = 'Package %s needs to be rebuild, dependency %s is modified';
   SLogCheckBrokenDependenvies= 'Checking for broken dependencies';
+  SLogFailedToCreateManifest = 'Failed to create manifest from fpmake.pp-file (%s) while scanning for available packages: %s';
+  SLogUseInternalFpmkunit    = 'Fpmkunit not available, fallback to internal version.';
 
-  SLogGlobalCfgHeader                = 'Using global configuration from file "%s":';
-  SLogGlobalCfgRemoteMirrorsURL      = ' RemoteMirrorsURL:      %s';
-  SLogGlobalCfgRemoteRepository      = ' RemoteRepository:      %s';
-  SLogGlobalCfgLocalRepository       = ' LocalRepository:       "%s" -> "%s"';
-  SLogGlobalCfgBuildDir              = ' BuildDir:              "%s" -> "%s"';
-  SLogGlobalCfgArchivesDir           = ' ArchivesDir:           "%s" -> "%s"';
-  SLogGlobalCfgCompilerConfigDir     = ' CompilerConfigDir:     "%s" -> "%s"';
-  SLogGlobalCfgDefaultCompilerConfig = ' DefaultCompilerConfig: "%s"';
-  SLogGlobalCfgFPMakeCompilerConfig  = ' FPMakeCompilerConfig:  "%s"';
-  SLogGlobalCfgDownloader            = ' Downloader:            %s';
+  SLogCfgHeader                      = 'Settings from configuration-files:';
+  SLogCfgSectionHeader               = ' %s-section:';
+  SLogGlobalCfgRemoteMirrorsURL      = '  RemoteMirrorsURL:      %s';
+  SLogGlobalCfgRemoteRepository      = '  RemoteRepository:      %s';
+  SLogGlobalCfgLocalRepository       = '  LocalRepository:       "%s" -> "%s"';
+  SLogGlobalCfgBuildDir              = '  BuildDir:              "%s" -> "%s"';
+  SLogGlobalCfgArchivesDir           = '  ArchivesDir:           "%s" -> "%s"';
+  SLogGlobalCfgCompilerConfigDir     = '  CompilerConfigDir:     "%s" -> "%s"';
+  SLogGlobalCfgDefaultCompilerConfig = '  DefaultCompilerConfig: "%s"';
+  SLogGlobalCfgFPMakeCompilerConfig  = '  FPMakeCompilerConfig:  "%s"';
+  SLogGlobalCfgDownloader            = '  Downloader:            %s';
   SLogCompilerCfgHeader           = 'Using %scompiler configuration file "%s":';
   SLogCompilerCfgCompiler         = ' Compiler:         "%s"';
   SLogCompilerCfgTarget           = ' Target:           %s';
@@ -100,6 +109,10 @@ Resourcestring
   SLogCompilerCfgLocalInstallDir  = ' LocalInstallDir:  "%s" -> "%s"';
   SLogCompilerCfgGlobalPrefix     = ' GlobalPrefix:     "%s" -> "%s"';
   SLogCompilerCfgLocalPrefix      = ' LocalPrefix:      "%s" -> "%s"';
+  SLogRepositoryName              = '  Name:             %s';
+  SLogRepositoryDescription       = '  Description:      "%s"';
+  SLogRepositoryPath              = '  Dir:              "%s" -> "%s"';
+  SLogRepositoryPrefix            = '  Prefix:           "%s" -> "%s"';
 
   SLogPackageInfoName             = 'Package:        %s';
   SLogPackageInfoVersion          = 'Version:        %s';
@@ -121,7 +134,7 @@ Resourcestring
   SDbgBackupFile             = 'Creating Backup File "%s"';
   SDbgPackageMultipleLocations = 'Multiple installations found for package %s, using installation "%s"';
   SDbgPackageDependencyOtherTarget  = 'Dependency on package %s is not for %s';
-  SDbgObsoleteDependency     = 'Obsolete dependency found on package %s';
+  SDbgObsoleteDependency     = 'Package %s depends on package %s which is not installed anymore';
 
   SProgrReinstallDependent   = 'Re-install packages which are dependent on just installed packages';
   SProgrInstallDependencies  = 'Install dependencies';

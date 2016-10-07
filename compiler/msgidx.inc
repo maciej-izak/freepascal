@@ -122,6 +122,8 @@ const
   scan_w_heapmax_lessthan_heapmin=02097;
   scan_e_illegal_hugepointernormalization=02098;
   scan_e_illegal_asmcpu_specifier=02099;
+  scan_w_syscall_convention_not_useable_on_target=02100;
+  scan_w_syscall_convention_invalid=02101;
   parser_e_syntax_error=03000;
   parser_e_dont_nest_interrupt=03004;
   parser_w_proc_directive_ignored=03005;
@@ -890,6 +892,7 @@ const
   link_e_segment_too_large=09205;
   link_e_group_too_large=09206;
   link_e_com_program_uses_segment_relocations=09207;
+  link_w_program_uses_checkpointer=09208;
   unit_t_unitsearch=10000;
   unit_t_ppu_loading=10001;
   unit_u_ppu_name=10002;
@@ -1006,6 +1009,7 @@ const
   option_malformed_para=11055;
   option_smart_link_requires_external_linker=11056;
   option_com_files_require_tiny_model=11057;
+  option_gc_incompatible_with_release_flag=11058;
   wpo_cant_find_file=12000;
   wpo_begin_processing=12001;
   wpo_end_processing=12002;
@@ -1054,13 +1058,14 @@ const
   package_u_contained_unit=13026;
   package_e_unit_already_contained_in_package=13027;
   package_w_unit_from_indirect_package=13028;
+  package_u_ppl_filename=13029;
   option_logo=11023;
   option_info=11024;
   option_help_pages=11025;
 
-  MsgTxtSize = 78095;
+  MsgTxtSize = 78689;
 
   MsgIdxMax : array[1..20] of longint=(
-    27,100,347,124,96,58,130,33,208,65,
-    58,20,29,1,1,1,1,1,1,1
+    27,102,347,124,96,58,130,33,209,65,
+    59,20,30,1,1,1,1,1,1,1
   );

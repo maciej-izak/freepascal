@@ -605,6 +605,8 @@ end;
 
 {$include rtl-extra/fpmake.pp}
 
+{$include rtl-generics/fpmake.pp}
+
 {$include rtl-objpas/fpmake.pp}
 
 {$include rtl-unicode/fpmake.pp}
@@ -736,3 +738,5 @@ begin
   with Installer do
 {$include fcl-pdf/fpmake.pp}
 end;
+
+{$include odata/fpmake.pp}

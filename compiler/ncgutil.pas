@@ -690,6 +690,7 @@ implementation
     procedure gen_alloc_regvar(list:TAsmList;sym: tabstractnormalvarsym; allocreg: boolean);
       var
         usedef: tdef;
+        varloc: tai_varloc;
       begin
         if allocreg then
           begin
@@ -762,7 +763,16 @@ implementation
 {$endif}
              cg.a_reg_sync(list,sym.initialloc.register);
           end;
-        sym.localloc:=sym.initialloc;
+{$ifdef cpu64bitalu}
+        if (sym.initialloc.size in [OS_128,OS_S128]) then
+          varloc:=tai_varloc.create128(sym,sym.initialloc.register,sym.initialloc.registerhi)
+{$else cpu64bitalu}
+        if (sym.initialloc.size in [OS_64,OS_S64]) then
+          varloc:=tai_varloc.create64(sym,sym.initialloc.register,sym.initialloc.registerhi)
+{$endif cpu64bitalu}
+        else
+          varloc:=tai_varloc.create(sym,sym.initialloc.register);
+        list.concat(varloc);
       end;
 
 
@@ -856,7 +866,8 @@ implementation
                    is_record(vardef)) then
                 begin
                   case paraloc^.loc of
-                    LOC_REGISTER:
+                    LOC_REGISTER,
+                    LOC_MMREGISTER:
                       begin
                         if not assigned(paraloc^.next) then
                           internalerror(200410104);
@@ -1312,7 +1323,10 @@ implementation
             { gen_load_cgpara_loc() already allocated the initialloc
               -> don't allocate again }
             if currpara.initialloc.loc in [LOC_CREGISTER,LOC_CFPUREGISTER,LOC_CMMREGISTER] then
-              gen_alloc_regvar(list,currpara,false);
+              begin
+                gen_alloc_regvar(list,currpara,false);
+                hlcg.varsym_set_localloc(list,currpara);
+              end;
           end;
 
         { generate copies of call by value parameters, must be done before
@@ -1367,9 +1381,9 @@ implementation
               erroneous code (at least for targets using GOT) } 
             if (cs_profile in current_settings.moduleswitches) or
                (po_global in current_procinfo.procdef.procoptions) then
-              current_asmdata.DefineAsmSymbol(item.str,AB_GLOBAL,AT_FUNCTION)
+              current_asmdata.DefineAsmSymbol(item.str,AB_GLOBAL,AT_FUNCTION,pd)
             else
-              current_asmdata.DefineAsmSymbol(item.str,AB_LOCAL,AT_FUNCTION);
+              current_asmdata.DefineAsmSymbol(item.str,AB_LOCAL,AT_FUNCTION,pd);
            item := TCmdStrListItem(item.next);
          end;
       end;
@@ -1714,7 +1728,7 @@ implementation
             { tempinfo^.valid will be false and so we do not add            }
             { unnecessary registers. This way, we don't have to look at     }
             { tempcreate and tempdestroy nodes to get this info (JM)        }
-            if (ti_valid in ttemprefnode(n).tempinfo^.flags) then
+            if (ti_valid in ttemprefnode(n).tempflags) then
               add_regvars(rv^,ttemprefnode(n).tempinfo^.location);
           loadn:
             if (tloadnode(n).symtableentry.typ in [staticvarsym,localvarsym,paravarsym]) then

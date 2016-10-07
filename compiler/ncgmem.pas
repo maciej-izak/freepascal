@@ -106,6 +106,8 @@ implementation
         href    : treference;
         pool    : THashSet;
         entry   : PHashSetItem;
+        vmtname : tsymstr;
+        otherunit,
         indirect : boolean;
       begin
          location_reset(location,LOC_REGISTER,def_cgsize(voidpointertype));
@@ -118,17 +120,17 @@ implementation
                    - the target does not support packages
                    - the target does not use indirect references
                    - the class is located inside the same unit }
+                 otherunit:=findunitsymtable(left.resultdef.owner).moduleid<>current_module.moduleid;
                  indirect:=(tf_supports_packages in target_info.flags) and
                            (target_info.system in systems_indirect_var_imports) and
-                           not sym_is_owned_by(left.resultdef.typesym,current_module.globalsymtable) and
-                           (
-                             (current_module.globalsymtable=current_module.localsymtable) or
-                             not sym_is_owned_by(left.resultdef.typesym,current_module.localsymtable)
-                           );
+                           otherunit;
+                 vmtname:=tobjectdef(tclassrefdef(resultdef).pointeddef).vmt_mangledname;
                  reference_reset_symbol(href,
-                   current_asmdata.RefAsmSymbol(tobjectdef(tclassrefdef(resultdef).pointeddef).vmt_mangledname,AT_DATA,indirect),0,
-                   voidpointertype.size);
+                   current_asmdata.RefAsmSymbol(vmtname,AT_DATA,indirect),0,
+                   resultdef.alignment);
                  hlcg.a_loadaddr_ref_reg(current_asmdata.CurrAsmList,resultdef,resultdef,href,location.register);
+                 if otherunit then
+                   current_module.add_extern_asmsym(vmtname,AB_EXTERNAL,AT_DATA);
                end
              else
                begin
@@ -144,7 +146,7 @@ implementation
                      { find/add necessary classref/classname pool entries }
                      objcfinishstringrefpoolentry(entry,sp_objcclassnames,sec_objc_cls_refs,sec_objc_class_names);
                    end;
-                 reference_reset_symbol(href,tasmlabel(entry^.Data),0,voidpointertype.size);
+                 reference_reset_symbol(href,tasmlabel(entry^.Data),0,objc_idtype.alignment);
                  hlcg.a_load_ref_reg(current_asmdata.CurrAsmList,objc_idtype,objc_idtype,href,location.register);
                end;
            end
@@ -192,7 +194,7 @@ implementation
                 if hsym.localloc.loc<>LOC_REFERENCE then
                   internalerror(200309283);
 
-                hlcg.reference_reset_base(href,parentfpvoidpointertype,location.register,hsym.localloc.reference.offset,sizeof(pint));
+                hlcg.reference_reset_base(href,parentfpvoidpointertype,location.register,hsym.localloc.reference.offset,parentfpvoidpointertype.alignment);
                 hlcg.a_load_ref_reg(current_asmdata.CurrAsmList,parentfpvoidpointertype,parentfpvoidpointertype,href,location.register);
               end;
           end;
@@ -317,6 +319,7 @@ implementation
             hlcg.allocallcpuregisters(current_asmdata.CurrAsmList);
             hlcg.a_call_name(current_asmdata.CurrAsmList,pd,'FPC_CHECKPOINTER',[@paraloc1],nil,false);
             hlcg.deallocallcpuregisters(current_asmdata.CurrAsmList);
+            include(current_settings.moduleswitches,cs_checkpointer_called);
           end;
       end;
 
@@ -405,6 +408,7 @@ implementation
                     hlcg.allocallcpuregisters(current_asmdata.CurrAsmList);
                     hlcg.a_call_name(current_asmdata.CurrAsmList,pd,'FPC_CHECKPOINTER',[@paraloc1],nil,false);
                     hlcg.deallocallcpuregisters(current_asmdata.CurrAsmList);
+                    system.include(current_settings.moduleswitches,cs_checkpointer_called);
                   end;
                end
              else
@@ -539,8 +543,8 @@ implementation
                classes can be changed without breaking programs compiled against
                earlier versions)
              }
-             asmsym:=current_asmdata.RefAsmSymbol(vs.mangledname);
-             reference_reset_symbol(tmpref,asmsym,0,sizeof(pint));
+             asmsym:=current_asmdata.RefAsmSymbol(vs.mangledname,AT_DATA);
+             reference_reset_symbol(tmpref,asmsym,0,voidpointertype.alignment);
              hlcg.g_ptrtypecast_ref(current_asmdata.CurrAsmList,left.resultdef,cpointerdef.getreusable(resultdef),location.reference);
              location.reference.index:=hlcg.getintregister(current_asmdata.CurrAsmList,ptruinttype);
              hlcg.a_load_ref_reg(current_asmdata.CurrAsmList,ptruinttype,ptruinttype,tmpref,location.reference.index);
@@ -754,10 +758,6 @@ implementation
 
      procedure tcgvecnode.rangecheck_array;
        var
-         hightree : tnode;
-         poslabel,
-         neglabel : tasmlabel;
-         hreg : tregister;
          paraloc1,paraloc2 : tcgpara;
          pd : tprocdef;
        begin
@@ -767,66 +767,28 @@ implementation
            exit;
          paraloc1.init;
          paraloc2.init;
-         if is_open_array(left.resultdef) or
-            is_array_of_const(left.resultdef) then
-          begin
-            { cdecl functions don't have high() so we can not check the range }
-            { (can't use current_procdef, since it may be a nested procedure) }
-            if not(tprocdef(tparasymtable(tparavarsym(tloadnode(get_open_const_array(left)).symtableentry).owner).defowner).proccalloption in cdecl_pocalls) then
-             begin
-               { Get high value }
-               hightree:=load_high_value_node(tparavarsym(tloadnode(get_open_const_array(left)).symtableentry));
-               { it must be available }
-               if not assigned(hightree) then
-                 internalerror(200212201);
-               firstpass(hightree);
-               secondpass(hightree);
-               { generate compares }
-{$ifndef cpuhighleveltarget}
-               if (right.location.loc in [LOC_REGISTER,LOC_CREGISTER]) then
-                 hreg:=cg.makeregsize(current_asmdata.CurrAsmList,right.location.register,OS_INT)
-               else
-{$endif not cpuhighleveltarget}
-                 begin
-                   hreg:=hlcg.getintregister(current_asmdata.CurrAsmList,ossinttype);
-                   hlcg.a_load_loc_reg(current_asmdata.CurrAsmList,right.resultdef,ossinttype,right.location,hreg);
-                 end;
-               current_asmdata.getjumplabel(neglabel);
-               current_asmdata.getjumplabel(poslabel);
-               hlcg.a_cmp_const_reg_label(current_asmdata.CurrAsmList,ossinttype,OC_LT,0,hreg,poslabel);
-               hlcg.a_cmp_loc_reg_label(current_asmdata.CurrAsmList,osuinttype,OC_BE,hightree.location,hreg,neglabel);
-               hlcg.a_label(current_asmdata.CurrAsmList,poslabel);
-               hlcg.g_call_system_proc(current_asmdata.CurrAsmList,'fpc_rangeerror',[],nil).resetiftemp;
-               hlcg.a_label(current_asmdata.CurrAsmList,neglabel);
-               { release hightree }
-               hightree.free;
-             end;
-          end
-         else
-          if is_dynamic_array(left.resultdef) then
+         if is_dynamic_array(left.resultdef) then
             begin
                pd:=search_system_proc('fpc_dynarray_rangecheck');
                paramanager.getintparaloc(current_asmdata.CurrAsmList,pd,1,paraloc1);
                paramanager.getintparaloc(current_asmdata.CurrAsmList,pd,2,paraloc2);
                if pd.is_pushleftright then
                  begin
-                   cg.a_load_loc_cgpara(current_asmdata.CurrAsmList,left.location,paraloc1);
-                   cg.a_load_loc_cgpara(current_asmdata.CurrAsmList,right.location,paraloc2);
+                   hlcg.a_load_loc_cgpara(current_asmdata.CurrAsmList,left.resultdef,left.location,paraloc1);
+                   hlcg.a_load_loc_cgpara(current_asmdata.CurrAsmList,right.resultdef,right.location,paraloc2);
                  end
                else
                  begin
-                   cg.a_load_loc_cgpara(current_asmdata.CurrAsmList,right.location,paraloc2);
-                   cg.a_load_loc_cgpara(current_asmdata.CurrAsmList,left.location,paraloc1);
+                   hlcg.a_load_loc_cgpara(current_asmdata.CurrAsmList,right.resultdef,right.location,paraloc2);
+                   hlcg.a_load_loc_cgpara(current_asmdata.CurrAsmList,left.resultdef,left.location,paraloc1);
                  end;
                paramanager.freecgpara(current_asmdata.CurrAsmList,paraloc1);
                paramanager.freecgpara(current_asmdata.CurrAsmList,paraloc2);
-               cg.allocallcpuregisters(current_asmdata.CurrAsmList);
-               cg.a_call_name(current_asmdata.CurrAsmList,'FPC_DYNARRAY_RANGECHECK',false);
-               cg.deallocallcpuregisters(current_asmdata.CurrAsmList);
+               hlcg.g_call_system_proc(current_asmdata.CurrAsmList,pd,[@paraloc1,@paraloc2],nil).resetiftemp;
             end;
-{ for regular arrays, we don't have to do anything because the index has been
-  type converted to the index type, which already inserted a range check if
-  necessary }
+         { for regular arrays, we don't have to do anything because the index has been
+           type converted to the index type, which already inserted a range check if
+           necessary }
          paraloc1.done;
          paraloc2.done;
        end;
@@ -907,10 +869,10 @@ implementation
 
          newsize:=def_cgsize(resultdef);
          secondpass(left);
-         if left.location.loc=LOC_CREFERENCE then
-           location_reset_ref(location,LOC_CREFERENCE,newsize,left.location.reference.alignment)
+         if left.location.loc in [LOC_CREFERENCE,LOC_REFERENCE] then
+           location_reset_ref(location,left.location.loc,newsize,left.location.reference.alignment)
          else
-           location_reset_ref(location,LOC_REFERENCE,newsize,left.location.reference.alignment);
+           location_reset_ref(location,LOC_REFERENCE,newsize,resultdef.alignment);
 
          { an ansistring needs to be dereferenced }
          if is_ansistring(left.resultdef) or

@@ -43,9 +43,7 @@ type
 {$endif Test_Double_checksum}
 
 const
-  CurrentPPUVersion = 183;
-
-  ppubufsize   = 16384;
+  CurrentPPUVersion = 187;
 
 { unit flags }
   uf_init                = $000001; { unit has initialization section }
@@ -57,6 +55,7 @@ const
   uf_static_linked       = $000080; { the ppu can be linked static }
   uf_shared_linked       = $000100; { the ppu can be linked shared }
 //uf_local_browser       = $000200;
+  uf_checkpointer_called = $000200; { Unit uses experimental checkpointer test code }
   uf_no_link             = $000400; { unit has no .o generated, but can still have external linking! }
   uf_has_resourcestrings = $000800; { unit has resource string section }
   uf_little_endian       = $001000;
@@ -78,6 +77,7 @@ const
   uf_i8086_cs_equals_ds = $10000000; { this unit uses an i8086 memory model with CS=DS (i.e. tiny) }
   uf_package_deny       = $20000000; { this unit must not be part of a package }
   uf_package_weak       = $40000000; { this unit may be completely contained in a package }
+  uf_i8086_ss_equals_ds = $80000000; { this unit uses an i8086 memory model with SS=DS (i.e. tiny, small or medium) }
 
 type
   { bestreal is defined based on the target architecture }
@@ -95,6 +95,8 @@ type
   end;
 
   tppuentry=tentry;
+
+  tunitasmlisttype=(ualt_public,ualt_extern);
 
   { tppufile }
 
@@ -132,7 +134,7 @@ type
     do_indirect_crc  : boolean;
     crc_only         : boolean;    { used to calculate interface_crc before implementation }
     constructor Create(const fn:string);
-    procedure closefile;override;
+    destructor destroy;override;
     function  CheckPPUId:boolean;
   {read}
   { nothing special currently }
@@ -171,23 +173,26 @@ constructor tppufile.Create(const fn:string);
 begin
   inherited Create(fn);
   crc_only:=false;
+{$ifdef Test_Double_checksum}
+  if not assigned(crc_test) then
+    new(crc_test);
+  if not assigned(crc_test2) then
+    new(crc_test2);
+{$endif Test_Double_checksum}
 end;
 
-
-procedure tppufile.closefile;
+destructor tppufile.destroy;
 begin
 {$ifdef Test_Double_checksum}
-  if mode=2 then
-   begin
-     if assigned(crc_test) then
-      dispose(crc_test);
-     if assigned(crc_test2) then
-      dispose(crc_test2);
-   end;
+  if assigned(crc_test) then
+    dispose(crc_test);
+  crc_test:=nil;
+  if assigned(crc_test2) then
+    dispose(crc_test2);
+  crc_test2:=nil;
 {$endif Test_Double_checksum}
-  inherited closefile;
+  inherited destroy;
 end;
-
 
 function tppufile.CheckPPUId:boolean;
 begin
@@ -235,24 +240,12 @@ begin
   header.indirect_checksum := swapendian(header.indirect_checksum);
   header.deflistsize:=swapendian(header.deflistsize);
   header.symlistsize:=swapendian(header.symlistsize);
-{$ENDIF}
+
   { the PPU DATA is stored in native order }
-  if (header.common.flags and uf_big_endian) = uf_big_endian then
-   Begin
-{$IFDEF ENDIAN_LITTLE}
-     change_endian := TRUE;
-{$ELSE}
-     change_endian := FALSE;
+  change_endian := (header.common.flags and uf_little_endian) = uf_little_endian;
+{$ELSE not ENDIAN_BIG}
+  change_endian := (header.common.flags and uf_big_endian) = uf_big_endian;
 {$ENDIF}
-   End
-  else if (header.common.flags and uf_little_endian) = uf_little_endian then
-   Begin
-{$IFDEF ENDIAN_BIG}
-     change_endian := TRUE;
-{$ELSE}
-     change_endian := FALSE;
-{$ENDIF}
-   End;
 end;
 
 function tppufile.outputallowed: boolean;

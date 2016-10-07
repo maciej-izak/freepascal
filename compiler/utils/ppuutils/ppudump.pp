@@ -530,26 +530,6 @@ begin
 end;
 
 
-Function Synthetic2Str(w: byte): string;
-const
-   syntheticName : array[tsynthetickind] of string[length('jvm procvar intf constructor')] = (
-      '<none>','anon inherited','jvm clone','record deep copy',
-      'record initilializer', 'empty routine', 'typed const initializer',
-      'callthough', 'callthrough if not abstract', 'jvm enum values',
-      'jvm enum valueof', 'jvm enum class constructor',
-      'jvm enum jumps constructor', 'jvm enum fpcordinal',
-      'jvm enum fpcvalueof', 'jvm enum long2set',
-      'jvm enum bitset2set', 'jvm enum set2set',
-      'jvm procvar invoke', 'jvm procvar intf constructor',
-      'jvm virtual class method', 'jvm field getter', 'jvm field setter',
-      'block invoke','interface wrapper');
-begin
-  if w<=ord(high(syntheticName)) then
-    result:=syntheticName[tsynthetickind(w)]
-  else
-    result:=Unknown('synthetickind',w);
-end;
-
 function PPUFlags2Str(flags:longint):string;
 type
   tflagopt=record
@@ -557,7 +537,7 @@ type
     str  : string[30];
   end;
 const
-  flagopts=28;
+  flagopts=32;
   flagopt : array[1..flagopts] of tflagopt=(
     (mask: $1    ;str:'init'),
     (mask: $2    ;str:'final'),
@@ -568,7 +548,7 @@ const
     (mask: $40   ;str:'smart_linked'),
     (mask: $80   ;str:'static_linked'),
     (mask: $100  ;str:'shared_linked'),
-//    (mask: $200  ;str:'local_browser'),
+    (mask: $200  ;str:'uses_checkpointer'),
     (mask: $400  ;str:'no_link'),
     (mask: $800  ;str:'has_resources'),
     (mask: $1000  ;str:'little_endian'),
@@ -588,7 +568,10 @@ const
     (mask: $2000000 ;str:'i8086_far_code'),
     (mask: $4000000 ;str:'i8086_far_data'),
     (mask: $8000000 ;str:'i8086_huge_data'),
-    (mask: $10000000;str:'i8086_cs_equals_ds')
+    (mask: $10000000;str:'i8086_cs_equals_ds'),
+    (mask: $20000000;str:'package_deny'),
+    (mask: $40000000;str:'package_weak'),
+    (mask: longint($80000000);str:'i8086_ss_equals_ds')
   );
 var
   i,ntflags : longint;
@@ -889,29 +872,59 @@ end;
 
 
 Procedure ReadAsmSymbols;
+const
+  unitasmlisttype: array[tunitasmlisttype] of string[6]=(
+    'PUBLIC',
+    'EXTERN'
+  );
 type
   { Copied from aasmbase.pas }
-  TAsmsymbind=(
-    AB_NONE,AB_EXTERNAL,AB_COMMON,AB_LOCAL,AB_GLOBAL,AB_WEAK_EXTERNAL,
-    { global in the current program/library, but not visible outside it }
-    AB_PRIVATE_EXTERN,AB_LAZY,AB_IMPORT);
+       TAsmsymbind=(
+         AB_NONE,AB_EXTERNAL,AB_COMMON,AB_LOCAL,AB_GLOBAL,AB_WEAK_EXTERNAL,
+         { global in the current program/library, but not visible outside it }
+         AB_PRIVATE_EXTERN,AB_LAZY,AB_IMPORT,
+         { a symbol that's internal to the compiler and used as a temp }
+         AB_TEMP,
+         { a global symbol that points to another global symbol and is only used
+           to allow indirect loading in case of packages and indirect imports }
+         AB_INDIRECT,AB_EXTERNAL_INDIRECT);
 
-  TAsmsymtype=(
-    AT_NONE,AT_FUNCTION,AT_DATA,AT_SECTION,AT_LABEL,
-    {
-      the address of this code label is taken somewhere in the code
-      so it must be taken care of it when creating pic
-    }
-    AT_ADDR
-    );
+       TAsmsymtype=(
+         AT_NONE,AT_FUNCTION,AT_DATA,AT_SECTION,AT_LABEL,
+         {
+           the address of this code label is taken somewhere in the code
+           so it must be taken care of it when creating pic
+         }
+         AT_ADDR,
+         { Label for debug or other non-program information }
+         AT_METADATA,
+         { label for data that must always be accessed indirectly, because it
+           is handled explcitely in the system unit or (e.g. RTTI and threadvar
+           tables) -- never seen in an assembler/assembler writer, always
+           changed to AT_DATA }
+         AT_DATA_FORCEINDIRECT,
+         { Thread-local symbol (ELF targets) }
+         AT_TLS,
+         { GNU indirect function (ELF targets) }
+         AT_GNU_IFUNC
+         );
 
 var
   s,
   bindstr,
   typestr  : string;
   i : longint;
+  t: tunitasmlisttype;
 begin
-  writeln([space,'Number of AsmSymbols: ',ppufile.getlongint]);
+  writeln([space,'Assembler Symbols']);
+  writeln([space,'-----------------']);
+  t:=tunitasmlisttype(ppufile.getbyte);
+  if (t>=Low(tunitasmlisttype)) and (t<=High(tunitasmlisttype)) then
+    typestr:=unitasmlisttype[t]
+  else
+    typestr:='UNKNOWN';
+  writeln([space,'Type: ',typestr]);
+  writeln([space,'Count: ',ppufile.getlongint]);
   i:=0;
   while (not ppufile.endofentry) and (not ppufile.error) do
    begin
@@ -933,6 +946,12 @@ begin
          bindstr:='Lazy';
        AB_IMPORT :
          bindstr:='Import';
+       AB_TEMP :
+         bindstr:='Temp';
+       AB_INDIRECT :
+         bindstr:='Indirect';
+       AB_EXTERNAL_INDIRECT :
+         bindstr:='Indirect external';
        else
          begin
            bindstr:='<Error !!>';
@@ -950,6 +969,14 @@ begin
          typestr:='Label';
        AT_ADDR :
          typestr:='Label (with address taken)';
+       AT_METADATA :
+         typestr:='Metadata';
+       AT_DATA_FORCEINDIRECT :
+         typestr:='Data (ForceIndirect)';
+       AT_TLS :
+         typestr:='TLS';
+       AT_GNU_IFUNC :
+         typestr:='GNU IFUNC';
        else
          begin
            typestr:='<Error !!>';
@@ -959,6 +986,7 @@ begin
      Writeln([space,'  ',i,' : ',s,' [',bindstr,',',typestr,']']);
      inc(i);
    end;
+  writeln([space]);
 end;
 
 function getexprint:Tconstexprint;
@@ -1410,6 +1438,72 @@ begin
 end;
 
 
+procedure readcgpara(const space:string);
+{ this is originally in cgbase.pas }
+type
+  TCGLoc=(LOC_INVALID, LOC_VOID, LOC_CONSTANT, LOC_JUMP, LOC_FLAGS,
+          LOC_REGISTER, LOC_CREGISTER, LOC_FPUREGISTER, LOC_CFPUREGISTER,
+          LOC_MMXREGISTER, LOC_CMMXREGISTER, LOC_MMREGISTER, LOC_CMMREGISTER,
+          LOC_SUBSETREG, LOC_CSUBSETREG, LOC_SUBSETREF, LOC_CSUBSETREF,
+          LOC_CREFERENCE, LOC_REFERENCE);
+
+const
+  tcgloc2str : array[TCGLoc] of string[12] = (
+         'LOC_INVALID', 'LOC_VOID', 'LOC_CONST', 'LOC_JUMP', 'LOC_FLAGS',
+         'LOC_REG', 'LOC_CREG', 'LOC_FPUREG', 'LOC_CFPUREG',
+         'LOC_MMXREG', 'LOC_CMMXREG', 'LOC_MMREG', 'LOC_CMMREG',
+         'LOC_SSETREG', 'LOC_CSSETREG', 'LOC_SSETREF', 'LOC_CSSETREF',
+         'LOC_CREF', 'LOC_REF');
+var
+  i: byte;
+  ii: longint;
+  np: byte;
+  loc: tcgloc;
+begin
+  i:=ppufile.getbyte;
+  writeln([space,'   Alignment : ',i]);
+  i:=ppufile.getbyte;
+  writeln([space,'        Size : ',i]);
+  ii:=ppufile.getaint;
+  writeln([space,'     IntSize : ',ii]);
+  readderef(space+'  ');
+  np:=ppufile.getbyte;
+  writeln([space,'  NumParaloc : ',np]);
+  while np > 0 do
+    begin
+      i:=ppufile.getbyte;
+      writeln([space,'     Paraloc Size : ',i]);
+      loc:=tcgloc(ppufile.getbyte);
+      if loc > high(tcgloc) then
+        begin
+          WriteError('!! Location is out of range! '+IntToStr(ord(loc)));
+          loc:=LOC_INVALID;
+        end;
+      writeln([space,'     Paraloc Loc  : (',ord(loc),') ',tcgloc2str[loc]]);
+      case loc of
+        LOC_REFERENCE:
+          begin
+            writeln([space,'     RegIndex : $',hexstr(ppufile.getdword,8)]);
+            writeln([space,'       Offset : ',ppufile.getaint]);
+          end;
+        LOC_FPUREGISTER,
+        LOC_CFPUREGISTER,
+        LOC_MMREGISTER,
+        LOC_CMMREGISTER,
+        LOC_REGISTER,
+        LOC_CREGISTER :
+          begin
+            writeln([space,'     ShiftVal : ',ppufile.getbyte]);
+            writeln([space,'     Register : $',hexstr(ppufile.getdword,8)]);
+          end;
+        LOC_VOID:
+          begin end
+        else
+          WriteError('!! Invalid location error')
+      end;
+      dec(np);
+    end;
+end;
 
 var
   { needed during tobjectdef parsing... }
@@ -1441,7 +1535,8 @@ const
      (mask:df_genconstraint;  str:'Generic Constraint'),
      { this should never happen for defs stored to a ppu file }
      (mask:df_not_registered_no_free;  str:'Unregistered/No free (invalid)'),
-     (mask:df_llvm_no_struct_packing;  str:'LLVM unpacked struct')
+     (mask:df_llvm_no_struct_packing;  str:'LLVM unpacked struct'),
+     (mask:df_internal;       str:'Internal')
   );
   defstate : array[1..ord(high(tdefstate))] of tdefstateinfo=(
      (mask:ds_vmt_written;           str:'VMT Written'),
@@ -1835,11 +1930,14 @@ const
      (mask:po_has_public_name; str:'HasPublicName'),
      (mask:po_forward;         str:'Forward'),
      (mask:po_global;          str:'Global'),
+     (mask:po_syscall;         str:'Syscall'),
      (mask:po_syscall_legacy;  str:'SyscallLegacy'),
      (mask:po_syscall_sysv;    str:'SyscallSysV'),
      (mask:po_syscall_basesysv;str:'SyscallBaseSysV'),
      (mask:po_syscall_sysvbase;str:'SyscallSysVBase'),
      (mask:po_syscall_r12base; str:'SyscallR12Base'),
+     (mask:po_syscall_stackbase;str:'SyscallStackBase'),
+     (mask:po_syscall_eaxbase; str:'SyscallEAXBase'),
      (mask:po_syscall_has_libsym; str:'Has LibSym'),
      (mask:po_inline;          str:'Inline'),
      (mask:po_compilerproc;    str:'CompilerProc'),
@@ -1859,7 +1957,9 @@ const
      (mask:po_far;             str: 'Far'),
      (mask:po_noreturn;        str: 'No return'),
      (mask:po_is_function_ref; str: 'Function reference'),
-     (mask:po_is_block;        str: 'C "Block"')
+     (mask:po_is_block;        str: 'C "Block"'),
+     (mask:po_is_auto_getter;  str: 'Automatically generated getter'),
+     (mask:po_is_auto_setter;  str: 'Automatically generated setter')
   );
 var
   proctypeoption  : tproctypeoption;
@@ -1918,11 +2018,8 @@ begin
    end;
   if (po_explicitparaloc in procoptions) then
     begin
-      i:=ppufile.getbyte;
-      ppufile.getdata(tempbuf,i);
+      readcgpara(space);
     end;
-  if po_syscall_has_libsym in procoptions then
-      readderef(space);
 end;
 
 
@@ -2628,8 +2725,7 @@ begin
              writeln([space,'         Refs : ',getbyte]);
              if (vo_has_explicit_paraloc in varoptions) then
                begin
-                 i:=getbyte;
-                 getdata(tempbuf,i);
+                 readcgpara(space+'   ');
                end;
            end;
 
@@ -3030,7 +3126,6 @@ begin
              readvisibility(def);
              write  ([space,'       SymOptions : ']);
              readsymoptions(space+'       ');
-             writeln  ([space,'   Synthetic kind : ',Synthetic2Str(ppufile.getbyte)]);
              if (po_has_importdll in procoptions) then
                writeln([space,'      Import DLL : ',getstring]);
              if (po_has_importname in procoptions) then
@@ -3069,14 +3164,11 @@ begin
                  ppufile.getdata(tokenbuf^,tokenbufsize);
                  freemem(tokenbuf);
                end;
-             if tsystemcpu(ppufile.header.common.cpu)=cpu_powerpc then
+             if po_syscall_has_libsym in procoptions then
                begin
-                 if po_syscall_has_libsym in procoptions then
-                   begin
-                     { library symbol for AmigaOS/MorphOS }
-                     write  ([space,'   Library symbol : ']);
-                     readderef('');
-                   end;
+                 { library symbol for AmigaOS/MorphOS/AROS }
+                 write  ([space,'   Library symbol : ']);
+                 readderef('');
                end;
              if not EndOfEntry then
                HasMoreInfos;

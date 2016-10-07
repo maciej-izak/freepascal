@@ -62,7 +62,6 @@ Type
 
   TJSONScanner = class
   private
-    FAllowComments: Boolean;
     FSource : TStringList;
     FCurRow: Integer;
     FCurToken: TJSONToken;
@@ -206,10 +205,10 @@ function TJSONScanner.DoFetchToken: TJSONToken;
   end;
 
 var
-  TokenStart, CurPos: PChar;
+  TokenStart: PChar;
   it : TJSONToken;
   I : Integer;
-  OldLength, SectionLength, Index: Integer;
+  OldLength, SectionLength,  tstart,tcol: Integer;
   C : char;
   S : String;
   IsStar,EOC: Boolean;
@@ -434,6 +433,8 @@ begin
       end;
     'a'..'z','A'..'Z','_':
       begin
+        tstart:=CurRow;
+        Tcol:=CurColumn;
         TokenStart := TokenStr;
         repeat
           Inc(TokenStr);
@@ -449,7 +450,7 @@ begin
             exit;
             end;
         if (joStrict in Options) then
-          Error(SErrInvalidCharacter, [CurRow,CurColumn,TokenStr[0]])
+          Error(SErrInvalidCharacter, [tStart,tcol,TokenStart[0]])
         else
           Result:=tkIdentifier;
       end;

@@ -57,6 +57,9 @@ interface
        end;
 
        tjvmvecnode = class(tcgvecnode)
+        protected
+          function gen_array_rangecheck: tnode; override;
+        public
          function pass_1: tnode; override;
          procedure pass_generate_code;override;
        end;
@@ -144,7 +147,7 @@ implementation
                (location.reference.index<>NR_NO) or
                assigned(location.reference.symbol) then
               internalerror(2011011301);
-            location.reference.symbol:=current_asmdata.RefAsmSymbol(vs.mangledname);
+            location.reference.symbol:=current_asmdata.RefAsmSymbol(vs.mangledname,AT_METADATA);
             result:=true;
           end
       end;
@@ -343,7 +346,7 @@ implementation
     procedure tjvmloadvmtaddrnode.pass_generate_code;
       begin
         current_asmdata.CurrAsmList.concat(taicpu.op_sym(a_ldc,current_asmdata.RefAsmSymbol(
-          tabstractrecorddef(tclassrefdef(resultdef).pointeddef).jvm_full_typename(true))));
+          tabstractrecorddef(tclassrefdef(resultdef).pointeddef).jvm_full_typename(true),AT_METADATA)));
         thlcgjvm(hlcg).incstack(current_asmdata.CurrAsmList,1);
         location_reset(location,LOC_REGISTER,OS_ADDR);
         location.register:=hlcg.getaddressregister(current_asmdata.CurrAsmList,resultdef);
@@ -354,6 +357,13 @@ implementation
 {*****************************************************************************
                              TJVMVECNODE
 *****************************************************************************}
+
+    function tjvmvecnode.gen_array_rangecheck: tnode;
+      begin
+        { JVM does the range checking for us }
+        result:=nil;
+      end;
+
 
     function tjvmvecnode.pass_1: tnode;
       var

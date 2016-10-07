@@ -97,10 +97,11 @@
        pinterfacetable = ^tinterfacetable;
 
        PVmt = ^TVmt;
+       PPVmt = ^PVmt;
        TVmt = record
          vInstanceSize: SizeInt;
          vInstanceSize2: SizeInt;
-         vParent: PVmt;
+         vParentRef: {$ifdef VER3_0}PVmt{$else}PPVmt{$endif};
          vClassName: PShortString;
          vDynamicTable: Pointer;
          vMethodTable: Pointer;
@@ -123,6 +124,10 @@
          vEquals: CodePointer;
          vGetHashCode: CodePointer;
          vToString: CodePointer;
+       private
+         function GetvParent: PVmt; inline;
+       public
+         property vParent: PVmt read GetvParent;
        end;
 
        PGuid = ^TGuid;
@@ -162,21 +167,24 @@
 
        pinterfaceentry = ^tinterfaceentry;
        tinterfaceentry = record
-         IID         : pguid; { if assigned(IID) then Com else Corba}
+       private
+         function GetIID: pguid; inline;
+         function GetIIDStr: pshortstring; inline;
+       public
+         property IID: pguid read GetIID;
+         property IIDStr: pshortstring read GetIIDStr;
+       public
+         IIDRef      : {$IFNDEF VER3_0}^{$ENDIF}pguid; { if assigned(IID) then Com else Corba}
          VTable      : Pointer;
-         IOffset     : sizeuint;
-         IIDStr      : pshortstring; { never nil. Com: upper(GuidToString(IID^)) }
-{$ifdef VER2_6}
-         case boolean of
-{$ifdef ENDIAN_BIG}
-           true      : ({$IFDEF CPU64}__pad: longint;{$ENDIF}IType : tinterfaceentrytype);
-{$else ENDIAN_BIG}
-           true      : (IType       : tinterfaceentrytype);
-{$endif ENDIAN_BIG}
-           false     : (__pad_dummy : sizeint);
-{$else  VER2_6}
-         IType       : tinterfaceentrytype;
-{$endif VER2_6}
+         case integer of
+           1 : (
+                IOffset: sizeuint;
+               );
+           2 : (
+                IOffsetAsCodePtr: CodePointer;
+                IIDStrRef   : {$IFNDEF VER3_0}^{$ENDIF}pshortstring; { never nil. Com: upper(GuidToString(IID^)) }
+                IType       : tinterfaceentrytype;
+               );
        end;
 
        tinterfacetable = record

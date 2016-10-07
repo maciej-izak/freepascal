@@ -12,8 +12,7 @@ Const
   // in workable state atm.
   UnixLikes = AllUnixOSes -[QNX]; // qnx never was active in 2.x afaik
 
-  // Android has a dummy clocale unit, while it also includes unix dir.
-  ClocaleOSes   = UnixLikes -[beos];
+  ClocaleOSes   = UnixLikes -[beos,android];
   CLocaleIncOSes= [Aix,freebsd,netbsd,openbsd,solaris,darwin,iphonesim,dragonfly];
 
   IPCOSes       = UnixLikes-[aix,android,beos,haiku];
@@ -81,6 +80,11 @@ begin
     P.IncludePath.Add('src/$(OS)');
     P.IncludePath.Add('src/darwin',[iphonesim]);
     P.IncludePath.Add('src/win',AllWindowsOSes);
+
+    // Add clocale for Android first in order to compile the source file
+    // from the 'android' dir, not the 'unix' dir.
+    T:=P.Targets.AddUnit('real48utils.pp',AllTargetsextra-[msdos]);  { msdos excluded temporarily, until bitpacked records containing longints on 16-bit targets are fixed }
+    T:=P.Targets.AddUnit('clocale.pp',[android]);
 
     T:=P.Targets.AddUnit('ucomplex.pp',UComplexOSes);
 

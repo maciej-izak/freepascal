@@ -44,7 +44,7 @@ begin
     P.Email := '';
     P.Description := 'Libraries to create fppkg package managers.';
     P.NeedLibC:= false;
-    P.OSes := P.OSes - [embedded,nativent,msdos,win16];
+    P.OSes := P.OSes - [embedded,nativent,msdos,win16,atari];
 
     P.SourcePath.Add('src');
     P.IncludePath.Add('src');
@@ -62,6 +62,7 @@ begin
     T.ResourceStrings:=true;
 
     T:=P.Targets.AddUnit('pkgoptions.pp');
+    T:=P.Targets.AddUnit('pkgfppkg.pp');
     T:=P.Targets.AddUnit('pkgglobals.pp');
     T:=P.Targets.AddUnit('pkghandler.pp');
     T:=P.Targets.AddUnit('pkgmkconv.pp');
@@ -69,6 +70,8 @@ begin
     T:=P.Targets.AddUnit('pkgfpmake.pp');
     T.Dependencies.AddInclude('fpmkunitsrc.inc');
     T:=P.Targets.AddUnit('pkgcommands.pp');
+    T:=P.Targets.AddUnit('pkgpackagesstructure.pp');
+    T:=P.Targets.AddUnit('pkguninstalledsourcesrepository.pp');
 
     T:=P.Targets.AddUnit('pkgwget.pp', TargetsWithWGet);
     T:=P.Targets.AddUnit('pkgfphttp.pp', TargetsWithfpWeb);

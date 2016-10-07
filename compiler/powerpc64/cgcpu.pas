@@ -293,9 +293,9 @@ begin
   if (prependDot) then
     s := '.' + s;
   if not(weak) then
-    list.concat(taicpu.op_sym(opc, current_asmdata.RefAsmSymbol(s)))
+    list.concat(taicpu.op_sym(opc, current_asmdata.RefAsmSymbol(s,AT_FUNCTION)))
   else
-    list.concat(taicpu.op_sym(opc, current_asmdata.WeakRefAsmSymbol(s)));
+    list.concat(taicpu.op_sym(opc, current_asmdata.WeakRefAsmSymbol(s,AT_FUNCTION)));
   if (addNOP) then
     list.concat(taicpu.op_none(A_NOP));
 
@@ -965,7 +965,7 @@ var
 begin
   if (prependDot) then
     s := '.' + s;
-  p := taicpu.op_sym(opc, current_asmdata.RefAsmSymbol(s));
+  p := taicpu.op_sym(opc, current_asmdata.RefAsmSymbol(s,AT_FUNCTION));
   p.is_jmp := true;
   list.concat(p)
 end;
@@ -1858,7 +1858,7 @@ begin
   symname := '_$' + current_asmdata.name^ + '$toc$' + hexstr(a, sizeof(a)*2);
   l:=current_asmdata.getasmsymbol(symname);
   if not(assigned(l)) then begin
-    l:=current_asmdata.DefineAsmSymbol(symname,AB_GLOBAL, AT_DATA);
+    l:=current_asmdata.DefineAsmSymbol(symname,AB_GLOBAL, AT_METADATA, voidpointertype);
     new_section(current_asmdata.asmlists[al_picdata],sec_toc, '.toc', 8);
     current_asmdata.asmlists[al_picdata].concat(tai_symbol.create_global(l,0));
     current_asmdata.asmlists[al_picdata].concat(tai_directive.create(asd_toc_entry, symname + '[TC], ' + inttostr(a)));

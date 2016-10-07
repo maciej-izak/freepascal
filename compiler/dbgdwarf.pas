@@ -962,10 +962,10 @@ implementation
                   begin
                     if not assigned(def.typesym) then
                       internalerror(200610011);
-                    result^.lab:=current_asmdata.RefAsmSymbol(make_mangledname('DBG',def.owner,symname(def.typesym, true)),AT_DATA);
-                    result^.ref_lab:=current_asmdata.RefAsmSymbol(make_mangledname('DBGREF',def.owner,symname(def.typesym, true)),AT_DATA);
+                    result^.lab:=current_asmdata.RefAsmSymbol(make_mangledname('DBG',def.owner,symname(def.typesym, true)),AT_METADATA);
+                    result^.ref_lab:=current_asmdata.RefAsmSymbol(make_mangledname('DBGREF',def.owner,symname(def.typesym, true)),AT_METADATA);
                     if needstructdeflab then
-                      result^.struct_lab:=current_asmdata.RefAsmSymbol(make_mangledname('DBG2',def.owner,symname(def.typesym, true)),AT_DATA);
+                      result^.struct_lab:=current_asmdata.RefAsmSymbol(make_mangledname('DBG2',def.owner,symname(def.typesym, true)),AT_METADATA);
                     def.dbg_state:=dbg_state_written;
                   end
                 else
@@ -976,10 +976,10 @@ implementation
                        (def.owner.symtabletype=globalsymtable) and
                        (def.owner.iscurrentunit) then
                       begin
-                        result^.lab:=current_asmdata.DefineAsmSymbol(make_mangledname('DBG',def.owner,symname(def.typesym, true)),AB_GLOBAL,AT_DATA);
-                        result^.ref_lab:=current_asmdata.DefineAsmSymbol(make_mangledname('DBGREF',def.owner,symname(def.typesym, true)),AB_GLOBAL,AT_DATA);
+                        result^.lab:=current_asmdata.DefineAsmSymbol(make_mangledname('DBG',def.owner,symname(def.typesym, true)),AB_GLOBAL,AT_METADATA,voidpointertype);
+                        result^.ref_lab:=current_asmdata.DefineAsmSymbol(make_mangledname('DBGREF',def.owner,symname(def.typesym, true)),AB_GLOBAL,AT_METADATA,voidpointertype);
                         if needstructdeflab then
-                          result^.struct_lab:=current_asmdata.DefineAsmSymbol(make_mangledname('DBG2',def.owner,symname(def.typesym, true)),AB_GLOBAL,AT_DATA);
+                          result^.struct_lab:=current_asmdata.DefineAsmSymbol(make_mangledname('DBG2',def.owner,symname(def.typesym, true)),AB_GLOBAL,AT_METADATA,voidpointertype);
                         include(def.defstates,ds_dwarf_dbg_info_written);
                       end
                     else
@@ -1289,7 +1289,7 @@ implementation
         else
           begin
             AddConstToAbbrev(ord(DW_FORM_ref4));
-            current_asmdata.asmlists[al_dwarf_info].concat(tai_const.create_rel_sym(offsetreltype,current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'debug_info0',AB_LOCAL,AT_DATA),sym));
+            current_asmdata.asmlists[al_dwarf_info].concat(tai_const.create_rel_sym(offsetreltype,current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'debug_info0',AB_LOCAL,AT_METADATA,voidpointertype),sym));
           end;
       end;
 
@@ -2229,15 +2229,15 @@ implementation
             else
               procentry := def.mangledname;
 
-            append_labelentry(DW_AT_low_pc,current_asmdata.RefAsmSymbol(procentry));
+            append_labelentry(DW_AT_low_pc,current_asmdata.RefAsmSymbol(procentry,AT_FUNCTION));
             append_labelentry(DW_AT_high_pc,procendlabel);
 
             if not(target_info.system in systems_darwin) then
               begin
                 current_asmdata.asmlists[al_dwarf_aranges].Concat(
-                  tai_const.create_type_sym(aitconst_ptr_unaligned,current_asmdata.RefAsmSymbol(procentry)));
+                  tai_const.create_type_sym(aitconst_ptr_unaligned,current_asmdata.RefAsmSymbol(procentry,AT_FUNCTION)));
                 current_asmdata.asmlists[al_dwarf_aranges].Concat(
-                  tai_const.Create_rel_sym(aitconst_ptr_unaligned,current_asmdata.RefAsmSymbol(procentry),procendlabel));
+                  tai_const.Create_rel_sym(aitconst_ptr_unaligned,current_asmdata.RefAsmSymbol(procentry,AT_FUNCTION),procendlabel));
               end;
           end;
 
@@ -2750,8 +2750,8 @@ implementation
               else
                 begin
                   AddConstToAbbrev(ord(DW_FORM_block));
-                  current_asmdata.asmlists[al_dwarf_info].concat(tai_const.create_uleb128bit(sym.value.len+sizeof(pint)));
-                  current_asmdata.asmlists[al_dwarf_info].concat(tai_const.create_pint_unaligned(sym.value.len));
+                  current_asmdata.asmlists[al_dwarf_info].concat(tai_const.create_uleb128bit(sym.value.len+sizesinttype.size));
+                  current_asmdata.asmlists[al_dwarf_info].concat(tai_const.Create_sizeint_unaligned(sym.value.len));
                 end;
               i:=0;
               size:=sym.value.len;
@@ -2999,9 +2999,9 @@ implementation
           dbgname:='L'+dbgname;
         new_section(current_asmdata.asmlists[al_start],sec_code,dbgname,0,secorder_begin);
         if not(target_info.system in systems_darwin) then
-          current_asmdata.asmlists[al_start].concat(tai_symbol.Createname_global(dbgname,AT_DATA,0))
+          current_asmdata.asmlists[al_start].concat(tai_symbol.Createname_global(dbgname,AT_METADATA,0,voidpointertype))
         else
-          current_asmdata.asmlists[al_start].concat(tai_symbol.Createname(dbgname,AT_DATA,0));
+          current_asmdata.asmlists[al_start].concat(tai_symbol.Createname(dbgname,AT_METADATA,0,voidpointertype));
 
         dbgname:=make_mangledname('DEBUGEND',current_module.localsymtable,'');
         { See above. }
@@ -3009,27 +3009,27 @@ implementation
           dbgname:='L'+dbgname;
         new_section(current_asmdata.asmlists[al_end],sec_code,dbgname,0,secorder_end);
         if not(target_info.system in systems_darwin) then
-          current_asmdata.asmlists[al_end].concat(tai_symbol.Createname_global(dbgname,AT_DATA,0))
+          current_asmdata.asmlists[al_end].concat(tai_symbol.Createname_global(dbgname,AT_METADATA,0,voidpointertype))
         else
-          current_asmdata.asmlists[al_end].concat(tai_symbol.Createname(dbgname,AT_DATA,0));
+          current_asmdata.asmlists[al_end].concat(tai_symbol.Createname(dbgname,AT_METADATA,0,voidpointertype));
 
         { insert .Ldebug_abbrev0 label }
         templist:=TAsmList.create;
         new_section(templist,sec_debug_abbrev,'',0);
-        templist.concat(tai_symbol.createname(target_asm.labelprefix+'debug_abbrevsection0',AT_DATA,0));
+        templist.concat(tai_symbol.createname(target_asm.labelprefix+'debug_abbrevsection0',AT_METADATA,0,voidpointertype));
         { add any extra stuff which needs to be in the abbrev section, but before    }
         { the actual abbreviations, in between the symbol above and below, i.e. here }
-        templist.concat(tai_symbol.createname(target_asm.labelprefix+'debug_abbrev0',AT_DATA,0));
+        templist.concat(tai_symbol.createname(target_asm.labelprefix+'debug_abbrev0',AT_METADATA,0,voidpointertype));
         current_asmdata.asmlists[al_start].insertlist(templist);
         templist.free;
 
         { insert .Ldebug_line0 label }
         templist:=TAsmList.create;
         new_section(templist,sec_debug_line,'',0);
-        templist.concat(tai_symbol.createname(target_asm.labelprefix+'debug_linesection0',AT_DATA,0));
+        templist.concat(tai_symbol.createname(target_asm.labelprefix+'debug_linesection0',AT_METADATA,0,voidpointertype));
         { add any extra stuff which needs to be in the line section, but before  }
         { the actual line info, in between the symbol above and below, i.e. here }
-        templist.concat(tai_symbol.createname(target_asm.labelprefix+'debug_line0',AT_DATA,0));
+        templist.concat(tai_symbol.createname(target_asm.labelprefix+'debug_line0',AT_METADATA,0,voidpointertype));
         current_asmdata.asmlists[al_start].insertlist(templist);
         templist.free;
 
@@ -3047,7 +3047,7 @@ implementation
         if use_64bit_headers then
           linelist.concat(tai_const.create_32bit_unaligned(longint($FFFFFFFF)));
         linelist.concat(tai_const.create_rel_sym(offsetreltype,
-          lbl,current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'edebug_line0',AB_LOCAL,AT_DATA)));
+          lbl,current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'edebug_line0',AB_LOCAL,AT_METADATA,voidpointertype)));
         linelist.concat(tai_label.create(lbl));
 
         { version }
@@ -3056,7 +3056,7 @@ implementation
         { header length }
         current_asmdata.getlabel(lbl,alt_dbgfile);
         linelist.concat(tai_const.create_rel_sym(offsetreltype,
-          lbl,current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'ehdebug_line0',AB_LOCAL,AT_DATA)));
+          lbl,current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'ehdebug_line0',AB_LOCAL,AT_METADATA,voidpointertype)));
         linelist.concat(tai_label.create(lbl));
 
         { minimum_instruction_length }
@@ -3142,14 +3142,14 @@ implementation
         linelist.concat(tai_const.create_8bit(0));
 
         { end of debug line header }
-        linelist.concat(tai_symbol.createname(target_asm.labelprefix+'ehdebug_line0',AT_DATA,0));
+        linelist.concat(tai_symbol.createname(target_asm.labelprefix+'ehdebug_line0',AT_METADATA,0,voidpointertype));
         linelist.concat(tai_comment.Create(strpnew('=== header end ===')));
 
         { add line program }
         linelist.concatList(asmline);
 
         { end of debug line table }
-        linelist.concat(tai_symbol.createname(target_asm.labelprefix+'edebug_line0',AT_DATA,0));
+        linelist.concat(tai_symbol.createname(target_asm.labelprefix+'edebug_line0',AT_METADATA,0,voidpointertype));
 
         flist.free;
       end;
@@ -3166,6 +3166,7 @@ implementation
         dbgname: string;
         vardatatype: ttypesym;
         bind: tasmsymbind;
+        lang: tdwarf_source_language;
       begin
         current_module.flags:=current_module.flags or uf_has_dwarf_debuginfo;
         storefilepos:=current_filepos;
@@ -3195,7 +3196,7 @@ implementation
 
         { write start labels }
         new_section(current_asmdata.asmlists[al_dwarf_info],sec_debug_info,'',0);
-        current_asmdata.asmlists[al_dwarf_info].concat(tai_symbol.createname(target_asm.labelprefix+'debug_info0',AT_DATA,0));
+        current_asmdata.asmlists[al_dwarf_info].concat(tai_symbol.createname(target_asm.labelprefix+'debug_info0',AT_METADATA,0,voidpointertype));
 
         { start abbrev section }
         new_section(current_asmdata.asmlists[al_dwarf_abbrev],sec_debug_abbrev,'',0);
@@ -3210,7 +3211,7 @@ implementation
             if use_64bit_headers then
               current_asmdata.asmlists[al_dwarf_aranges].concat(tai_const.create_32bit_unaligned(longint($FFFFFFFF)));
             current_asmdata.asmlists[al_dwarf_aranges].concat(tai_const.create_rel_sym(offsetreltype,
-              arangestartlabel,current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'earanges0',AB_LOCAL,AT_DATA)));
+              arangestartlabel,current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'earanges0',AB_LOCAL,AT_METADATA,voidpointertype)));
 
             current_asmdata.asmlists[al_dwarf_aranges].concat(tai_label.create(arangestartlabel));
 
@@ -3218,11 +3219,11 @@ implementation
 
             if not(tf_dwarf_relative_addresses in target_info.flags) then
               current_asmdata.asmlists[al_dwarf_aranges].concat(tai_const.create_type_sym(offsetabstype,
-                current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'debug_info0',AB_LOCAL,AT_DATA)))
+                current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'debug_info0',AB_LOCAL,AT_METADATA,voidpointertype)))
             else
               current_asmdata.asmlists[al_dwarf_aranges].concat(tai_const.create_rel_sym(offsetreltype,
-                current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'debug_infosection0',AB_LOCAL,AT_DATA),
-                current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'debug_info0',AB_LOCAL,AT_DATA)));
+                current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'debug_infosection0',AB_LOCAL,AT_METADATA,voidpointertype),
+                current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'debug_info0',AB_LOCAL,AT_METADATA,voidpointertype)));
 
             current_asmdata.asmlists[al_dwarf_aranges].concat(tai_const.create_8bit(sizeof(pint)));
             current_asmdata.asmlists[al_dwarf_aranges].concat(tai_const.create_8bit(0));
@@ -3239,7 +3240,7 @@ implementation
         if use_64bit_headers then
           current_asmdata.asmlists[al_dwarf_info].concat(tai_const.create_32bit_unaligned(longint($FFFFFFFF)));
         current_asmdata.asmlists[al_dwarf_info].concat(tai_const.create_rel_sym(offsetreltype,
-          lenstartlabel,current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'edebug_info0',AB_LOCAL,AT_DATA)));
+          lenstartlabel,current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'edebug_info0',AB_LOCAL,AT_METADATA,voidpointertype)));
 
         current_asmdata.asmlists[al_dwarf_info].concat(tai_label.create(lenstartlabel));
         { version }
@@ -3247,30 +3248,34 @@ implementation
         { abbrev table (=relative from section start)}
         if not(tf_dwarf_relative_addresses in target_info.flags) then
           current_asmdata.asmlists[al_dwarf_info].concat(tai_const.create_type_sym(offsetabstype,
-            current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'debug_abbrev0',AB_LOCAL,AT_DATA)))
+            current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'debug_abbrev0',AB_LOCAL,AT_METADATA,voidpointertype)))
         else
           current_asmdata.asmlists[al_dwarf_info].concat(tai_const.create_rel_sym(offsetreltype,
-            current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'debug_abbrevsection0',AB_LOCAL,AT_DATA),
-            current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'debug_abbrev0',AB_LOCAL,AT_DATA)));
+            current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'debug_abbrevsection0',AB_LOCAL,AT_METADATA,voidpointertype),
+            current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'debug_abbrev0',AB_LOCAL,AT_METADATA,voidpointertype)));
 
         { address size }
         current_asmdata.asmlists[al_dwarf_info].concat(tai_const.create_8bit(sizeof(pint)));
 
+        if (ds_dwarf_cpp in current_settings.debugswitches) then
+          lang:=DW_LANG_C_plus_plus
+        else
+          lang:=DW_LANG_Pascal83;
         { first manadatory compilation unit TAG }
         append_entry(DW_TAG_compile_unit,true,[
           DW_AT_name,DW_FORM_string,relative_dwarf_path(current_module.sourcefiles.get_file(1).path+current_module.sourcefiles.get_file(1).name)+#0,
           DW_AT_producer,DW_FORM_string,'Free Pascal '+full_version_string+' '+date_string+#0,
           DW_AT_comp_dir,DW_FORM_string,BSToSlash(FixPath(GetCurrentDir,false))+#0,
-          DW_AT_language,DW_FORM_data1,DW_LANG_Pascal83,
+          DW_AT_language,DW_FORM_data1,lang,
           DW_AT_identifier_case,DW_FORM_data1,DW_ID_case_insensitive]);
 
         { reference to line info section }
         if not(tf_dwarf_relative_addresses in target_info.flags) then
-          append_labelentry_dataptr_abs(DW_AT_stmt_list,current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'debug_line0',AB_LOCAL,AT_DATA))
+          append_labelentry_dataptr_abs(DW_AT_stmt_list,current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'debug_line0',AB_LOCAL,AT_METADATA,voidpointertype))
         else
           append_labelentry_dataptr_rel(DW_AT_stmt_list,
-            current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'debug_linesection0',AB_LOCAL,AT_DATA),
-            current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'debug_line0',AB_LOCAL,AT_DATA));
+            current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'debug_linesection0',AB_LOCAL,AT_METADATA,voidpointertype),
+            current_asmdata.DefineAsmSymbol(target_asm.labelprefix+'debug_line0',AB_LOCAL,AT_METADATA,voidpointertype));
 
         if (m_objectivec1 in current_settings.modeswitches) then
           append_attribute(DW_AT_APPLE_major_runtime_vers,DW_FORM_data1,[1]);
@@ -3283,11 +3288,11 @@ implementation
           end
         else
           bind:=AB_GLOBAL;
-        append_labelentry(DW_AT_low_pc,current_asmdata.DefineAsmSymbol(dbgname,bind,AT_DATA));
+        append_labelentry(DW_AT_low_pc,current_asmdata.DefineAsmSymbol(dbgname,bind,AT_METADATA,voidpointertype));
         dbgname:=make_mangledname('DEBUGEND',current_module.localsymtable,'');
         if (target_info.system in systems_darwin) then
           dbgname:='L'+dbgname;
-        append_labelentry(DW_AT_high_pc,current_asmdata.DefineAsmSymbol(dbgname,bind,AT_DATA));
+        append_labelentry(DW_AT_high_pc,current_asmdata.DefineAsmSymbol(dbgname,bind,AT_METADATA,voidpointertype));
 
         finish_entry;
 
@@ -3322,7 +3327,7 @@ implementation
         finish_children;
 
         { end of debug info table }
-        current_asmdata.asmlists[al_dwarf_info].concat(tai_symbol.createname(target_asm.labelprefix+'edebug_info0',AT_DATA,0));
+        current_asmdata.asmlists[al_dwarf_info].concat(tai_symbol.createname(target_asm.labelprefix+'edebug_info0',AT_METADATA,0,voidpointertype));
 
         { end of abbrev table }
         current_asmdata.asmlists[al_dwarf_abbrev].concat(tai_const.create_8bit(0));
@@ -3332,7 +3337,7 @@ implementation
             { end of aranges table }
             current_asmdata.asmlists[al_dwarf_aranges].concat(tai_const.Create_aint(0));
             current_asmdata.asmlists[al_dwarf_aranges].concat(tai_const.Create_aint(0));
-            current_asmdata.asmlists[al_dwarf_aranges].concat(tai_symbol.createname(target_asm.labelprefix+'earanges0',AT_DATA,0));
+            current_asmdata.asmlists[al_dwarf_aranges].concat(tai_symbol.createname(target_asm.labelprefix+'earanges0',AT_METADATA,0,voidpointertype));
           end;
 
         { reset all def debug states }
@@ -3368,7 +3373,7 @@ implementation
         hp:=tmodule(loaded_units.first);
         while assigned(hp) do
           begin
-            If (hp.flags and uf_has_dwarf_debuginfo)=uf_has_dwarf_debuginfo then
+            If ((hp.flags and uf_has_dwarf_debuginfo)=uf_has_dwarf_debuginfo) and not assigned(hp.package) then
               begin
                 list.concat(Tai_const.Createname(make_mangledname('DEBUGSTART',hp.localsymtable,''),0));
                 list.concat(Tai_const.Createname(make_mangledname('DEBUGEND',hp.localsymtable,''),0));
@@ -4094,8 +4099,16 @@ implementation
 
     procedure TDebugInfoDwarf3.appenddef_formal(list:TAsmList;def: tformaldef);
       begin
-        append_entry(DW_TAG_unspecified_type,false,[
-          ]);
+        if (ds_dwarf_cpp in current_settings.debugswitches) then
+          begin
+            // Do not use DW_TAG_unspecified_type for C++ simulation.
+            // At least LLDB 3.9.0 crashes in such case.
+            // Call the inherited DWARF 2 implementation, which works fine.
+            inherited;
+            exit;
+          end;
+
+        append_entry(DW_TAG_unspecified_type,false,[]);
         finish_entry;
       end;
 

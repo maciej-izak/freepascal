@@ -598,9 +598,9 @@ implementation
         make_global:=true;
 
       if make_global then
-        List.concat(Tai_symbol.Createname_global(labelname,AT_FUNCTION,0))
+        List.concat(Tai_symbol.Createname_global(labelname,AT_FUNCTION,0,procdef))
       else
-        List.concat(Tai_symbol.Createname(labelname,AT_FUNCTION,0));
+        List.concat(Tai_symbol.Createname(labelname,AT_FUNCTION,0,procdef));
 
       { set param1 interface to self  }
       g_adjust_self_value(list,procdef,ioffset);
@@ -658,7 +658,7 @@ implementation
       { case 0 }
       else
         begin
-          lab:=current_asmdata.RefAsmSymbol(procdef.mangledname);
+          lab:=current_asmdata.RefAsmSymbol(procdef.mangledname,AT_FUNCTION);
 
           if current_settings.x86memorymodel in x86_far_code_models then
             list.concat(taicpu.op_sym(A_JMP,S_FAR,lab))
@@ -689,7 +689,7 @@ implementation
           else
             internalerror(2014052202);
 
-          location_reset_ref(l,LOC_REFERENCE,l.size,0);
+          location_reset_ref(l,LOC_REFERENCE,l.size,size.alignment);
           l.reference:=r;
         end
       else if is_fourbyterecord(size) and (l.loc in [LOC_REGISTER,LOC_CREGISTER]) then
@@ -704,7 +704,7 @@ implementation
           else
             cg.a_load_reg_ref(list,OS_16,OS_16,GetNextReg(l.register),tmpref);
 
-          location_reset_ref(l,LOC_REFERENCE,l.size,0);
+          location_reset_ref(l,LOC_REFERENCE,l.size,size.alignment);
           l.reference:=r;
         end
       else

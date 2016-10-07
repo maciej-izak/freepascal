@@ -84,7 +84,7 @@ implementation
       aasmbase,aasmtai,aasmdata,aasmcpu,
       symtype,symdef,symcpu,
       cgbase,pass_2,
-      cpuinfo,cpubase,paramgr,
+      cpuinfo,cpubase,paramgr,nutils,
       nbas,ncon,ncal,ncnv,nld,ncgutil,
       tgobj,
       cga,cgutils,cgx86,cgobj,hlcgobj;
@@ -341,7 +341,7 @@ implementation
              case tfloatdef(resultdef).floattype of
                s32real:
                  begin
-                   reference_reset_symbol(href,current_asmdata.RefAsmSymbol(target_info.cprefix+'FPC_ABSMASK_SINGLE'),0,4);
+                   reference_reset_symbol(href,current_asmdata.RefAsmSymbol(target_info.cprefix+'FPC_ABSMASK_SINGLE',AT_DATA),0,4);
                    tcgx86(cg).make_simple_ref(current_asmdata.CurrAsmList, href);
                    if UseAVX then
                      current_asmdata.CurrAsmList.concat(taicpu.op_ref_reg_reg(
@@ -351,7 +351,7 @@ implementation
                  end;
                s64real:
                  begin
-                   reference_reset_symbol(href,current_asmdata.RefAsmSymbol(target_info.cprefix+'FPC_ABSMASK_DOUBLE'),0,4);
+                   reference_reset_symbol(href,current_asmdata.RefAsmSymbol(target_info.cprefix+'FPC_ABSMASK_DOUBLE',AT_DATA),0,4);
                    tcgx86(cg).make_simple_ref(current_asmdata.CurrAsmList, href);
                    if UseAVX then
                      current_asmdata.CurrAsmList.concat(taicpu.op_ref_reg_reg(
@@ -527,18 +527,19 @@ implementation
              if UseAVX then
                case tfloatdef(resultdef).floattype of
                  s32real:
-                   current_asmdata.CurrAsmList.concat(taicpu.op_reg_reg_reg(A_VSQRTSS,S_XMM,left.location.register,location.register,location.register));
+                   { we use S_NO instead of S_XMM here, regardless of the register size, as the size of the memory location is 32/64 bit }
+                   current_asmdata.CurrAsmList.concat(taicpu.op_reg_reg_reg(A_VSQRTSS,S_NO,left.location.register,location.register,location.register));
                  s64real:
-                   current_asmdata.CurrAsmList.concat(taicpu.op_reg_reg_reg(A_VSQRTSD,S_XMM,left.location.register,location.register,location.register));
+                   current_asmdata.CurrAsmList.concat(taicpu.op_reg_reg_reg(A_VSQRTSD,S_NO,left.location.register,location.register,location.register));
                  else
                    internalerror(200510031);
                end
              else
                case tfloatdef(resultdef).floattype of
                  s32real:
-                   current_asmdata.CurrAsmList.concat(taicpu.op_reg_reg(A_SQRTSS,S_XMM,left.location.register,location.register));
+                   current_asmdata.CurrAsmList.concat(taicpu.op_reg_reg(A_SQRTSS,S_NO,left.location.register,location.register));
                  s64real:
-                   current_asmdata.CurrAsmList.concat(taicpu.op_reg_reg(A_SQRTSD,S_XMM,left.location.register,location.register));
+                   current_asmdata.CurrAsmList.concat(taicpu.op_reg_reg(A_SQRTSD,S_NO,left.location.register,location.register));
                  else
                    internalerror(200510031);
                end;
@@ -590,12 +591,19 @@ implementation
        var
          ref : treference;
          r : tregister;
+         checkpointer_used : boolean;
        begin
 {$if defined(i386) or defined(i8086)}
          if current_settings.cputype>=cpu_Pentium3 then
 {$endif i386 or i8086}
            begin
+             { do not call Checkpointer for left node }
+             checkpointer_used:=(cs_checkpointer in current_settings.localswitches);
+             if checkpointer_used then
+               node_change_local_switch(left,cs_checkpointer,false);
              secondpass(left);
+             if checkpointer_used then
+               node_change_local_switch(left,cs_checkpointer,false);
              case left.location.loc of
                LOC_CREFERENCE,
                LOC_REFERENCE:

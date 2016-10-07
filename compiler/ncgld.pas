@@ -121,13 +121,13 @@ implementation
             end;
           temprefn:
             begin
-              if (ti_valid in ttemprefnode(n).tempinfo^.flags) and
+              if (ti_valid in ttemprefnode(n).tempflags) and
                  { memory temp... }
                  (ttemprefnode(n).tempinfo^.location.loc in [LOC_REFERENCE]) and
                  { ... at the place we are looking for }
                  references_equal(ttemprefnode(n).tempinfo^.location.reference,rr^.old^) and
                  { its address cannot have escaped the current routine }
-                 not(ti_addr_taken in ttemprefnode(n).tempinfo^.flags) then
+                 not(ti_addr_taken in ttemprefnode(n).tempflags) then
                 begin
                   { relocate the temp }
                   tcgtemprefnode(n).changelocation(rr^.new^);
@@ -269,6 +269,8 @@ implementation
         tv_index_field,
         tv_non_mt_data_field: tsym;
         tmpresloc: tlocation;
+        issystemunit,
+        indirect : boolean;
       begin
          if (tf_section_threadvars in target_info.flags) then
            begin
@@ -298,10 +300,25 @@ implementation
                internalerror(2012120901);
 
              { FPC_THREADVAR_RELOCATE is nil? }
+             issystemunit:=not current_module.is_unit or
+                             (
+                               assigned(current_module.globalsymtable) and
+                               (current_module.globalsymtable=systemunit)
+                             ) or
+                             (
+                               not assigned(current_module.globalsymtable) and
+                               (current_module.localsymtable=systemunit)
+                             );
+             indirect:=(tf_supports_packages in target_info.flags) and
+                         (target_info.system in systems_indirect_var_imports) and
+                         (cs_imported_data in current_settings.localswitches) and
+                         not issystemunit;
              paraloc1.init;
              paramanager.getintparaloc(current_asmdata.CurrAsmList,tprocvardef(pvd),1,paraloc1);
              hregister:=hlcg.getaddressregister(current_asmdata.CurrAsmList,pvd);
-             reference_reset_symbol(href,current_asmdata.RefAsmSymbol('FPC_THREADVAR_RELOCATE'),0,pvd.size);
+             reference_reset_symbol(href,current_asmdata.RefAsmSymbol('FPC_THREADVAR_RELOCATE',AT_DATA,indirect),0,pvd.alignment);
+             if not issystemunit then
+               current_module.add_extern_asmsym('FPC_THREADVAR_RELOCATE',AB_EXTERNAL,AT_DATA);
              hlcg.a_load_ref_reg(current_asmdata.CurrAsmList,pvd,pvd,href,hregister);
              hlcg.a_cmp_const_reg_label(current_asmdata.CurrAsmList,pvd,OC_EQ,0,hregister,norelocatelab);
              { no, call it with the index of the threadvar as parameter }
@@ -379,6 +396,8 @@ implementation
         href : treference;
         newsize : tcgsize;
         vd : tdef;
+        indirect : boolean;
+        name : TSymStr;
       begin
         { we don't know the size of all arrays }
         newsize:=def_cgsize(resultdef);
@@ -402,7 +421,14 @@ implementation
                 if tconstsym(symtableentry).consttyp=constresourcestring then
                   begin
                      location_reset_ref(location,LOC_CREFERENCE,def_cgsize(cansistringtype),cansistringtype.size);
-                     location.reference.symbol:=current_asmdata.RefAsmSymbol(make_mangledname('RESSTR',symtableentry.owner,symtableentry.name),AT_DATA);
+                     indirect:=(tf_supports_packages in target_info.flags) and
+                                 (target_info.system in systems_indirect_var_imports) and
+                                 (cs_imported_data in current_settings.localswitches) and
+                                 (symtableentry.owner.moduleid<>current_module.moduleid);
+                     name:=make_mangledname('RESSTR',symtableentry.owner,symtableentry.name);
+                     location.reference.symbol:=current_asmdata.RefAsmSymbol(name,AT_DATA,indirect);
+                     if symtableentry.owner.moduleid<>current_module.moduleid then
+                       current_module.addimportedsym(symtableentry);
                      vd:=search_system_type('TRESOURCESTRINGRECORD').typedef;
                      hlcg.g_set_addr_nonbitpacked_field_ref(
                        current_asmdata.CurrAsmList,
@@ -549,7 +575,7 @@ implementation
                          if not is_interface(procdef.struct) then
                            begin
                              inc(current_asmdata.NextVTEntryNr);
-                             current_asmdata.CurrAsmList.Concat(tai_symbol.CreateName('VTREF'+tostr(current_asmdata.NextVTEntryNr)+'_'+procdef._class.vmt_mangledname+'$$'+tostr(vmtoffset div sizeof(pint)),AT_FUNCTION,0));
+                             current_asmdata.CurrAsmList.Concat(tai_symbol.CreateName('VTREF'+tostr(current_asmdata.NextVTEntryNr)+'_'+procdef._class.vmt_mangledname+'$$'+tostr(vmtoffset div sizeof(pint)),AT_FUNCTION,0,voidpointerdef));
                            end;
             {$endif vtentry}
                          if (left.resultdef.typ=objectdef) and
@@ -694,7 +720,9 @@ implementation
              exit;
          end;
 
-        releaseright:=true;
+        releaseright:=
+          (left.nodetype<>temprefn) or
+          not(ti_const in ttemprefnode(left).tempflags);
 
         { shortstring assignments are handled separately }
         if is_shortstring(left.resultdef) then
@@ -741,6 +769,7 @@ implementation
                     hlcg.g_ptrtypecast_ref(current_asmdata.CurrAsmList,cpointerdef.getreusable(left.resultdef),tpointerdef(charpointertype),href);
                     hlcg.a_load_const_ref(current_asmdata.CurrAsmList,cansichartype,1,href);
                     inc(href.offset,1);
+                    href.alignment:=1;
                     case right.location.loc of
                       LOC_REGISTER,
                       LOC_CREGISTER :
@@ -1156,6 +1185,7 @@ implementation
 
     procedure tcgarrayconstructornode.advancearrayoffset(var ref: treference; elesize: asizeint);
       begin
+        ref.alignment:=newalignment(ref.alignment,elesize);
         inc(ref.offset,elesize);
       end;
 
@@ -1447,15 +1477,22 @@ implementation
 *****************************************************************************}
 
     procedure tcgrttinode.pass_generate_code;
+      var
+        indirect : boolean;
       begin
+        indirect := (tf_supports_packages in target_info.flags) and
+                      (target_info.system in systems_indirect_var_imports) and
+                      (cs_imported_data in current_settings.localswitches) and
+                      (rttidef.owner.moduleid<>current_module.moduleid);
+
         location_reset_ref(location,LOC_CREFERENCE,OS_NO,sizeof(pint));
         case rttidatatype of
           rdt_normal:
-            location.reference.symbol:=RTTIWriter.get_rtti_label(rttidef,rttitype,false);
+            location.reference.symbol:=RTTIWriter.get_rtti_label(rttidef,rttitype,indirect);
           rdt_ord2str:
-            location.reference.symbol:=RTTIWriter.get_rtti_label_ord2str(rttidef,rttitype,false);
+            location.reference.symbol:=RTTIWriter.get_rtti_label_ord2str(rttidef,rttitype,indirect);
           rdt_str2ord:
-            location.reference.symbol:=RTTIWriter.get_rtti_label_str2ord(rttidef,rttitype,false);
+            location.reference.symbol:=RTTIWriter.get_rtti_label_str2ord(rttidef,rttitype,indirect);
         end;
       end;
 

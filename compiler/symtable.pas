@@ -153,7 +153,6 @@ interface
         private
          equivst: tabstractrecordsymtable;
          curroffset: aint;
-         recordalignmin: shortint;
          function get(f: tfieldvarsym): tllvmshadowsymtableentry;
          function get_by_llvm_index(index: longint): tllvmshadowsymtableentry;
         public
@@ -454,12 +453,14 @@ implementation
     procedure tstoredsymtable.insert(sym:TSymEntry;checkdup:boolean=true);
       begin
         inherited insert(sym,checkdup);
+        init_final_check_done:=false;
       end;
 
 
     procedure tstoredsymtable.delete(sym:TSymEntry);
       begin
         inherited delete(sym);
+        init_final_check_done:=false;
       end;
 
 
@@ -863,12 +864,14 @@ implementation
             { also don't claim for high param of open parameters    (PM)     }
             { also don't complain about unused symbols in generic procedures }
             { and methods                                                    }
+            { and neither in abstract methods                                }
             if (Errorcount<>0) or
                ([vo_is_hidden_para,vo_is_funcret] * tabstractvarsym(sym).varoptions = [vo_is_hidden_para]) or
                (sp_internal in tsym(sym).symoptions) or
                ((assigned(tsym(sym).owner.defowner) and
                 (tsym(sym).owner.defowner.typ=procdef) and
-                (df_generic in tprocdef(tsym(sym).owner.defowner).defoptions))) then
+                ((df_generic in tprocdef(tsym(sym).owner.defowner).defoptions) or
+                 (po_abstractmethod in tprocdef(tsym(sym).owner.defowner).procoptions)))) then
               exit;
             if (tstoredsym(sym).refs=0) then
               begin
@@ -2765,8 +2768,16 @@ implementation
                  internalerror(200501152);
                { unit uses count }
                inc(current_module.unitmap[tglobalsymtable(owner).moduleid].refs);
-               { symbol is imported from another unit }
-               if current_module.globalsymtable<>owner then
+               { Note: don't check the symtable directly as owner might be
+                       a specialize symtable which is a globalsymtable as well }
+               if (
+                     assigned(current_module.globalsymtable) and
+                     (current_module.globalsymtable.moduleid<>owner.moduleid)
+                  ) or (
+                     assigned(current_module.localsymtable) and
+                     (current_module.localsymtable.moduleid<>owner.moduleid)
+                  ) then
+                 { symbol is imported from another unit }
                  current_module.addimportedsym(sym);
              end;
        end;
@@ -2819,7 +2830,7 @@ implementation
               exit;
             end;
           def:=tdef(def.owner.defowner);
-        until not (def.typ in [recorddef,objectdef]);
+        until not assigned(def) or not (def.typ in [recorddef,objectdef]);
         result:=nil;
       end;
 
@@ -4369,6 +4380,13 @@ implementation
        interface_iunknown:=nil;
        interface_idispatch:=nil;
        rec_tguid:=nil;
+       rec_jmp_buf:=nil;
+       rec_exceptaddr:=nil;
+       objc_metaclasstype:=nil;
+       objc_superclasstype:=nil;
+       objc_idtype:=nil;
+       objc_seltype:=nil;
+       objc_objecttype:=nil;
        dupnr:=0;
      end;
 

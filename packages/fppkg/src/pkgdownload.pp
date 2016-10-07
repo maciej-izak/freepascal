@@ -48,7 +48,8 @@ uses
   pkgglobals,
   pkgoptions,
   pkgmessages,
-  pkgrepos;
+  pkgrepos,
+  pkgFppkg;
 
 var
   DownloaderList  : TFPHashList;
@@ -76,7 +77,7 @@ procedure DownloadFile(const RemoteFile,LocalFile:String);
 var
   DownloaderClass : TBaseDownloaderClass;
 begin
-  DownloaderClass:=GetDownloader(GlobalOptions.Downloader);
+  DownloaderClass:=GetDownloader(GFPpkg.Options.GlobalSection.Downloader);
   with DownloaderClass.Create(nil) do
     try
       Download(RemoteFile,LocalFile);
@@ -153,7 +154,7 @@ begin
   else if CompareText(P,'file')=0 then
     FileDownload(URL,Dest)
   else
-    Error(SErrUnknownProtocol,[P]);
+    Error(SErrUnknownProtocol,[P, URL]);
 end;
 
 
@@ -164,12 +165,17 @@ var
   DownloaderClass : TBaseDownloaderClass;
   P : TFPPackage;
 begin
-  P:=AvailableRepository.PackageByName(PackageName);
-  DownloaderClass:=GetDownloader(GlobalOptions.Downloader);
+  P:=GFPpkg.PackageByName(PackageName, pkgpkAvailable);
+  DownloaderClass:=GetDownloader(GFPpkg.Options.GlobalSection.Downloader);
   with DownloaderClass.Create(nil) do
     try
       Log(llCommands,SLogDownloading,[PackageRemoteArchive(P),PackageLocalArchive(P)]);
       pkgglobals.log(llProgres,SProgrDownloadPackage,[P.Name, P.Version.AsString]);
+
+      // Force the existing of the archives-directory if it is being used
+      if (P.Name<>CurrentDirPackageName) and (P.Name<>CmdLinePackageName) then
+        ForceDirectories(GFPpkg.Options.GlobalSection.ArchivesDir);
+
       Download(PackageRemoteArchive(P),PackageLocalArchive(P));
     finally
       Free;

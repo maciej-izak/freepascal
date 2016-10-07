@@ -77,7 +77,8 @@ unit cgx86;
         procedure a_load_const_reg(list : TAsmList; tosize: tcgsize; a : tcgint;reg : tregister);override;
         procedure a_load_const_ref(list : TAsmList; tosize: tcgsize; a : tcgint;const ref : treference);override;
         procedure a_load_reg_ref(list : TAsmList;fromsize,tosize: tcgsize; reg : tregister;const ref : treference);override;
-        procedure a_load_ref_reg(list : TAsmList;fromsize,tosize: tcgsize;const ref : treference;reg : tregister);override;
+        { final as a_load_ref_reg_internal() should be overridden instead }
+        procedure a_load_ref_reg(list : TAsmList;fromsize,tosize: tcgsize;const ref : treference;reg : tregister);override;final;
         procedure a_load_reg_reg(list : TAsmList;fromsize,tosize: tcgsize;reg1,reg2 : tregister);override;
         procedure a_loadaddr_ref_reg(list : TAsmList;const ref : treference;r : tregister);override;
 
@@ -125,14 +126,14 @@ unit cgx86;
 
         procedure g_overflowcheck(list: TAsmList; const l:tlocation;def:tdef);override;
 
-        procedure make_simple_ref(list:TAsmList;var ref: treference);
+        procedure make_simple_ref(list:TAsmList;var ref: treference);inline;
         procedure make_direct_ref(list:TAsmList;var ref: treference);
 
         function get_darwin_call_stub(const s: string; weak: boolean): tasmsymbol;
 
         procedure generate_leave(list : TAsmList);
       protected
-        in_make_direct_ref : boolean;
+        procedure a_load_ref_reg_internal(list : TAsmList;fromsize,tosize: tcgsize;const ref : treference;reg : tregister;isdirect:boolean);virtual;
 
         procedure a_jmp_cond(list : TAsmList;cond : TOpCmp;l: tasmlabel);
         procedure check_register_size(size:tcgsize;reg:tregister);
@@ -148,6 +149,8 @@ unit cgx86;
         procedure floatstoreops(t : tcgsize;var op : tasmop;var s : topsize);
 
         procedure internal_restore_regs(list: TAsmList; use_pop: boolean);
+
+        procedure make_simple_ref(list:TAsmList;var ref: treference;isdirect:boolean);
       end;
 
    const
@@ -414,6 +417,12 @@ unit cgx86;
 
 
     procedure tcgx86.make_simple_ref(list:TAsmList;var ref: treference);
+      begin
+        make_simple_ref(list,ref,false);
+      end;
+
+
+    procedure tcgx86.make_simple_ref(list:TAsmList;var ref: treference;isdirect:boolean);
       var
         hreg : tregister;
         href : treference;
@@ -428,7 +437,8 @@ unit cgx86;
           exit;
 
         { handle indirect symbols first }
-        make_direct_ref(list,ref);
+        if not isdirect then
+            make_direct_ref(list,ref);
 
 {$if defined(x86_64)}
         { Only 32bit is allowed }
@@ -457,22 +467,12 @@ unit cgx86;
             else
               begin
                 { don't use add, as the flags may contain a value }
-                reference_reset_base(href,ref.base,0,8);
-                href.index:=hreg;
-                if ref.scalefactor<>0 then
-                  begin
-                    reference_reset_base(href,ref.base,0,8);
-                    href.index:=hreg;
-                    list.concat(taicpu.op_ref_reg(A_LEA,S_Q,href,hreg));
-                    ref.base:=hreg;
-                  end
-                else
-                  begin
-                    reference_reset_base(href,ref.index,0,8);
-                    href.index:=hreg;
-                    list.concat(taicpu.op_reg_reg(A_ADD,S_Q,ref.index,hreg));
-                    ref.index:=hreg;
-                  end;
+                reference_reset_base(href,hreg,0,ref.alignment);
+                href.index:=ref.index;
+                href.scalefactor:=ref.scalefactor;
+                list.concat(taicpu.op_ref_reg(A_LEA,S_Q,href,hreg));
+                ref.index:=hreg;
+                ref.scalefactor:=1;
                end;
           end;
 
@@ -521,7 +521,7 @@ unit cgx86;
                 else
                   begin
                     { don't use add, as the flags may contain a value }
-                    reference_reset_base(href,ref.base,0,8);
+                    reference_reset_base(href,ref.base,0,ref.alignment);
                     href.index:=hreg;
                     ref.base:=getaddressregister(list);
                     list.concat(taicpu.op_ref_reg(A_LEA,S_Q,href,ref.base));
@@ -556,7 +556,7 @@ unit cgx86;
                       else
                         begin
                           { don't use add, as the flags may contain a value }
-                          reference_reset_base(href,ref.base,0,8);
+                          reference_reset_base(href,ref.base,0,ref.alignment);
                           href.index:=hreg;
                           ref.base:=getaddressregister(list);
                           list.concat(taicpu.op_ref_reg(A_LEA,S_Q,href,ref.base));
@@ -615,7 +615,7 @@ unit cgx86;
             else
               begin
                 { don't use add, as the flags may contain a value }
-                reference_reset_base(href,ref.base,0,8);
+                reference_reset_base(href,ref.base,0,ref.alignment);
                 href.index:=hreg;
                 list.concat(taicpu.op_ref_reg(A_LEA,S_L,href,hreg));
                 ref.base:=hreg;
@@ -659,20 +659,26 @@ unit cgx86;
         href : treference;
         hreg : tregister;
       begin
-        if in_make_direct_ref then
-          exit;
-        in_make_direct_ref:=true;
         if assigned(ref.symbol) and (ref.symbol.bind in asmsymbindindirect) then
           begin
+            { load the symbol into a register }
             hreg:=getaddressregister(list);
             reference_reset_symbol(href,ref.symbol,0,sizeof(pint));
-            a_op_ref_reg(list,OP_MOVE,OS_ADDR,href,hreg);
+            { tell make_simple_ref that we are loading the symbol address via an indirect
+              symbol and that hence it should not call make_direct_ref() again }
+            a_load_ref_reg_internal(list,OS_ADDR,OS_ADDR,href,hreg,true);
             if ref.base<>NR_NO then
-              a_op_reg_reg(list,OP_ADD,OS_ADDR,ref.base,hreg);
+              begin
+                { fold symbol register into base register }
+                reference_reset_base(href,hreg,0,sizeof(pint));
+                href.index:=ref.base;
+                hreg:=getaddressregister(list);
+                a_loadaddr_ref_reg(list,href,hreg);
+              end;
+            { we're done }
             ref.symbol:=nil;
             ref.base:=hreg;
           end;
-        in_make_direct_ref:=false;
       end;
 
 
@@ -790,7 +796,7 @@ unit cgx86;
         r: treference;
       begin
         if (target_info.system <> system_i386_darwin) then
-          list.concat(taicpu.op_sym(A_JMP,S_NO,current_asmdata.RefAsmSymbol(s)))
+          list.concat(taicpu.op_sym(A_JMP,S_NO,current_asmdata.RefAsmSymbol(s,AT_FUNCTION)))
         else
           begin
             reference_reset_symbol(r,get_darwin_call_stub(s,false),0,sizeof(pint));
@@ -819,11 +825,11 @@ unit cgx86;
           current_asmdata.asmlists[al_imports]:=TAsmList.create;
 
         new_section(current_asmdata.asmlists[al_imports],sec_stub,'',0);
-        result := current_asmdata.DefineAsmSymbol(stubname,AB_LOCAL,AT_FUNCTION);
+        result := current_asmdata.DefineAsmSymbol(stubname,AB_LOCAL,AT_FUNCTION,voidcodepointertype);
         current_asmdata.asmlists[al_imports].concat(Tai_symbol.Create(result,0));
         { register as a weak symbol if necessary }
         if weak then
-          current_asmdata.weakrefasmsymbol(s);
+          current_asmdata.weakrefasmsymbol(s,AT_FUNCTION);
         current_asmdata.asmlists[al_imports].concat(tai_directive.create(asd_indirect_symbol,s));
         current_asmdata.asmlists[al_imports].concat(taicpu.op_none(A_HLT));
         current_asmdata.asmlists[al_imports].concat(taicpu.op_none(A_HLT));
@@ -848,9 +854,9 @@ unit cgx86;
         if (target_info.system <> system_i386_darwin) then
           begin
             if not(weak) then
-              sym:=current_asmdata.RefAsmSymbol(s)
+              sym:=current_asmdata.RefAsmSymbol(s,AT_FUNCTION)
             else
-              sym:=current_asmdata.WeakRefAsmSymbol(s);
+              sym:=current_asmdata.WeakRefAsmSymbol(s,AT_FUNCTION);
             reference_reset_symbol(r,sym,0,sizeof(pint));
             if (cs_create_pic in current_settings.moduleswitches) and
                { darwin's assembler doesn't want @PLT after call symbols }
@@ -884,7 +890,7 @@ unit cgx86;
         sym : tasmsymbol;
         r : treference;
       begin
-        sym:=current_asmdata.RefAsmSymbol(s);
+        sym:=current_asmdata.RefAsmSymbol(s,AT_FUNCTION);
         reference_reset_symbol(r,sym,0,sizeof(pint));
         r.refaddr:=addr_full;
         list.concat(taicpu.op_ref(A_CALL,S_NO,r));
@@ -977,13 +983,19 @@ unit cgx86;
 
 
     procedure tcgx86.a_load_ref_reg(list : TAsmList;fromsize,tosize : tcgsize;const ref: treference;reg : tregister);
+      begin
+        a_load_ref_reg_internal(list,fromsize,tosize,ref,reg,false);
+      end;
+
+
+    procedure tcgx86.a_load_ref_reg_internal(list : TAsmList;fromsize,tosize : tcgsize;const ref: treference;reg : tregister;isdirect:boolean);
       var
         op: tasmop;
         s: topsize;
         tmpref  : treference;
       begin
         tmpref:=ref;
-        make_simple_ref(list,tmpref);
+        make_simple_ref(list,tmpref,isdirect);
         check_register_size(tosize,reg);
         sizes2load(fromsize,tosize,op,s);
  {$ifdef x86_64}
@@ -1083,12 +1095,12 @@ unit cgx86;
                             then
                       begin
 {$ifdef x86_64}
-                        reference_reset_symbol(tmpref,dirref.symbol,0,dirref.alignment);
+                        reference_reset_symbol(tmpref,dirref.symbol,0,sizeof(pint));
                         tmpref.refaddr:=addr_pic;
                         tmpref.base:=NR_RIP;
                         list.concat(taicpu.op_ref_reg(A_MOV,S_Q,tmpref,r));
 {$else x86_64}
-                        reference_reset_symbol(tmpref,dirref.symbol,0,dirref.alignment);
+                        reference_reset_symbol(tmpref,dirref.symbol,0,sizeof(pint));
                         tmpref.refaddr:=addr_pic;
                         tmpref.base:=current_procinfo.got;
                         include(current_procinfo.flags,pi_needs_got);
@@ -1147,7 +1159,7 @@ unit cgx86;
                       system_i386_linux,system_i386_android:
                         if segment=NR_GS then
                           begin
-                            reference_reset_symbol(tmpref,current_asmdata.RefAsmSymbol('___fpc_threadvar_offset'),0,dirref.alignment);
+                            reference_reset_symbol(tmpref,current_asmdata.RefAsmSymbol('___fpc_threadvar_offset',AT_DATA),0,sizeof(pint));
                             tmpref.segment:=NR_GS;
                             list.concat(Taicpu.op_ref_reg(A_ADD,tcgsize2opsize[OS_ADDR],tmpref,r));
                           end
@@ -1688,7 +1700,7 @@ unit cgx86;
               which might trigger a range check error as
               reference_reset_base expects a longint value. }
 {$push} {$R-}{$Q-}
-            al := longint (a); 
+            al := longint (a);
 {$pop}
             reference_reset_base(href,src,al,0);
             list.concat(taicpu.op_ref_reg(A_LEA,TCgSize2OpSize[size],href,dst));
@@ -3091,8 +3103,18 @@ unit cgx86;
                   list.concat(Taicpu.op_reg(A_PUSH,S_W,NR_DS));
                   reference_reset(fardataseg,0);
                   fardataseg.refaddr:=addr_fardataseg;
-                  list.concat(Taicpu.Op_ref_reg(A_MOV,S_W,fardataseg,NR_AX));
-                  list.concat(Taicpu.Op_reg_reg(A_MOV,S_W,NR_AX,NR_DS));
+                  if current_procinfo.procdef.proccalloption=pocall_register then
+                    begin
+                      { Use BX register if using register convention
+                        as it is not a register used to store parameters }
+                      list.concat(Taicpu.Op_ref_reg(A_MOV,S_W,fardataseg,NR_BX));
+                      list.concat(Taicpu.Op_reg_reg(A_MOV,S_W,NR_BX,NR_DS));
+                    end
+                  else
+                    begin
+                      list.concat(Taicpu.Op_ref_reg(A_MOV,S_W,fardataseg,NR_AX));
+                      list.concat(Taicpu.Op_reg_reg(A_MOV,S_W,NR_AX,NR_DS));
+                    end;
                 end;
             { SI and DI are volatile in the BP7 and FPC's pascal calling convention,
               but must be preserved in Microsoft C's pascal calling convention, and

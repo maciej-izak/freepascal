@@ -71,6 +71,9 @@ interface
         { dst = bitcast size undef to size }
         constructor op_reg_size_undef(op: tllvmop; dst: tregister; size: tdef);
 
+        { return size undef }
+        constructor op_size_undef(op: tllvmop; size: tdef);
+
         { e.g. dst = bitcast fromsize src to tosize }
         constructor op_reg_size_ref_size(op:tllvmop;dst:tregister;fromsize:tdef;const src:treference;tosize:tdef);
         { e.g. store fromsize src, ptrsize toref}
@@ -181,6 +184,8 @@ interface
     tllvmcallpara = record
       def: tdef;
       valueext: tllvmvalueextension;
+      byval,
+      sret: boolean;
       case loc: tcgloc of
         LOC_REFERENCE,
         LOC_REGISTER,
@@ -195,7 +200,7 @@ implementation
 uses
   cutils, strings,
   symconst,
-  aasmcpu;
+  aasmcnst,aasmcpu;
 
     { taillvmprocdecl }
 
@@ -248,9 +253,20 @@ uses
         inherited Create;
         typ:=ait_llvmalias;
         oldsym:=_oldsym;
-        newsym:=current_asmdata.DefineAsmSymbol(newname,AB_GLOBAL,AT_FUNCTION);
+        newsym:=current_asmdata.DefineAsmSymbol(newname,AB_GLOBAL,AT_FUNCTION,_def);
         newsym.declared:=true;
         def:=_def;
+        { alias cannot be external }
+        case _bind of
+          { weak external should actually become weak, but we don't support that
+            yet }
+          AB_WEAK_EXTERNAL:
+            internalerror(2016071203);
+          AB_EXTERNAL:
+            _bind:=AB_GLOBAL;
+          AB_EXTERNAL_INDIRECT:
+            _bind:=AB_INDIRECT;
+        end;
         bind:=_bind;
       end;
 
@@ -537,13 +553,42 @@ uses
                   internalerror(2013110104);
               end;
             end;
-          la_load,
-          la_getelementptr:
+          la_load:
             begin
               { dst = load ptrdef srcref }
               case opnr of
                 0: result:=tpointerdef(oper[1]^.def).pointeddef;
                 2: result:=oper[1]^.def;
+                else
+                  internalerror(2013110105);
+              end;
+            end;
+          la_getelementptr:
+            begin
+              { dst = getelementptr ref ... }
+              case opnr of
+                0:
+                  begin
+                    case oper[1]^.typ of
+                      top_def:
+                        result:=oper[1]^.def;
+                      top_tai:
+                        begin
+                          case oper[1]^.ai.typ of
+                            ait_llvmins:
+                              result:=taillvm(oper[1]^.ai).spilling_get_reg_type(0);
+                            ait_typedconst:
+                              result:=tai_abstracttypedconst(oper[1]^.ai).def
+                            else
+                              internalerror(2016071202);
+                          end
+                        end
+                      else
+                        internalerror(2016071201);
+                    end
+                  end;
+                2:
+                  result:=oper[1]^.def;
                 else
                   internalerror(2013110105);
               end;
@@ -760,6 +805,14 @@ uses
         loaddef(1,size);
         loadundef(2);
         loaddef(3,size);
+      end;
+
+    constructor taillvm.op_size_undef(op: tllvmop; size: tdef);
+      begin
+        create_llvm(op);
+        ops:=2;
+        loaddef(0,size);
+        loadundef(1);
       end;
 
 
