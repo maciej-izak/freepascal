@@ -168,7 +168,9 @@ type
   TPasExpr = class(TPasElement)
     Kind      : TPasExprKind;
     OpCode    : TExprOpCode;
+    format1,format2 : TPasExpr;
     constructor Create(AParent : TPasElement; AKind: TPasExprKind; AOpCode: TExprOpCode); virtual; overload;
+    destructor Destroy; override;
   end;
 
   { TUnaryExpr }
@@ -472,11 +474,13 @@ type
     procedure ForEachCall(const aMethodCall: TOnForEachPasElement;
       const Arg: Pointer); override;
   public
-    IndexRange : string;
+    IndexRange : string; // only valid if Parser po_arrayrangeexpr disabled
+    Ranges: TPasExprArray; // only valid if Parser po_arrayrangeexpr enabled
     PackMode : TPackMode;
     ElType: TPasType;
     Function IsGenericArray : Boolean;
     Function IsPacked : Boolean;
+    procedure AddRange(Range: TPasExpr);
   end;
 
   { TPasFileType }
@@ -573,7 +577,7 @@ type
 
   TPasGenericTemplateType = Class(TPasType);
   TPasObjKind = (okObject, okClass, okInterface, okGeneric, okSpecialize,
-                 okClassHelper,okRecordHelper,okTypeHelper);
+                 okClassHelper,okRecordHelper,okTypeHelper, okDispInterface);
 
   { TPasClassType }
 
@@ -705,7 +709,7 @@ type
   end;
 
   { TPasVariable }
-  TVariableModifier = (vmCVar, vmExternal, vmPublic, vmExport, vmClass);
+  TVariableModifier = (vmCVar, vmExternal, vmPublic, vmExport, vmClass,vmStatic);
   TVariableModifiers = set of TVariableModifier;
 
   TPasVariable = class(TPasElement)
@@ -748,8 +752,10 @@ type
   { TPasProperty }
 
   TPasProperty = class(TPasVariable)
-  public
+  private
     FResolvedType : TPasType;
+    function GetIsClass: boolean;
+    procedure SetIsClass(AValue: boolean);
   public
     constructor Create(const AName: string; AParent: TPasElement); override;
     destructor Destroy; override;
@@ -762,12 +768,15 @@ type
     ReadAccessor: TPasExpr;
     WriteAccessor: TPasExpr;
     ImplementsFunc: TPasExpr;
+    DispIDExpr : TPasexpr;   // Can be nil.
+
     StoredAccessor: TPasExpr; // can be nil, if StoredAccessorName is 'True' or 'False'
     DefaultExpr: TPasExpr;
     Args: TFPList;        // List of TPasArgument objects
     ReadAccessorName, WriteAccessorName, ImplementsName,
       StoredAccessorName: string;
-    IsClass, IsDefault, IsNodefault: Boolean;
+    IsDefault, IsNodefault: Boolean;
+    property IsClass: boolean read GetIsClass write SetIsClass;
     Function ResolvedType : TPasType;
     Function IndexValue : String;
     Function DefaultValue : string;
@@ -859,7 +868,7 @@ type
                    otGreaterThan, otAssign,otNotEqual,otLessEqualThan,otGreaterEqualThan,otPower,
                    otSymmetricalDifference, otInc, otDec, otMod, otNegative, otPositive, otBitWiseOr, otDiv,
                    otLeftShift, otLogicalOr, otBitwiseAnd, otbitwiseXor,otLogicalAnd,otLogicalNot,otLogicalXor,
-                   otRightShift);
+                   otRightShift,otEnumerator);
   TOperatorTypes = set of TOperatorType;
 
   TPasOperator = class(TPasFunction)
@@ -880,7 +889,7 @@ type
     function TypeName: string; override;
     function GetDeclaration (full : boolean) : string; override;
     Property OperatorType : TOperatorType Read FOperatorType Write FOperatorType;
-    // True if the declaration was using a token instead of a
+    // True if the declaration was using a token instead of an identifier
     Property TokenBased : Boolean Read FTokenBased Write FTokenBased;
   end;
 
@@ -934,7 +943,7 @@ Type
 
   { TPasClassFunction }
 
-  TPasClassFunction = class(TPasProcedure)
+  TPasClassFunction = class(TPasFunction)
   public
     function ElementTypeName: string; override;
     function TypeName: string; override;
@@ -1318,10 +1327,11 @@ const
       visPublished, visAutomated];
 
   VisibilityNames: array[TPasMemberVisibility] of string = (
-    'default', 'private', 'protected', 'public', 'published', 'automated','strict private', 'strict protected');
+    'default','private', 'protected', 'public', 'published', 'automated',
+    'strict private', 'strict protected');
 
   ObjKindNames: array[TPasObjKind] of string = (
-    'object', 'class', 'interface','class','class','class helper','record helper','type helper');
+    'object', 'class', 'interface','class','class','class helper','record helper','type helper','dispinterface');
 
   ExprKindNames : Array[TPasExprKind] of string = (
       'Ident',
@@ -1350,20 +1360,20 @@ const
         '.');
 
 
-  UnaryOperators = [otImplicit,otExplicit,otAssign,otNegative,otPositive];
+  UnaryOperators = [otImplicit,otExplicit,otAssign,otNegative,otPositive,otEnumerator];
 
   OperatorTokens : Array[TOperatorType] of string
        =  ('','','','*','+','-','/','<','=',
            '>',':=','<>','<=','>=','**',
            '><','Inc','Dec','mod','-','+','Or','div',
            'shl','or','and','xor','and','not','xor',
-           'shr');
+           'shr','enumerator');
   OperatorNames : Array[TOperatorType] of string
        =  ('','implicit','explicit','multiply','add','subtract','divide','lessthan','equal',
            'greaterthan','assign','notequal','lessthanorequal','greaterthanorequal','power',
            'symmetricaldifference','inc','dec','modulus','negative','positive','bitwiseor','intdivide',
            'leftshift','logicalor','bitwiseand','bitwisexor','logicaland','logicalnot','logicalxor',
-           'rightshift');
+           'rightshift','enumerator');
 
   AssignKindNames : Array[TAssignKind] of string = (':=','+=','-=','*=','/=' );
 
@@ -1872,7 +1882,7 @@ procedure TPasElement.ForEachChildCall(const aMethodCall: TOnForEachPasElement;
   const Arg: Pointer; Child: TPasElement; CheckParent: boolean);
 begin
   if (Child=nil) then exit;
-  if  CheckParent and (not Child.HasParent(Self)) then exit;
+  if CheckParent and (not Child.HasParent(Self)) then exit;
   Child.ForEachCall(aMethodCall,Arg);
 end;
 
@@ -2059,7 +2069,11 @@ end;
 
 
 destructor TPasArrayType.Destroy;
+var
+  i: Integer;
 begin
+  for i:=0 to length(Ranges)-1 do
+    Ranges[i].Release;
   if Assigned(ElType) then
     ElType.Release;
   inherited Destroy;
@@ -2422,6 +2436,18 @@ begin
   inherited Destroy;
 end;
 
+function TPasProperty.GetIsClass: boolean;
+begin
+  Result:=vmClass in VarModifiers;
+end;
+
+procedure TPasProperty.SetIsClass(AValue: boolean);
+begin
+   if AValue then
+    Include(VarModifiers,vmClass)
+  else
+    Exclude(VarModifiers,vmClass);
+end;
 
 constructor TPasProperty.Create(const AName: string; AParent: TPasElement);
 begin
@@ -2442,6 +2468,7 @@ begin
   ReleaseAndNil(TPasElement(ImplementsFunc));
   ReleaseAndNil(TPasElement(StoredAccessor));
   ReleaseAndNil(TPasElement(DefaultExpr));
+  ReleaseAndNil(TPasElement(DispIDExpr));
   inherited Destroy;
 end;
 
@@ -3002,6 +3029,15 @@ end;
 function TPasArrayType.IsPacked: Boolean;
 begin
   Result:=PackMode=pmPacked;
+end;
+
+procedure TPasArrayType.AddRange(Range: TPasExpr);
+var
+  i: Integer;
+begin
+  i:=Length(Ranges);
+  SetLength(Ranges, i+1);
+  Ranges[i]:=Range;
 end;
 
 function TPasFileType.GetDeclaration (full : boolean) : string;
@@ -3703,7 +3739,7 @@ procedure TPasArgument.ForEachCall(const aMethodCall: TOnForEachPasElement;
   const Arg: Pointer);
 begin
   inherited ForEachCall(aMethodCall, Arg);
-  ForEachChildCall(aMethodCall,Arg,ArgType,false);
+  ForEachChildCall(aMethodCall,Arg,ArgType,true);
   ForEachChildCall(aMethodCall,Arg,ValueExpr,false);
 end;
 
@@ -3736,7 +3772,7 @@ var
 begin
   for i := 0 to UsesList.Count - 1 do
     TPasType(UsesList[i]).Release;
-  UsesList.Free;
+  FreeAndNil(UsesList);
 
   inherited Destroy;
 end;
@@ -4045,11 +4081,19 @@ end;
 
 { TPasExpr }
 
-constructor TPasExpr.Create(AParent : TPasElement; AKind: TPasExprKind; AOpCode: TexprOpcode);
+constructor TPasExpr.Create(AParent: TPasElement; AKind: TPasExprKind;
+  AOpCode: TExprOpCode);
 begin
   inherited Create(ClassName, AParent);
   Kind:=AKind;
   OpCode:=AOpCode;
+end;
+
+destructor TPasExpr.Destroy;
+begin
+  ReleaseAndNil(TPasElement(Format1));
+  ReleaseAndNil(TPasElement(Format2));
+  inherited Destroy;
 end;
 
 { TPrimitiveExpr }
@@ -4138,7 +4182,11 @@ begin
   If Kind=pekRange then
     Result:='..'
   else
-    Result:=' '+OpcodeStrings[Opcode]+' ';
+    begin
+    Result:=OpcodeStrings[Opcode];
+    if Not (OpCode in [eopAddress,eopDeref,eopSubIdent]) then
+      Result:=' '+Result+' ';
+    end;
   If Assigned(Left) then
   begin
     op := Left.GetDeclaration(Full);

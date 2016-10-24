@@ -3,6 +3,7 @@ unit system;
 interface
 
 {$DEFINE FPC_NO_DEFAULT_HEAP}
+{$DEFINE FPC_NO_DEFAULT_MEMORYMANAGER}
 {$DEFINE HAS_MEMORYMANAGER}
 
 {$DEFINE FPC_INCLUDE_SOFTWARE_MUL}
@@ -480,4 +481,7 @@ begin
   InitSystemDynLibs;
 { Reset IO Error }
   InOutRes:=0;
+{$ifdef FPC_HAS_FEATURE_THREADING}
+  InitSystemThreads;
+{$endif}
 end.

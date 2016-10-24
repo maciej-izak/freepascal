@@ -156,9 +156,10 @@ interface
           { varargs parasyms }
           varargsparas : tvarargsparalist;
 
-          { separately specified resultdef for some compilerprocs (e.g. }
-          { you can't have a function with an "array of char" resultdef }
-          { the RTL) (JM)                                                }
+          { separately specified resultdef for some compilerprocs (e.g.
+            you can't have a function with an "array of char" resultdef
+            the RTL) (JM)
+          }
           typedef: tdef;
           callnodeflags : tcallnodeflags;
 
@@ -2193,7 +2194,7 @@ implementation
                 begin
                   maybe_load_in_temp(p);
                   hightree:=caddnode.create(subn,geninlinenode(in_length_x,false,p.getcopy),
-                                            cordconstnode.create(1,ptrsinttype,false));
+                                            cordconstnode.create(1,sizesinttype,false));
                   loadconst:=false;
                 end;
            end;
@@ -2201,13 +2202,13 @@ implementation
           len:=0;
         end;
         if loadconst then
-          hightree:=cordconstnode.create(len,ptrsinttype,true)
+          hightree:=cordconstnode.create(len,sizesinttype,true)
         else
           begin
             if not assigned(hightree) then
               internalerror(200304071);
             { Need to use explicit, because it can also be a enum }
-            hightree:=ctypeconvnode.create_internal(hightree,ptrsinttype);
+            hightree:=ctypeconvnode.create_internal(hightree,sizesinttype);
           end;
         result:=hightree;
       end;
@@ -3733,7 +3734,8 @@ implementation
                 begin
                   { convert types to those of the prototype, this is required by functions like ror, rol, sar
                     some use however a dummy type (Typedfile) so this would break them }
-                  if not(tprocdef(procdefinition).extnumber in [fpc_in_Reset_TypedFile,fpc_in_Rewrite_TypedFile]) then
+                  if not(tprocdef(procdefinition).extnumber in [in_Reset_TypedFile,in_Rewrite_TypedFile,
+                                                                in_reset_typedfile_name,in_rewrite_typedfile_name]) then
                     begin
                       { bind parasyms to the callparanodes and insert hidden parameters }
                       bind_parasym;
