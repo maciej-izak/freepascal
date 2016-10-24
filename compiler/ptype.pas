@@ -84,7 +84,7 @@ implementation
        nmat,nadd,ncal,nset,ncnv,ninl,ncon,nld,nflw,
        { parser }
        scanner,
-       pbase,pexpr,pdecsub,pdecvar,pdecobj,pdecl,pgenutil
+       pbase,pexpr,pdecsub,pdecvar,pdecobj,pdecl,pgenutil,pnameless
 {$ifdef jvm}
        ,pjvm
 {$endif}
@@ -1903,6 +1903,8 @@ implementation
                              (def.typ=procvardef) then
                             include(tprocvardef(def).procoptions,po_is_function_ref);
                         end
+                      else if m_delphi in current_settings.modeswitches then
+                        def:=parse_method_reference(name)
                       else
                         expr_type;
                     end;

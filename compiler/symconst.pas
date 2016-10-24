@@ -403,7 +403,11 @@ type
     { procedure is an automatically generated property getter }
     po_is_auto_getter,
     { procedure is an automatically generated property setter }
-    po_is_auto_setter
+    po_is_auto_setter,
+    { nameless routine (including closure) }
+    po_nameless,
+    { has at least one closure declared in the body }
+    po_has_closure
   );
   tprocoptions=set of tprocoption;
 
@@ -518,6 +522,11 @@ type
     oo_has_class_destructor,  { the object/class has a class destructor  }
     oo_is_enum_class,     { the class represents an enum (JVM) }
     oo_has_new_destructor { the object/class declares a destructor (apart from potentially inherting one from the parent) }
+    // the interface that has no identifier; structural type equivalence is used
+    //   currently, this flag is only used for closures
+    //     TODO: we can get rid of it if we implement type coersion for COM-interfaces
+    ,oo_is_nameless
+    ,oo_is_invokable
   );
   tobjectoptions=set of tobjectoption;
 

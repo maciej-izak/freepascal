@@ -240,12 +240,15 @@ interface
           { the variable is not living at entry of the scope, so it does not need to be initialized if it is a reg. var
             (not written to ppu, because not important and would change interface crc) }
           noregvarinitneeded : boolean;
+          // if var is captured by a closure, this refers to a field of the class TCapturer
+          captured_into: tfieldvarsym;
           constructor create(st:tsymtyp;const n : string;vsp:tvarspez;def:tdef;vopts:tvaroptions;doregister:boolean);
           constructor ppuload(st:tsymtyp;ppufile:tcompilerppufile);
           function globalasmsym: boolean;
           procedure ppuwrite(ppufile:tcompilerppufile);override;
           procedure buildderef;override;
           procedure deref;override;
+          function is_captured: boolean; inline;
       end;
 
       tlocalvarsym = class(tabstractnormalvarsym)
@@ -1887,6 +1890,10 @@ implementation
          ppufile.putderef(defaultconstsymderef);
       end;
 
+    function tabstractnormalvarsym.is_captured: boolean; inline;
+      begin
+        result:=assigned(captured_into)
+      end;
 
 {****************************************************************************
                              Tstaticvarsym

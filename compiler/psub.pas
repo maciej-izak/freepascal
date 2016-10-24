@@ -28,7 +28,8 @@ interface
     uses
       globals,
       node,nbas,
-      symdef,procinfo,optdfa;
+      symdef,procinfo,optdfa,
+      pdecsub;
 
     type
 
@@ -83,7 +84,7 @@ interface
     { reads any routine in the implementation, or a non-method routine
       declaration in the interface (depending on whether or not parse_only is
       true) }
-    procedure read_proc(isclassmethod:boolean; usefwpd: tprocdef;isgeneric:boolean);
+    function read_proc(isclassmethod:boolean; usefwpd: tprocdef;isgeneric:boolean; const procparsemode: tprocparsemode = ppm_normal): tprocdef;
 
     { parses only the body of a non nested routine; needs a correctly setup pd }
     procedure read_proc_body(pd:tprocdef);inline;
@@ -116,7 +117,7 @@ implementation
 {$endif}
        { parser }
        scanner,gendef,
-       pbase,pstatmnt,pdecl,pdecsub,pexports,pgenutil,pparautl,pgentype,
+       pbase,pstatmnt,pdecl,pexports,pgenutil,pparautl,pgentype,pnameless,
        { codegen }
        tgobj,cgbase,cgobj,cgutils,hlcgobj,hlcgcpu,dbgbase,
 {$ifdef llvm}
@@ -582,6 +583,8 @@ implementation
           end;
         if m_non_local_goto in current_settings.modeswitches then
           tsymtable(current_procinfo.procdef.localst).SymList.ForEachCall(@add_label_init,@newstatement);
+
+        initialise_capturer(current_procinfo.procdef,newstatement);
       end;
 
 
@@ -1346,6 +1349,7 @@ implementation
         if not(po_assembler in current_procinfo.procdef.procoptions) then
           begin
             procdef.parast.SymList.ForEachCall(@check_finalize_paras,nil);
+            // TODO: Exclude captured? Can we just move this below do_firstpass()? Or reset their refs?
             procdef.localst.SymList.ForEachCall(@check_finalize_locals,nil);
           end;
 
@@ -1358,6 +1362,11 @@ implementation
         { firstpass everything }
         flowcontrol:=[];
         do_firstpass(code);
+
+        // This cannot be done before the first pass because there are tloadnodes that reference original symbols.
+        // Such nodes have just been overwritten in tloadnode.pass_1.
+        // We delete these vars ASAP; otherwise, for example, managed initialisations would be generated for them.
+        delete_captured_variables(procdef);
 
 {$if defined(i386) or defined(i8086)}
         if node_resources_fpu(code)>0 then
@@ -1754,6 +1763,7 @@ implementation
       begin
         { insert symtables for the class, but only if it is no nested function }
         if assigned(procdef.struct) and
+           not (po_nameless in procdef.procoptions) and // members of TCapturer are never exposed
            not(assigned(parent) and
                assigned(parent.procdef) and
                assigned(parent.procdef.struct)) then
@@ -1784,6 +1794,7 @@ implementation
 
         { remove symtables for the class, but only if it is no nested function }
         if assigned(procdef.struct) and
+           not (po_nameless in procdef.procoptions) and
            not(assigned(parent) and
                assigned(parent.procdef) and
                assigned(parent.procdef.struct)) then
@@ -1867,6 +1878,8 @@ implementation
 
          { parse the code ... }
          code:=block(current_module.islibrary);
+
+         postprocess_capturer(procdef);
 
          if (df_generic in procdef.defoptions) then
            begin
@@ -1987,6 +2000,7 @@ implementation
       }
 
       var
+        parent_procinfo  : tprocinfo;
         oldfailtokenmode : tmodeswitches;
         isnestedproc     : boolean;
       begin
@@ -1994,7 +2008,11 @@ implementation
         oldfailtokenmode:=[];
 
         { create a new procedure }
-        current_procinfo:=cprocinfo.create(old_current_procinfo);
+        if po_nameless in pd.procoptions then
+          parent_procinfo:=nil  // whereas nested textually, nameless routines are not nested logically
+        else
+          parent_procinfo:=old_current_procinfo;
+        current_procinfo:=cprocinfo.create(parent_procinfo);
         current_module.procinfo:=current_procinfo;
         current_procinfo.procdef:=pd;
         isnestedproc:=(current_procinfo.procdef.parast.symtablelevel>normal_function_level);
@@ -2065,12 +2083,13 @@ implementation
         { release procinfo }
         if tprocinfo(current_module.procinfo)<>current_procinfo then
           internalerror(200304274);
-        current_module.procinfo:=current_procinfo.parent;
+        current_module.procinfo:=old_current_procinfo;
 
         { For specialization we didn't record the last semicolon. Moving this parsing
           into the parse_body routine is not done because of having better file position
           information available }
-        if not(df_specialization in current_procinfo.procdef.defoptions) then
+        if not((df_specialization in current_procinfo.procdef.defoptions)
+              or (po_nameless in pd.procoptions)) then
           consume(_SEMICOLON);
 
         if not isnestedproc then
@@ -2094,7 +2113,7 @@ implementation
       end;
 
 
-    procedure read_proc(isclassmethod:boolean; usefwpd: tprocdef;isgeneric:boolean);
+    function read_proc(isclassmethod:boolean; usefwpd: tprocdef;isgeneric:boolean; const procparsemode: tprocparsemode = ppm_normal): tprocdef;
       {
         Parses the procedure directives, then parses the procedure body, then
         generates the code for it
@@ -2123,7 +2142,7 @@ implementation
 
          if not assigned(usefwpd) then
            { parse procedure declaration }
-           pd:=parse_proc_dec(isclassmethod,old_current_structdef,isgeneric)
+           pd:=parse_proc_dec(isclassmethod,old_current_structdef,isgeneric,procparsemode)
          else
            pd:=usefwpd;
 
@@ -2163,7 +2182,7 @@ implementation
            end;
 
          { search for forward declarations }
-         if not proc_add_definition(pd) then
+         if not ((procparsemode=ppm_nameless_routine) or{else} proc_add_definition(pd)) then
            begin
              { A method must be forward defined (in the object declaration) }
              if assigned(pd.struct) and
@@ -2200,6 +2219,8 @@ implementation
          { compile procedure when a body is needed }
          if (pd_body in pdflags) then
            begin
+             if procparsemode=ppm_nameless_routine then
+               symtablestack.pop(pd.owner); // members of TCapturer are never exposed           
              read_proc_body(old_current_procinfo,pd);
            end
          else
@@ -2261,6 +2282,8 @@ implementation
          current_genericdef:=old_current_genericdef;
          current_specializedef:=old_current_specializedef;
          current_procinfo:=old_current_procinfo;
+
+         result:=pd;
       end;
 
 

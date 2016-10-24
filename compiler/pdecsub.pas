@@ -77,9 +77,11 @@ interface
     procedure parse_var_proc_directives(sym:tsym);
     procedure parse_object_proc_directives(pd:tabstractprocdef);
     procedure parse_record_proc_directives(pd:tabstractprocdef);
-    function  parse_proc_head(astruct:tabstractrecorddef;potype:tproctypeoption;isgeneric:boolean;genericdef:tdef;generictypelist:tfphashobjectlist;out pd:tprocdef):boolean;
-    function  parse_proc_dec(isclassmethod:boolean;astruct:tabstractrecorddef;isgeneric:boolean):tprocdef;
-    procedure parse_proc_dec_finish(pd:tprocdef;isclassmethod:boolean);
+
+    type tprocparsemode = (ppm_normal, ppm_nameless_routine, ppm_method_reference);
+    function  parse_proc_head(astruct:tabstractrecorddef;potype:tproctypeoption;isgeneric:boolean;genericdef:tdef;generictypelist:tfphashobjectlist;out pd:tprocdef; const procparsemode: tprocparsemode = ppm_normal):boolean;
+    function  parse_proc_dec(isclassmethod:boolean;astruct:tabstractrecorddef;isgeneric:boolean; const procparsemode: tprocparsemode = ppm_normal):tprocdef;
+    procedure parse_proc_dec_finish(pd:tprocdef;isclassmethod:boolean; const procparsemode: tprocparsemode = ppm_normal);
 
     { parse a record method declaration (not a (class) constructor/destructor) }
     function parse_record_method_dec(astruct: tabstractrecorddef; is_classdef: boolean;hadgeneric:boolean): tprocdef;
@@ -551,7 +553,7 @@ implementation
       end;
 
 
-    function parse_proc_head(astruct:tabstractrecorddef;potype:tproctypeoption;isgeneric:boolean;genericdef:tdef;generictypelist:tfphashobjectlist;out pd:tprocdef):boolean;
+    function parse_proc_head(astruct:tabstractrecorddef;potype:tproctypeoption;isgeneric:boolean;genericdef:tdef;generictypelist:tfphashobjectlist;out pd:tprocdef; const procparsemode: tprocparsemode = ppm_normal):boolean;
       var
         hs       : string;
         orgsp,sp,orgspnongen,spnongen : TIDString;
@@ -851,7 +853,20 @@ implementation
 
         if not assigned(genericdef) then
           begin
-            consume_proc_name;
+            case procparsemode of
+              ppm_nameless_routine:
+                begin
+                  orgsp:='Nameless_'+tostr(procstartfilepos.line)+'_'+tostr(procstartfilepos.column);
+                  sp:=upcase(orgsp);
+                end;
+              ppm_method_reference:
+                begin
+                  orgsp:='Invoke';
+                  sp:=upcase(orgsp);
+                end;
+              else
+                consume_proc_name;
+            end;
 
             { examine interface map: function/procedure iname.functionname=locfuncname }
             if assigned(astruct) and
@@ -902,7 +917,11 @@ implementation
 
             { method  ? }
             srsym:=nil;
-            if not assigned(astruct) and
+        if procparsemode=ppm_nameless_routine then
+          // Do nothing. This check here:
+          //   a) skips below checks and searches, speeding things up;
+          //   b) makes sure we do not try to parse generic type parameters.
+        else if not assigned(astruct) and
                (symtablestack.top.symtablelevel=main_program_level) and
                try_to_consume(_POINT) then
              begin
@@ -1060,6 +1079,13 @@ implementation
               end;
           end;
 
+        if procparsemode in [ppm_nameless_routine,ppm_method_reference] then
+          begin
+            pd:=tprocdef.create(normal_function_level,true);
+            if procparsemode = ppm_nameless_routine then
+              include(pd.procoptions,po_nameless);
+          end
+        else BEGIN // TODO: surely, there should be a simpler way:
         { to get the correct symtablelevel we must ignore ObjectSymtables }
         st:=nil;
         checkstack:=symtablestack.stack;
@@ -1071,6 +1097,7 @@ implementation
             checkstack:=checkstack^.next;
           end;
         pd:=cprocdef.create(st.symtablelevel+1,not assigned(genericdef));
+        END;
         pd.struct:=astruct;
         pd.procsym:=aprocsym;
         pd.proctypeoption:=potype;
@@ -1236,7 +1263,8 @@ implementation
       end;
 
 
-    procedure parse_proc_dec_finish(pd:tprocdef;isclassmethod:boolean);
+    procedure parse_proc_dec_finish(pd:tprocdef;isclassmethod:boolean; const procparsemode: tprocparsemode = ppm_normal);
+
       var
         locationstr: string;
         i: integer;
@@ -1469,7 +1497,8 @@ implementation
                 message(parser_e_field_not_allowed_here);
                 consume_all_until(_SEMICOLON);
               end;
-            consume(_SEMICOLON);
+            if not (procparsemode in [ppm_nameless_routine,ppm_method_reference]) then
+              consume(_SEMICOLON);
           end;
 
         if locationstr<>'' then
@@ -1480,7 +1509,7 @@ implementation
          end;
       end;
 
-    function parse_proc_dec(isclassmethod:boolean;astruct:tabstractrecorddef;isgeneric:boolean):tprocdef;
+    function parse_proc_dec(isclassmethod:boolean;astruct:tabstractrecorddef;isgeneric:boolean; const procparsemode: tprocparsemode = ppm_normal):tprocdef;
       var
         pd : tprocdef;
         old_block_type : tblock_type;
@@ -1503,11 +1532,11 @@ implementation
           _FUNCTION :
             begin
               consume(_FUNCTION);
-              if parse_proc_head(astruct,potype_function,isgeneric,nil,nil,pd) then
+              if parse_proc_head(astruct,potype_function,isgeneric,nil,nil,pd,procparsemode) then
                 begin
                   { pd=nil when it is a interface mapping }
                   if assigned(pd) then
-                    parse_proc_dec_finish(pd,isclassmethod)
+                    parse_proc_dec_finish(pd,isclassmethod,procparsemode)
                   else
                     finish_intf_mapping;
                 end
@@ -1523,11 +1552,11 @@ implementation
           _PROCEDURE :
             begin
               consume(_PROCEDURE);
-              if parse_proc_head(astruct,potype_procedure,isgeneric,nil,nil,pd) then
+              if parse_proc_head(astruct,potype_procedure,isgeneric,nil,nil,pd,procparsemode) then
                 begin
                   { pd=nil when it is an interface mapping }
                   if assigned(pd) then
-                    parse_proc_dec_finish(pd,isclassmethod)
+                    parse_proc_dec_finish(pd,isclassmethod,procparsemode)
                   else
                     finish_intf_mapping;
                 end

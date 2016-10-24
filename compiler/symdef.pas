@@ -455,7 +455,10 @@ interface
           function  vmtmethodoffset(index:longint):longint;
           function  members_need_inittable : boolean;
           { this should be called when this class implements an interface }
-          procedure prepareguid;
+          procedure register_implemented_interface(const intfdef: tobjectdef);
+       strict private
+           procedure prepareguid;
+       public          
           function  is_publishable : boolean;override;
           function  needs_inittable : boolean;override;
           function  needs_separate_initrtti : boolean;override;
@@ -1310,10 +1313,12 @@ implementation
         s,
         prefix : TSymStr;
         crc : dword;
+      label again; // TODO: refactor this abomination  
       begin
         prefix:='';
         if not assigned(st) then
          internalerror(200204212);
+        again:  
         { sub procedures }
         while (st.symtabletype in [localsymtable,parasymtable]) do
          begin
@@ -1344,6 +1349,8 @@ implementation
            prefix:=tabstractrecorddef(st.defowner).objname^+'_$_'+prefix;
            st:=st.defowner.owner;
          end;
+        if st.symtabletype = localsymtable then
+          goto again;         
         { symtable must now be static or global }
         if not(st.symtabletype in [staticsymtable,globalsymtable]) then
           internalerror(200204175);
@@ -6935,6 +6942,13 @@ implementation
         result:=childof;
       end;
 
+    procedure tobjectdef.register_implemented_interface(const intfdef: tobjectdef);
+      begin
+        // allocate the GUID only if the class implements at least one interface
+        if ImplementedInterfaces.count = 0 then
+          prepareguid;
+        ImplementedInterfaces.Add(TImplementedInterface.Create(intfdef));
+      end;
 
     procedure tobjectdef.prepareguid;
       begin

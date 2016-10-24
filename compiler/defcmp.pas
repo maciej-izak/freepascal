@@ -172,7 +172,7 @@ implementation
     uses
       verbose,systems,constexp,
       symtable,symsym,symcpu,
-      defutil,symutil;
+      defutil,symutil,pnameless;
 
 
     function compare_defs_ext(def_from,def_to : tdef;
@@ -1688,6 +1688,15 @@ implementation
                        runtime support for them in Variants (sergei) }
                        doconv:=tc_variant_2_interface;
                        eq:=te_convert_l2;
+                     end
+                   { interface coercion }
+                   else if (def_from.typ=objectdef) and
+                     (tobjectdef(def_from).objecttype=odt_interfacecom) and
+                     (tobjectdef(def_to).objecttype=odt_interfacecom) and
+                     are_compatible_interfaces(tobjectdef(def_to),tobjectdef(def_from)) then
+                     begin
+                       doconv:=tc_equal;
+                       eq:=te_convert_l1;
                      end
                    { ugly, but delphi allows it (enables typecasting ordinals/
                      enums of any size to pointer-based object defs) }
