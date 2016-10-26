@@ -1,10 +1,29 @@
-(*
-Support for nameless routines and closures
-(C) Blaise.ru 2011-2015
-To be contributed to the Free Pascal compiler
-*)
+{
+    Copyright (c) 2011-2015 Blaise.ru
+    Copyright (c) Maciej Izak (continuation of work started by Blaise.ru)
+
+    Does parsing anonymous methods for Free Pascal / NewPascal :)
+
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program; if not, write to the Free Software
+    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+
+ ****************************************************************************
+}
+
 unit pnameless;
-{$mode Delphi}
+
+{$i fpcdefs.inc}
 
 interface
 
@@ -42,7 +61,6 @@ implementation
 {$endif}
 
 
-{$COPERATORS ON}// TODO: only for ppcrossx64.exe?
 function declare_invokable_interface(const name: string): tobjectdef;
   begin
     result:=tobjectdef.create(odt_interfacecom, name, interface_iunknown, true);
