@@ -111,6 +111,9 @@ interface
         { e.g. dst = call retsize reg (paras) }
         constructor call_size_reg_paras(callpd: tdef; dst: tregister;retsize: tdef;reg:tregister;paras: tfplist);
 
+        { inline function-level assembler code and parameters }
+        constructor asm_paras(asmlist: tasmlist; paras: tfplist);
+
         procedure loadoper(opidx: longint; o: toper); override;
         procedure clearop(opidx: longint); override;
         procedure loadtai(opidx: longint; _ai: tai);
@@ -124,6 +127,7 @@ interface
         procedure loadcond(opidx: longint; _cond: topcmp);
         procedure loadfpcond(opidx: longint; _fpcond: tllvmfpcmp);
         procedure loadparas(opidx: longint; _paras: tfplist);
+        procedure loadasmlist(opidx: longint; _asmlist: tasmlist);
 
         { register spilling code }
         function spilling_get_operation_type(opnr: longint): topertype;override;
@@ -320,6 +324,8 @@ uses
             end;
           top_tai:
             oper[opidx]^.ai.free;
+          top_asmlist:
+            oper[opidx]^.asmlist.free;
         end;
         inherited;
       end;
@@ -443,6 +449,18 @@ uses
               end;
             typ:=top_para;
           end;
+      end;
+
+
+    procedure taillvm.loadasmlist(opidx: longint; _asmlist: tasmlist);
+      begin
+        allocate_oper(opidx+1);
+        with oper[opidx]^ do
+         begin
+           clearop(opidx);
+           asmlist:=_asmlist;
+           typ:=top_asmlist;
+         end;
       end;
 
 
@@ -1042,6 +1060,15 @@ uses
         loaddef(2,callpd);
         loadreg(3,reg);
         loadparas(4,paras);
+      end;
+
+
+    constructor taillvm.asm_paras(asmlist: tasmlist; paras: tfplist);
+      begin
+        create_llvm(la_asmblock);
+        ops:=2;
+        loadasmlist(0,asmlist);
+        loadparas(1,paras);
       end;
 
 end.

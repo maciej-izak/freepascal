@@ -36,8 +36,8 @@ type
 const
   { For floattodatetime and VariantToDate }
 {$ifndef FPUNONE}
-  MinDateTime: TDateTime =  -693593.0;        { 01/01/0001 12:00:00.000 AM }
-  MaxDateTime: TDateTime =  2958465.99999999; { 12/31/9999 11:59:59.999 PM }
+  MinDateTime: TDateTime =  -693593.99999999; { 01/01/0001 12:00:00.000 AM }
+  MaxDateTime: TDateTime =  2958465.99999999;  { 12/31/9999 11:59:59.999 PM }
 
 {$if defined(FPC_HAS_TYPE_EXTENDED) or defined(FPC_HAS_TYPE_FLOAT128)}
   MinCurrency: Currency = -922337203685477.5808;
@@ -67,8 +67,8 @@ Var TrueBoolStrs,
 function NewStr(const S: string): PString; overload;
 procedure DisposeStr(S: PString); overload;
 procedure DisposeStr(S: PShortString); overload;
-procedure AssignStr(var P: PString; const S: string);
-procedure AppendStr(var Dest: String; const S: string);
+procedure AssignStr(var P: PString; const S: string); {$ifdef SYSUTILSINLINE}inline;{$endif}
+procedure AppendStr(var Dest: String; const S: string);{$ifdef SYSUTILSINLINE}inline;{$endif}
 function UpperCase(const s: string): string; overload;
 function UpperCase(const s: string; LocaleOptions: TLocaleOptions): string; overload;{$ifdef SYSUTILSINLINE}inline;{$endif}
 function LowerCase(const s: string): string; overload;
@@ -105,23 +105,23 @@ function AnsiStrLastChar(Str: PChar): PChar;
 function Trim(const S: string): string;
 function TrimLeft(const S: string): string;
 function TrimRight(const S: string): string;
-function QuotedStr(const S: string): string;
+function QuotedStr(const S: string): string; {$ifdef SYSUTILSINLINE}inline;{$endif}
 function AnsiQuotedStr(const S: string; Quote: char): string;
 function AnsiDequotedStr(const S: string; AQuote: Char): string;
 function AnsiExtractQuotedStr(var Src: PChar; Quote: Char): string;
 function AdjustLineBreaks(const S: string): string;
 function AdjustLineBreaks(const S: string; Style: TTextLineBreakStyle): string;
 function IsValidIdent(const Ident: string; AllowDots: Boolean = False; StrictDots: Boolean = False): Boolean;
-function IntToStr(Value: Longint): string;
-function IntToStr(Value: Int64): string;
-function IntToStr(Value: QWord): string;
+function IntToStr(Value: Longint): string; {$ifdef SYSUTILSINLINE}inline;{$ENDIF}
+function IntToStr(Value: Int64): string; {$ifdef SYSUTILSINLINE}inline;{$ENDIF}
+function IntToStr(Value: QWord): string; {$ifdef SYSUTILSINLINE}inline;{$ENDIF}
 function IntToHex(Value: Longint; Digits: integer): string;
 function IntToHex(Value: Int64; Digits: integer): string;
-function IntToHex(Value: QWord; Digits: integer): string;
+function IntToHex(Value: QWord; Digits: integer): string; {$ifdef SYSUTILSINLINE}inline;{$ENDIF}
 function StrToInt(const s: string): Longint;
 function StrToDWord(const s: string): DWord;
 function StrToInt64(const s: string): int64;
-function StrToQWord(const s: string): QWord;
+function StrToQWord(const s: string): QWord; 
 function StrToUInt64(const s: string): UInt64; inline;
 function TryStrToInt(const s: string; Out i : Longint) : boolean;
 function TryStrToDWord(const s: string; Out D : DWord) : boolean;

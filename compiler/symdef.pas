@@ -2584,7 +2584,7 @@ implementation
     procedure tenumdef.calcsavesize(packenum: shortint);
       begin
 {$IFNDEF cpu64bitaddr} {$push}{$warnings off} {$ENDIF} //comparison always false warning
-        if (packenum=8) or (min<low(longint)) or (int64(max)>high(cardinal)) then
+        if (packenum=8) or (int64(min)<low(longint)) or (int64(max)>high(cardinal)) then
          savesize:=8
 {$IFNDEF cpu64bitaddr} {$pop} {$ENDIF}
         else
@@ -6408,7 +6408,7 @@ implementation
 
     function tprocvardef.is_addressonly:boolean;
       begin
-        result:=(not(po_methodpointer in procoptions) and
+        result:=((not(po_methodpointer in procoptions) or (po_staticmethod in procoptions)) and
                  not(po_is_block in procoptions) and
                  not is_nested_pd(self)) or
                 (po_addressonly in procoptions);
