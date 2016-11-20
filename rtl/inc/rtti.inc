@@ -120,16 +120,20 @@ begin
 end;
 
 {$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
-function RTTIRecordRttiInfoToInitInfo(typeInfo: Pointer): Pointer; inline;
+function RTTIRecordOp(typeInfo: Pointer; var initrtti: Pointer): PRecordInfoInit; inline;
 begin
-  result:=typeInfo;
-  { find init table }
+  { find init table and management operators }
   typeInfo:=aligntoptr(typeInfo+2+PByte(typeInfo)[1]);
+  result:=typeInfo;
 
   { check terminator, maybe we are already in init table }
-  if Assigned(PRecordInfoInit(typeInfo)^.Terminator) then
+  if Assigned(result^.Terminator) then
+  begin
     { point to more optimal initrtti }
-    result:=PRecordInfoFull(result)^.InitTable^;
+    initrtti:=PRecordInfoFull(result)^.InitTable^;
+    { and point to management operators in our init table }
+    result:=aligntoptr(initrtti+2+PByte(initrtti)[1]);
+  end
 end;
 {$endif FPC_HAS_MANAGEMENT_OPERATORS}
 
@@ -226,9 +230,12 @@ begin
 {$endif FPC_HAS_FEATURE_OBJECTS}
     tkRecord:
 {$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
+      { if possible try to use more optimal initrtti }
+      with RTTIRecordOp(typeinfo, typeinfo)^ do
       begin
-        typeinfo:=RTTIRecordRttiInfoToInitInfo(typeinfo);
         recordrtti(data,typeinfo,@int_initialize);
+        if Assigned(recordop) and Assigned(recordop^.Initialize) then
+          recordop^.Initialize(data);
       end;
 {$else FPC_HAS_MANAGEMENT_OPERATORS}
       recordrtti(data,typeinfo,@int_initialize);
@@ -263,8 +270,11 @@ begin
 {$endif FPC_HAS_FEATURE_OBJECTS}
     tkRecord:
 {$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
+      { if possible try to use more optimal initrtti }
+      with RTTIRecordOp(typeinfo, typeinfo)^ do
       begin
-        typeinfo:=RTTIRecordRttiInfoToInitInfo(typeinfo);
+        if Assigned(recordop) and Assigned(recordop^.Finalize) then
+          recordop^.Finalize(data);
         recordrtti(data,typeinfo,@int_finalize);
       end;
 {$else FPC_HAS_MANAGEMENT_OPERATORS}
@@ -306,9 +316,12 @@ begin
 {$endif FPC_HAS_FEATURE_OBJECTS}
     tkrecord :
 {$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
+      { find init table }
+      with RTTIRecordOp(typeinfo, typeinfo)^ do
       begin
-        typeinfo:=RTTIRecordRttiInfoToInitInfo(typeinfo);
         recordrtti(data,typeinfo,@int_addref);
+        if Assigned(recordop) and Assigned(recordop^.Copy) then
+          recordop^.Copy(Data);
       end;
 {$else FPC_HAS_MANAGEMENT_OPERATORS}
       recordrtti(data,typeinfo,@int_addref);
@@ -383,36 +396,43 @@ begin
     tkobject,
 {$endif FPC_HAS_FEATURE_OBJECTS}
     tkrecord:
+{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
+      { find init table }
+      with RTTIRecordOp(typeinfo, typeinfo)^ do
+{$endif FPC_HAS_MANAGEMENT_OPERATORS}
       begin
 {$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
-        typeInfo:=RTTIRecordRttiInfoToInitInfo(typeInfo);
-{$endif FPC_HAS_MANAGEMENT_OPERATORS}
-        Temp:=aligntoptr(typeInfo+2+PByte(typeInfo)[1]);
-
-{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
-        Result:=PRecordInfoInit(Temp)^.Size;
-        Count:=PRecordInfoInit(Temp)^.Count;
-        Inc(PRecordInfoInit(Temp));
-{$else FPC_HAS_MANAGEMENT_OPERATORS}
-        Result:=PRecordInfoFull(Temp)^.Size;
-        Count:=PRecordInfoFull(Temp)^.Count;
-        Inc(PRecordInfoFull(Temp));
-{$endif FPC_HAS_MANAGEMENT_OPERATORS}
-        expectedoffset:=0;
-        { Process elements with rtti }
-        for i:=1 to count Do
+        if Assigned(recordop) and Assigned(recordop^.Clone) then
+          recordop^.Clone(Src,Dest)
+        else
           begin
-            Info:=PRecordElement(Temp)^.TypeInfo{$ifndef VER3_0}^{$endif};
-            Offset:=PRecordElement(Temp)^.Offset;
-            Inc(PRecordElement(Temp));
-            if Offset>expectedoffset then
-              move((Src+expectedoffset)^,(Dest+expectedoffset)^,Offset-expectedoffset);
-            copiedsize:=fpc_Copy_internal(Src+Offset,Dest+Offset,Info);
-            expectedoffset:=Offset+copiedsize;
+            Temp:=aligntoptr(typeInfo+2+PByte(typeInfo)[1]);
+            Result:=Size;
+            Inc(PRecordInfoInit(Temp));
+{$else FPC_HAS_MANAGEMENT_OPERATORS}
+            Temp:=aligntoptr(typeInfo+2+PByte(typeInfo)[1]);
+            Result:=PRecordInfoFull(Temp)^.Size;
+            Count:=PRecordInfoFull(Temp)^.Count;
+            Inc(PRecordInfoFull(Temp));
+{$endif FPC_HAS_MANAGEMENT_OPERATORS}
+            expectedoffset:=0;
+            { Process elements with rtti }
+            for i:=1 to Count Do
+              begin
+                Info:=PRecordElement(Temp)^.TypeInfo{$ifndef VER3_0}^{$endif};
+                Offset:=PRecordElement(Temp)^.Offset;
+                Inc(PRecordElement(Temp));
+                if Offset>expectedoffset then
+                  move((Src+expectedoffset)^,(Dest+expectedoffset)^,Offset-expectedoffset);
+                copiedsize:=fpc_Copy_internal(Src+Offset,Dest+Offset,Info);
+                expectedoffset:=Offset+copiedsize;
+              end;
+            { elements remaining? }
+            if result>expectedoffset then
+              move((Src+expectedoffset)^,(Dest+expectedoffset)^,Result-expectedoffset);
+{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
           end;
-        { elements remaining? }
-        if result>expectedoffset then
-          move((Src+expectedoffset)^,(Dest+expectedoffset)^,Result-expectedoffset);
+{$endif FPC_HAS_MANAGEMENT_OPERATORS}
       end;
 {$ifdef FPC_HAS_FEATURE_DYNARRAYS}
     tkDynArray:
