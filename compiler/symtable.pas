@@ -135,8 +135,15 @@ interface
 
        trecordsymtable = class(tabstractrecordsymtable)
        public
+          { maybe someday is worth to move managementoperators to              }
+          { tabstractrecordsymtable to perform management class operators for  }
+          { object/classes. In XE5 and newer is possible to use class operator }
+          { for classes (like for Delphi .NET before) only for Delphi NEXTGEN  }
+          managementoperators : tmanagementoperators;
+
           constructor create(const n:string;usealign,recordminalign,recordmaxCalign:shortint);
           procedure insertunionst(unionst : trecordsymtable;offset : longint);
+          procedure includemanagementoperator(mop:tmanagementoperator);
        end;
 
        tObjectSymtable = class(tabstractrecordsymtable)
@@ -1728,6 +1735,13 @@ implementation
           trecorddef(defowner).isunion:=true;
       end;
 
+
+    procedure trecordsymtable.includemanagementoperator(mop: tmanagementoperator);
+      begin
+        if mop in managementoperators then
+          exit;
+        include(managementoperators,mop);
+      end;
 
 {****************************************************************************
                               TObjectSymtable

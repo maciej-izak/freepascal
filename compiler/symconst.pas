@@ -581,6 +581,14 @@ type
   );
   tvaroptions=set of tvaroption;
 
+  tmanagementoperator=(mop_none,
+    mop_initialize,
+    mop_finalize,
+    mop_copy,
+    mop_clone
+  );
+  tmanagementoperators=set of tmanagementoperator;
+
   { register variable }
   tvarregable=(vr_none,
     vr_intreg,
