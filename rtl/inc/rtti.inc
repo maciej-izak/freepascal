@@ -49,14 +49,28 @@ type
 {$endif USE_PACKED}
   record
     Size: Longint;
-{$if FPC_FULLVERSION>30100}
+{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
     InitTable: PPointer;
-{$endif FPC_FULLVERSION>30100}
+{$endif FPC_HAS_MANAGEMENT_OPERATORS}
     Count: Longint;
     { Elements: array[count] of TRecordElement }
   end;
 
-{$if FPC_FULLVERSION>30100}
+{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
+  TRTTIRecVarOp=procedure(ARec: Pointer);
+  TRTTIRecCloneOp=procedure(ASrc, ADest: Pointer);
+  PRTTIRecordOpVMT=^TRTTIRecordOpVMT;
+  TRTTIRecordOpVMT=
+{$ifdef USE_PACKED}
+  packed
+{$endif USE_PACKED}
+  record
+    Initialize: TRTTIRecVarOp;
+    Finalize: TRTTIRecVarOp;
+    Copy: TRTTIRecVarOp;
+    Clone: TRTTIRecCloneOp;
+  end;
+
   PRecordInfoInit=^TRecordInfoInit;
   TRecordInfoInit=
 {$ifdef USE_PACKED}
@@ -65,10 +79,11 @@ type
   record
     Size: Longint;
     Terminator: Pointer;
+    RecordOp: PRTTIRecordOpVMT;
     Count: Longint;
     { Elements: array[count] of TRecordElement }
   end;
-{$endif FPC_FULLVERSION>30100}
+{$endif FPC_HAS_MANAGEMENT_OPERATORS}
 
   PArrayInfo=^TArrayInfo;
   TArrayInfo=
@@ -104,7 +119,7 @@ begin
   result:=PRecordInfoFull(typeInfo)^.Size;
 end;
 
-{$if FPC_FULLVERSION>30100}
+{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
 function RTTIRecordRttiInfoToInitInfo(typeInfo: Pointer): Pointer; inline;
 begin
   result:=typeInfo;
@@ -116,7 +131,7 @@ begin
     { point to more optimal initrtti }
     result:=PRecordInfoFull(result)^.InitTable^;
 end;
-{$endif FPC_FULLVERSION>30100}
+{$endif FPC_HAS_MANAGEMENT_OPERATORS}
 
 function RTTISize(typeInfo: Pointer): SizeInt;
 begin
@@ -144,13 +159,13 @@ var
   i : longint;
 begin
   typeInfo:=aligntoptr(typeInfo+2+PByte(typeInfo)[1]);
-{$if FPC_FULLVERSION>30100}
+{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
   Count:=PRecordInfoInit(typeInfo)^.Count;
   Inc(PRecordInfoInit(typeInfo));
-{$else FPC_FULLVERSION>30100}  
+{$else FPC_HAS_MANAGEMENT_OPERATORS}
   Count:=PRecordInfoFull(typeInfo)^.Count;
   Inc(PRecordInfoFull(typeInfo));
-{$endif FPC_FULLVERSION>30100}  
+{$endif FPC_HAS_MANAGEMENT_OPERATORS}
   { Process elements }
   for i:=1 to count Do
     begin
@@ -210,14 +225,14 @@ begin
     tkObject,
 {$endif FPC_HAS_FEATURE_OBJECTS}
     tkRecord:
-{$if FPC_FULLVERSION>30100}
+{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
       begin
         typeinfo:=RTTIRecordRttiInfoToInitInfo(typeinfo);
         recordrtti(data,typeinfo,@int_initialize);
       end;
-{$else FPC_FULLVERSION>30100}
+{$else FPC_HAS_MANAGEMENT_OPERATORS}
       recordrtti(data,typeinfo,@int_initialize);
-{$endif FPC_FULLVERSION>30100}
+{$endif FPC_HAS_MANAGEMENT_OPERATORS}
 {$ifdef FPC_HAS_FEATURE_VARIANTS}
     tkVariant:
       variant_init(PVarData(Data)^);
@@ -247,14 +262,14 @@ begin
     tkObject,
 {$endif FPC_HAS_FEATURE_OBJECTS}
     tkRecord:
-{$if FPC_FULLVERSION>30100}
+{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
       begin
         typeinfo:=RTTIRecordRttiInfoToInitInfo(typeinfo);
         recordrtti(data,typeinfo,@int_finalize);
       end;
-{$else FPC_FULLVERSION>30100}
+{$else FPC_HAS_MANAGEMENT_OPERATORS}
       recordrtti(data,typeinfo,@int_finalize);
-{$endif FPC_FULLVERSION>30100}
+{$endif FPC_HAS_MANAGEMENT_OPERATORS}
     tkInterface:
       Intf_Decr_Ref(PPointer(Data)^);
 {$ifdef FPC_HAS_FEATURE_DYNARRAYS}
@@ -290,14 +305,14 @@ begin
     tkobject,
 {$endif FPC_HAS_FEATURE_OBJECTS}
     tkrecord :
-{$if FPC_FULLVERSION>30100}
+{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
       begin
         typeinfo:=RTTIRecordRttiInfoToInitInfo(typeinfo);
         recordrtti(data,typeinfo,@int_addref);
       end;
-{$else FPC_FULLVERSION>30100}
+{$else FPC_HAS_MANAGEMENT_OPERATORS}
       recordrtti(data,typeinfo,@int_addref);
-{$endif FPC_FULLVERSION>30100}
+{$endif FPC_HAS_MANAGEMENT_OPERATORS}
 {$ifdef FPC_HAS_FEATURE_DYNARRAYS}
     tkDynArray:
       fpc_dynarray_incr_ref(PPointer(Data)^);
@@ -369,20 +384,20 @@ begin
 {$endif FPC_HAS_FEATURE_OBJECTS}
     tkrecord:
       begin
-{$if FPC_FULLVERSION>30100}
+{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
         typeInfo:=RTTIRecordRttiInfoToInitInfo(typeInfo);
-{$endif FPC_FULLVERSION>30100}
+{$endif FPC_HAS_MANAGEMENT_OPERATORS}
         Temp:=aligntoptr(typeInfo+2+PByte(typeInfo)[1]);
 
-{$if FPC_FULLVERSION>30100}
+{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
         Result:=PRecordInfoInit(Temp)^.Size;
         Count:=PRecordInfoInit(Temp)^.Count;
         Inc(PRecordInfoInit(Temp));
-{$else FPC_FULLVERSION>30100}
+{$else FPC_HAS_MANAGEMENT_OPERATORS}
         Result:=PRecordInfoFull(Temp)^.Size;
         Count:=PRecordInfoFull(Temp)^.Count;
         Inc(PRecordInfoFull(Temp));
-{$endif FPC_FULLVERSION>30100}
+{$endif FPC_HAS_MANAGEMENT_OPERATORS}
         expectedoffset:=0;
         { Process elements with rtti }
         for i:=1 to count Do

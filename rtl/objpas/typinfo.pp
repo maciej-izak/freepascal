@@ -268,9 +268,9 @@ unit typinfo;
             tkRecord:
               (
                 RecSize: Integer;
-{$if FPC_FULLVERSION>30100}
+{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
                 RecInitTable: PPointer;
-{$endif FPC_FULLVERSION>30100}
+{$endif FPC_HAS_MANAGEMENT_OPERATORS}
                 ManagedFldCount: Integer;
                 {ManagedFields: array[1..ManagedFldCount] of TManagedField}
               );

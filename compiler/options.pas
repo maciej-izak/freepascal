@@ -3321,6 +3321,7 @@ begin
   def_system_macro('FPC_HAS_INTERNAL_ABS_INT64');
 {$endif x86_64 or powerpc64 or aarch64}
 
+  def_system_macro('FPC_HAS_MANAGEMENT_OPERATORS');
   def_system_macro('FPC_HAS_UNICODESTRING');
   def_system_macro('FPC_RTTI_PACKSET1');
   def_system_macro('FPC_HAS_CPSTRING');
