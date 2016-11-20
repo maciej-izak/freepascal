@@ -422,6 +422,10 @@ interface
     { _ASSIGNMENT    }  'assign',
     { _OP_EXPLICIT   }  'explicit',
     { _OP_ENUMERATOR }  'enumerator',
+    { _OP_INITIALIZE }  'initialize',
+    { _OP_FINALIZE   }  'finalize',
+    { _OP_COPY       }  'copy',
+    { _OP_CLONE      }  'clone',
     { _OP_INC        }  'inc',
     { _OP_DEC        }  'dec');
 
