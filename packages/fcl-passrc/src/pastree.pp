@@ -27,6 +27,11 @@ resourcestring
   // Parse tree node type names
   SPasTreeElement = 'generic element';
   SPasTreeSection = 'unit section';
+  SPasTreeProgramSection = 'program section';
+  SPasTreeLibrarySection = 'library section';
+  SPasTreeInterfaceSection = 'interface section';
+  SPasTreeImplementationSection = 'implementation section';
+  SPasTreeUsesUnit = 'uses unit';
   SPasTreeModule = 'module';
   SPasTreeUnit = 'unit';
   SPasTreeProgram = 'program';
@@ -101,7 +106,10 @@ type
     visPublished, visAutomated,
     visStrictPrivate, visStrictProtected);
 
-  TCallingConvention = (ccDefault,ccRegister,ccPascal,ccCDecl,ccStdCall,ccOldFPCCall,ccSafeCall,ccSysCall);
+  TCallingConvention = (ccDefault,ccRegister,ccPascal,ccCDecl,ccStdCall,
+                        ccOldFPCCall,ccSafeCall,ccSysCall);
+  TProcTypeModifier = (ptmOfObject,ptmIsNested,ptmStatic,ptmVarargs,ptmReferenceTo);
+  TProcTypeModifiers = set of TProcTypeModifier;
   TPackMode = (pmNone,pmPacked,pmBitPacked);
 
   TPasMemberVisibilities = set of TPasMemberVisibility;
@@ -156,8 +164,9 @@ type
     Property DocComment : String Read FDocComment Write FDocComment;
   end;
 
-  TPasExprKind = (pekIdent, pekNumber, pekString, pekSet, pekNil, pekBoolConst, pekRange,
-     pekUnary, pekBinary, pekFuncParams, pekArrayParams, pekListOfExp, pekInherited, pekSelf);
+  TPasExprKind = (pekIdent, pekNumber, pekString, pekSet, pekNil, pekBoolConst,
+     pekRange, pekUnary, pekBinary, pekFuncParams, pekArrayParams, pekListOfExp,
+     pekInherited, pekSelf);
 
   TExprOpCode = (eopNone,
                  eopAdd,eopSubtract,eopMultiply,eopDivide, eopDiv,eopMod, eopPower,// arithmetic
@@ -166,7 +175,7 @@ type
                  eopEqual, eopNotEqual,  // Logical
                  eopLessThan,eopGreaterThan, eopLessthanEqual,eopGreaterThanEqual, // ordering
                  eopIn,eopIs,eopAs, eopSymmetricaldifference, // Specials
-                 eopAddress, eopDeref, // Pointers
+                 eopAddress, eopDeref, eopMemAddress, // Pointers
                  eopSubIdent); // SomeRec.A, A is subIdent of SomeRec
 
   { TPasExpr }
@@ -174,7 +183,7 @@ type
   TPasExpr = class(TPasElement)
     Kind      : TPasExprKind;
     OpCode    : TExprOpCode;
-    format1,format2 : TPasExpr;
+    format1,format2 : TPasExpr; // write, writeln, str
     constructor Create(AParent : TPasElement; AKind: TPasExprKind; AOpCode: TExprOpCode); virtual; overload;
     destructor Destroy; override;
   end;
@@ -203,12 +212,16 @@ type
       const Arg: Pointer); override;
   end;
 
+  { TPrimitiveExpr }
+
   TPrimitiveExpr = class(TPasExpr)
     Value     : AnsiString;
     constructor Create(AParent : TPasElement; AKind: TPasExprKind; const AValue : Ansistring); overload;
     function GetDeclaration(full : Boolean) : string; override;
   end;
   
+  { TBoolConstExpr }
+
   TBoolConstExpr = class(TPasExpr)
     Value     : Boolean;
     constructor Create(AParent : TPasElement; AKind: TPasExprKind; const ABoolValue : Boolean); overload;
@@ -244,7 +257,7 @@ type
   TParamsExpr = class(TPasExpr)
     Value     : TPasExpr;
     Params    : TPasExprArray;
-    {pekArrayParams, pekFuncParams, pekSet}
+    // Kind: pekArrayParams, pekFuncParams, pekSet
     constructor Create(AParent : TPasElement; AKind: TPasExprKind); overload;
     function GetDeclaration(full : Boolean) : string; override;
     destructor Destroy; override;
@@ -298,35 +311,68 @@ type
     Functions, Variables, Properties, ExportSymbols: TFPList;
   end;
 
+  { TPasUsesUnit - Parent is TPasSection }
+
+  TPasUsesUnit = class(TPasElement)
+  public
+    destructor Destroy; override;
+    function ElementTypeName: string; override;
+    procedure ForEachCall(const aMethodCall: TOnForEachPasElement;
+      const Arg: Pointer); override;
+  public
+    Expr: TPasExpr; // name expression
+    InFilename: TPrimitiveExpr; // Kind=pekString, can be nil
+    Module: TPasElement; // TPasUnresolvedUnitRef or TPasModule
+  end;
+  TPasUsesClause = array of TPasUsesUnit;
+
   { TPasSection }
 
   TPasSection = class(TPasDeclarations)
   public
     constructor Create(const AName: string; AParent: TPasElement); override;
     destructor Destroy; override;
-    procedure AddUnitToUsesList(const AUnitName: string);
+    function AddUnitToUsesList(const AUnitName: string; aName: TPasExpr = nil;
+      InFilename: TPrimitiveExpr = nil; aModule: TPasElement = nil;
+      UsesUnit: TPasUsesUnit = nil): TPasUsesUnit;
+    function ElementTypeName: string; override;
     procedure ForEachCall(const aMethodCall: TOnForEachPasElement;
       const Arg: Pointer); override;
   public
-    UsesList: TFPList;            // TPasUnresolvedTypeRef or TPasModule elements
+    UsesList: TFPList; // kept for compatibility, see TPasUsesUnit.Module
+    UsesClause: TPasUsesClause;
+    PendingUsedIntf: TPasUsesUnit; // <>nil while resolving a uses cycle
   end;
 
   { TInterfaceSection }
 
   TInterfaceSection = class(TPasSection)
+  public
+    function ElementTypeName: string; override;
   end;
 
   { TImplementationSection }
 
   TImplementationSection = class(TPasSection)
+  public
+    function ElementTypeName: string; override;
   end;
+
+  { TProgramSection }
 
   TProgramSection = class(TImplementationSection)
+  public
+    function ElementTypeName: string; override;
   end;
+
+  { TLibrarySection }
 
   TLibrarySection = class(TImplementationSection)
+  public
+    function ElementTypeName: string; override;
   end;
 
+  TPasImplCommandBase = class;
   TInitializationSection = class;
   TFinalizationSection = class;
 
@@ -340,9 +386,10 @@ type
     procedure ForEachCall(const aMethodCall: TOnForEachPasElement;
       const Arg: Pointer); override;
   public
+    GlobalDirectivesSection: TPasImplCommandBase; // not used by pparser
     InterfaceSection: TInterfaceSection;
     ImplementationSection: TImplementationSection;
-    InitializationSection: TInitializationSection;
+    InitializationSection: TInitializationSection; // in TPasProgram the begin..end.
     FinalizationSection: TFinalizationSection;
     PackageName: string;
     Filename   : String;  // the IN filename, only written when not empty.
@@ -365,6 +412,7 @@ type
   Public
     ProgramSection: TProgramSection;
     InputFile,OutPutFile : String;
+    // Note: the begin..end. block is in the InitializationSection
   end;
 
   { TPasLibrary }
@@ -409,13 +457,15 @@ type
   { TPasType }
 
   TPasType = class(TPasElement)
+  Protected
+    Function FixTypeDecl(aDecl: String) : String;
   public
     function ElementTypeName: string; override;
   end;
 
-  { TPasPointerType }
+  { TPasAliasType }
 
-  TPasPointerType = class(TPasType)
+  TPasAliasType = class(TPasType)
   public
     destructor Destroy; override;
     function ElementTypeName: string; override;
@@ -424,11 +474,12 @@ type
       const Arg: Pointer); override;
   public
     DestType: TPasType;
+    Expr: TPasExpr;
   end;
 
-  { TPasAliasType }
+  { TPasPointerType - todo: change it TPasAliasType }
 
-  TPasAliasType = class(TPasType)
+  TPasPointerType = class(TPasType)
   public
     destructor Destroy; override;
     function ElementTypeName: string; override;
@@ -454,6 +505,36 @@ type
     function GetDeclaration(full: boolean) : string; override;
   end;
 
+  { TPasSpecializeType }
+
+  TPasSpecializeType = class(TPasAliasType)
+  public
+    constructor Create(const AName: string; AParent: TPasElement); override;
+    destructor Destroy; override;
+    function ElementTypeName: string; override;
+    function GetDeclaration(full: boolean) : string; override;
+    procedure AddParam(El: TPasElement);
+  public
+    Params: TFPList; // list of TPasType or TPasExpr
+  end;
+
+  { TInlineTypeExpr }
+
+  TInlineTypeExpr = class(TPasExpr)
+  public
+    destructor Destroy; override;
+    function ElementTypeName: string; override;
+    function GetDeclaration(full : Boolean): string; override;
+    procedure ForEachCall(const aMethodCall: TOnForEachPasElement;
+      const Arg: Pointer); override;
+  public
+    DestType: TPasType;
+  end;
+
+  { TInlineSpecializeExpr }
+
+  TInlineSpecializeExpr = class(TInlineTypeExpr)
+  end;
 
   { TPasRangeType }
 
@@ -502,7 +583,7 @@ type
     ElType: TPasType;
   end;
 
-  { TPasEnumValue }
+  { TPasEnumValue - Parent is TPasEnumType }
 
   TPasEnumValue = class(TPasElement)
   public
@@ -521,13 +602,13 @@ type
   public
     constructor Create(const AName: string; AParent: TPasElement); override;
     destructor Destroy; override;
-     function ElementTypeName: string; override;
+    function ElementTypeName: string; override;
     function GetDeclaration(full : boolean) : string; override;
     Procedure GetEnumNames(Names : TStrings);
     procedure ForEachCall(const aMethodCall: TOnForEachPasElement;
       const Arg: Pointer); override;
   public
-    Values: TFPList;      // List of TPasEnumValue objects
+    Values: TFPList;      // List of TPasEnumValue
   end;
 
   { TPasSetType }
@@ -577,9 +658,11 @@ type
     Members: TFPList;     // array of TPasVariable elements
     VariantEl: TPasElement; // TPasVariable or TPasType
     Variants: TFPList;	// array of TPasVariant elements, may be nil!
+    GenericTemplateTypes: TFPList; // list of TPasGenericTemplateType
     Function IsPacked: Boolean;
     Function IsBitPacked : Boolean;
     Function IsAdvancedRecord : Boolean;
+    Procedure SetGenericTemplates(AList : TFPList);
   end;
 
   TPasGenericTemplateType = Class(TPasType);
@@ -601,16 +684,23 @@ type
     AncestorType: TPasType;     // TPasClassType or TPasUnresolvedTypeRef or TPasAliasType or TPasTypeAliasType
     HelperForType: TPasType;     // TPasClassType or TPasUnresolvedTypeRef
     IsForward: Boolean;
+    IsExternal : Boolean;
     IsShortDefinition: Boolean;//class(anchestor); without end
     GUIDExpr : TPasExpr;
     Members: TFPList;     // list of TPasElement
     Modifiers: TStringList;
     Interfaces : TFPList; // list of TPasElement
     GenericTemplateTypes: TFPList; // list of TPasGenericTemplateType
+    ExternalNameSpace : String;
+    ExternalName : String;
+    Procedure SetGenericTemplates(AList : TFPList);
     Function FindMember(MemberClass : TPTreeElement; Const MemberName : String) : TPasElement;
     Function FindMemberInAncestors(MemberClass : TPTreeElement; Const MemberName : String) : TPasElement;
     Function IsPacked : Boolean;
     Function InterfaceGUID : string;
+    Function IsSealed : Boolean;
+    Function IsAbstract : Boolean;
+    Function HasModifier(const aModifier: String): Boolean;
   end;
 
 
@@ -628,7 +718,7 @@ type
       const Arg: Pointer); override;
   public
     Access: TArgumentAccess;
-    ArgType: TPasType;
+    ArgType: TPasType; // can be nil, when Access<>argDefault
     ValueExpr: TPasExpr; // the default value
     Function Value : String;
   end;
@@ -636,6 +726,13 @@ type
   { TPasProcedureType }
 
   TPasProcedureType = class(TPasType)
+  private
+    function GetIsNested: Boolean;
+    function GetIsOfObject: Boolean;
+    function GetIsReference: Boolean;
+    procedure SetIsNested(const AValue: Boolean);
+    procedure SetIsOfObject(const AValue: Boolean);
+    procedure SetIsReference(AValue: Boolean);
   public
     constructor Create(const AName: string; AParent: TPasElement); override;
     destructor Destroy; override;
@@ -647,10 +744,12 @@ type
     procedure ForEachCall(const aMethodCall: TOnForEachPasElement;
       const Arg: Pointer); override;
   public
-    IsOfObject: Boolean;
-    IsNested : Boolean;
     Args: TFPList;        // List of TPasArgument objects
     CallingConvention: TCallingConvention;
+    Modifiers: TProcTypeModifiers;
+    property IsOfObject: Boolean read GetIsOfObject write SetIsOfObject;
+    property IsNested : Boolean read GetIsNested write SetIsNested;
+    property IsReferenceTo : Boolean Read GetIsReference write SetIsReference;
   end;
 
   { TPasResultElement }
@@ -697,7 +796,7 @@ type
     function ElementTypeName: string; override;
   end;
 
-  { TPasStringType }
+  { TPasStringType - e.g. string[len] }
 
   TPasStringType = class(TPasUnresolvedTypeRef)
   public
@@ -729,7 +828,8 @@ type
   public
     VarType: TPasType;
     VarModifiers : TVariableModifiers;
-    LibraryName,ExportName : string;
+    LibraryName : TPasExpr; // libname of modifier external
+    ExportName : TPasExpr; // symbol name of modifier external, export and public
     Modifiers : string;
     AbsoluteLocation : String;
     Expr: TPasExpr;
@@ -753,6 +853,7 @@ type
 
   TPasConst = class(TPasVariable)
   public
+    IsConst: boolean; // true iff untyped const or typed with $WritableConst off
     function ElementTypeName: string; override;
   end;
 
@@ -815,8 +916,9 @@ type
 
   TProcedureModifier = (pmVirtual, pmDynamic, pmAbstract, pmOverride,
                         pmExport, pmOverload, pmMessage, pmReintroduce,
-                        pmStatic,pmInline,pmAssembler,pmVarargs, pmPublic,
-                        pmCompilerProc,pmExternal,pmForward, pmdispid, pmnoreturn);
+                        pmInline,pmAssembler, pmPublic,
+                        pmCompilerProc,pmExternal,pmForward, pmDispId, 
+                        pmNoReturn, pmfar, pmFinal);
   TProcedureModifiers = Set of TProcedureModifier;
   TProcedureMessageType = (pmtNone,pmtInteger,pmtString);
                         
@@ -840,9 +942,9 @@ type
   public
     ProcType : TPasProcedureType;
     Body : TProcedureBody;
-    PublicName,
+    PublicName, // e.g. public PublicName;
     LibrarySymbolName,
-    LibraryExpr : TPasExpr;
+    LibraryExpr : TPasExpr; // e.g. external LibraryExpr name LibrarySymbolName;
     DispIDExpr :  TPasExpr;
     AliasName : String;
     Procedure AddModifier(AModifier : TProcedureModifier);
@@ -985,6 +1087,7 @@ Type
     ProcType: TPasProcedureType;
     Locals: TFPList;
     Body: TPasImplBlock;
+    IsClassMethod: boolean;
   end;
 
   { TPasConstructorImpl - used by mkxmlrpc, not by pparser }
@@ -1008,16 +1111,24 @@ Type
   TPasImplElement = class(TPasElement)
   end;
 
+  { TPasImplCommandBase }
+
+  TPasImplCommandBase = class(TPasImplElement)
+  public
+    SemicolonAtEOL: boolean;
+    constructor Create(const AName: string; AParent: TPasElement); override;
+  end;
+
   { TPasImplCommand - currently used as empty statement, e.g. if then else ; }
 
-  TPasImplCommand = class(TPasImplElement)
+  TPasImplCommand = class(TPasImplCommandBase)
   public
     Command: string; // never set by TPasParser
   end;
 
   { TPasImplCommands - used by mkxmlrpc, not used by pparser }
 
-  TPasImplCommands = class(TPasImplElement)
+  TPasImplCommands = class(TPasImplCommandBase)
   public
     constructor Create(const AName: string; AParent: TPasElement); override;
     destructor Destroy; override;
@@ -1212,6 +1323,7 @@ Type
   end;
 
   { TPasImplForLoop }
+
   TLoopType = (ltNormal,ltDown,ltIn);
   TPasImplForLoop = class(TPasImplStatement)
   public
@@ -1223,7 +1335,7 @@ Type
     VariableName : TPasExpr;
     LoopType : TLoopType;
     StartExpr : TPasExpr;
-    EndExpr : TPasExpr;
+    EndExpr : TPasExpr; // if LoopType=ltIn this is nil
     Body: TPasImplElement;
     Variable: TPasVariable; // not used by TPasParser
     Function Down: boolean; // downto, backward compatibility
@@ -1335,6 +1447,7 @@ Type
 
 const
   AccessNames: array[TArgumentAccess] of string[9] = ('', 'const ', 'var ', 'out ','constref ');
+  AccessDescriptions: array[TArgumentAccess] of string[9] = ('default', 'const', 'var', 'out','constref');
   AllVisibilities: TPasMemberVisibilities =
      [visDefault, visPrivate, visProtected, visPublic,
       visPublished, visAutomated];
@@ -1369,7 +1482,7 @@ const
         '=','<>',
         '<','>','<=','>=',
         'in','is','as','><',
-        '@','^',
+        '@','^','@@',
         '.');
 
 
@@ -1394,12 +1507,15 @@ const
       ( 'deprecated', 'library', 'platform', 'experimental', 'unimplemented' );
   cCallingConventions : Array[TCallingConvention] of string =
       ( '', 'Register','Pascal','CDecl','StdCall','OldFPCCall','SafeCall','SysCall');
+  ProcTypeModifiers : Array[TProcTypeModifier] of string =
+      ('of Object', 'is nested','static','varargs','reference to');
 
   ModifierNames : Array[TProcedureModifier] of string
                 = ('virtual', 'dynamic','abstract', 'override',
                    'export', 'overload', 'message', 'reintroduce',
-                   'static','inline','assembler','varargs', 'public',
-                   'compilerproc','external','forward','dispid','noreturn');
+                   'inline','assembler','public',
+                   'compilerproc','external','forward','dispid',
+                   'noreturn','far','final');
 
   VariableModifierNames : Array[TVariableModifier] of string
      = ('cvar', 'external', 'public', 'export', 'class', 'static');
@@ -1413,15 +1529,147 @@ uses SysUtils;
 procedure ReleaseAndNil(var El: TPasElement);
 begin
   if El=nil then exit;
+  {$IFDEF VerbosePasTreeMem}writeln('ReleaseAndNil ',El.Name,' ',El.ClassName);{$ENDIF}
   El.Release;
   El:=nil;
+end;
+
+{ TPasImplCommandBase }
+
+constructor TPasImplCommandBase.Create(const AName: string; AParent: TPasElement);
+begin
+  inherited Create(AName, AParent);
+  SemicolonAtEOL := true;
+end;
+
+{ TInlineTypeExpr }
+
+destructor TInlineTypeExpr.Destroy;
+begin
+  ReleaseAndNil(TPasElement(DestType));
+  inherited Destroy;
+end;
+
+function TInlineTypeExpr.ElementTypeName: string;
+begin
+  Result := DestType.ElementTypeName;
+end;
+
+function TInlineTypeExpr.GetDeclaration(full: Boolean): string;
+begin
+  Result:=DestType.GetDeclaration(full);
+end;
+
+procedure TInlineTypeExpr.ForEachCall(
+  const aMethodCall: TOnForEachPasElement; const Arg: Pointer);
+begin
+  DestType.ForEachChildCall(aMethodCall,Arg,DestType,true);
+end;
+
+{ TPasSpecializeType }
+
+constructor TPasSpecializeType.Create(const AName: string; AParent: TPasElement
+  );
+begin
+  inherited Create(AName, AParent);
+  Params:=TFPList.Create;
+end;
+
+destructor TPasSpecializeType.Destroy;
+var
+  i: Integer;
+begin
+  for i:=0 to Params.Count-1 do
+    TPasElement(Params[i]).Release;
+  FreeAndNil(Params);
+  inherited Destroy;
+end;
+
+function TPasSpecializeType.ElementTypeName: string;
+begin
+  Result:=SPasTreeSpecializedType;
+end;
+
+function TPasSpecializeType.GetDeclaration(full: boolean): string;
+var
+  i: Integer;
+begin
+  Result:='specialize '+DestType.Name+'<';
+  for i:=0 to Params.Count-1 do
+    begin
+    if i>0 then
+      Result:=Result+',';
+    Result:=Result+TPasElement(Params[i]).GetDeclaration(false);
+    end;
+  If Full then
+    begin
+    Result:=Name+' = '+Result;
+    ProcessHints(False,Result);
+    end;
+end;
+
+procedure TPasSpecializeType.AddParam(El: TPasElement);
+begin
+  Params.Add(El);
+end;
+
+{ TInterfaceSection }
+
+function TInterfaceSection.ElementTypeName: string;
+begin
+  Result:=SPasTreeInterfaceSection;
+end;
+
+{ TLibrarySection }
+
+function TLibrarySection.ElementTypeName: string;
+begin
+  Result:=SPasTreeLibrarySection;
+end;
+
+{ TProgramSection }
+
+function TProgramSection.ElementTypeName: string;
+begin
+  Result:=SPasTreeProgramSection;
+end;
+
+{ TImplementationSection }
+
+function TImplementationSection.ElementTypeName: string;
+begin
+  Result:=SPasTreeImplementationSection;
+end;
+
+{ TPasUsesUnit }
+
+destructor TPasUsesUnit.Destroy;
+begin
+  ReleaseAndNil(TPasElement(Expr));
+  ReleaseAndNil(TPasElement(InFilename));
+  ReleaseAndNil(TPasElement(Module));
+  inherited Destroy;
+end;
+
+function TPasUsesUnit.ElementTypeName: string;
+begin
+  Result := SPasTreeUsesUnit;
+end;
+
+procedure TPasUsesUnit.ForEachCall(const aMethodCall: TOnForEachPasElement;
+  const Arg: Pointer);
+begin
+  inherited ForEachCall(aMethodCall, Arg);
+  ForEachChildCall(aMethodCall,Arg,Expr,false);
+  ForEachChildCall(aMethodCall,Arg,InFilename,false);
+  ForEachChildCall(aMethodCall,Arg,Module,true);
 end;
 
 { TPasElementBase }
 
 procedure TPasElementBase.Accept(Visitor: TPassTreeVisitor);
 begin
-
+  if Visitor=nil then ;
 end;
 
 { TPasTypeRef }
@@ -1596,8 +1844,11 @@ end;
 
 destructor TPasProgram.Destroy;
 begin
+  {$IFDEF VerbosePasTreeMem}writeln('TPasProgram.Destroy ProgramSection');{$ENDIF}
   ReleaseAndNil(TPasElement(ProgramSection));
+  {$IFDEF VerbosePasTreeMem}writeln('TPasProgram.Destroy inherited');{$ENDIF}
   inherited Destroy;
+  {$IFDEF VerbosePasTreeMem}writeln('TPasProgram.Destroy END');{$ENDIF}
 end;
 
 function TPasProgram.ElementTypeName: string;
@@ -1672,16 +1923,25 @@ begin
     ForEachChildCall(aMethodCall,Arg,TPasModule(Modules[i]),true);
 end;
 
-function TPasResString.ElementTypeName: string; begin Result := SPasTreeResString end;
-function TPasType.ElementTypeName: string; begin Result := SPasTreeType end;
-function TPasPointerType.ElementTypeName: string; begin Result := SPasTreePointerType end;
-function TPasAliasType.ElementTypeName: string; begin Result := SPasTreeAliasType end;
-function TPasTypeAliasType.ElementTypeName: string; begin Result := SPasTreeTypeAliasType end;
-function TPasClassOfType.ElementTypeName: string; begin Result := SPasTreeClassOfType end;
-function TPasRangeType.ElementTypeName: string; begin Result := SPasTreeRangeType end;
-function TPasArrayType.ElementTypeName: string; begin Result := SPasTreeArrayType end;
-function TPasFileType.ElementTypeName: string; begin Result := SPasTreeFileType end;
-function TPasEnumValue.ElementTypeName: string; begin Result := SPasTreeEnumValue end;
+function TPasResString.ElementTypeName: string; begin Result := SPasTreeResString; end;
+
+function TPasType.FixTypeDecl(aDecl: String): String;
+begin
+  Result:=aDecl;
+  if (Name<>'') then
+    Result:=Name+' = '+Result;
+  ProcessHints(false,Result);
+end;
+
+function TPasType.ElementTypeName: string; begin Result := SPasTreeType; end;
+function TPasPointerType.ElementTypeName: string; begin Result := SPasTreePointerType; end;
+function TPasAliasType.ElementTypeName: string; begin Result := SPasTreeAliasType; end;
+function TPasTypeAliasType.ElementTypeName: string; begin Result := SPasTreeTypeAliasType; end;
+function TPasClassOfType.ElementTypeName: string; begin Result := SPasTreeClassOfType; end;
+function TPasRangeType.ElementTypeName: string; begin Result := SPasTreeRangeType; end;
+function TPasArrayType.ElementTypeName: string; begin Result := SPasTreeArrayType; end;
+function TPasFileType.ElementTypeName: string; begin Result := SPasTreeFileType; end;
+function TPasEnumValue.ElementTypeName: string; begin Result := SPasTreeEnumValue; end;
 
 procedure TPasEnumValue.ForEachCall(const aMethodCall: TOnForEachPasElement;
   const Arg: Pointer);
@@ -1861,8 +2121,12 @@ end;
 
 destructor TPasElement.Destroy;
 begin
-  if FRefCount>0 then
+  if (FRefCount>0) and (FRefCount<high(FRefCount)) then
+    begin
+    {$if defined(debugrefcount) or defined(VerbosePasTreeMem)}writeln('TPasElement.Destroy ',Name,':',ClassName);{$ENDIF}
     raise Exception.Create('');
+    end;
+  FParent:=nil;
   inherited Destroy;
 end;
 
@@ -1875,24 +2139,32 @@ end;
 
 procedure TPasElement.Release;
 
-{$ifdef debugrefcount}
+{$if defined(debugrefcount) or defined(VerbosePasTreeMem)}
 Var
   Cn : String;
   {$endif}
 
 begin
-{$ifdef debugrefcount}
-  CN:=ClassName;
+{$if defined(debugrefcount) or defined(VerbosePasTreeMem)}
+  CN:=ClassName+' '+Name;
   CN:=CN+' '+IntToStr(FRefCount);
-  If Assigned(Parent) then
-    CN:=CN+' ('+Parent.ClassName+')';
-  Writeln('Release : ',Cn);
+  //If Assigned(Parent) then
+  //  CN:=CN+' ('+Parent.ClassName+')';
+  Writeln('TPasElement.Release : ',Cn);
 {$endif}
   if FRefCount = 0 then
-    Free
+    begin
+    FRefCount:=High(FRefCount);
+    Free;
+    end
+  else if FRefCount=High(FRefCount) then
+    begin
+    {$if defined(debugrefcount) or defined(VerbosePasTreeMem)}  Writeln('TPasElement.Released OUCH: ',Cn); {$endif}
+    raise Exception.Create('');
+    end
   else
     Dec(FRefCount);
-{$ifdef debugrefcount}  Writeln('Released : ',Cn); {$endif}
+{$if defined(debugrefcount) or defined(VerbosePasTreeMem)}  Writeln('TPasElement.Released : ',Cn); {$endif}
 end;
 
 procedure TPasElement.ForEachCall(const aMethodCall: TOnForEachPasElement;
@@ -2028,30 +2300,40 @@ destructor TPasDeclarations.Destroy;
 var
   i: Integer;
 begin
-  ExportSymbols.Free;
-  Variables.Free;
-  Functions.Free;
-  Classes.Free;
-  Consts.Free;
-  Types.Free;
-  ResStrings.Free;
-  Properties.Free;
+  {$IFDEF VerbosePasTreeMem}writeln('TPasDeclarations.Destroy START');{$ENDIF}
+  FreeAndNil(ExportSymbols);
+  FreeAndNil(Properties);
+  FreeAndNil(Variables);
+  FreeAndNil(Functions);
+  FreeAndNil(Classes);
+  FreeAndNil(Consts);
+  FreeAndNil(Types);
+  FreeAndNil(ResStrings);
+  {$IFDEF VerbosePasTreeMem}writeln('TPasDeclarations.Destroy Declarations');{$ENDIF}
   for i := 0 to Declarations.Count - 1 do
     TPasElement(Declarations[i]).Release;
-  Declarations.Free;
+  FreeAndNil(Declarations);
 
+  {$IFDEF VerbosePasTreeMem}writeln('TPasDeclarations.Destroy inherited');{$ENDIF}
   inherited Destroy;
+  {$IFDEF VerbosePasTreeMem}writeln('TPasDeclarations.Destroy END');{$ENDIF}
 end;
 
 destructor TPasModule.Destroy;
 begin
-  if Assigned(InterfaceSection) then
-    InterfaceSection.Release;
-  if Assigned(ImplementationSection) then
-    ImplementationSection.Release;
+  {$IFDEF VerbosePasTreeMem}writeln('TPasModule.Destroy global directives');{$ENDIF}
+  ReleaseAndNil(TPasElement(GlobalDirectivesSection));
+  {$IFDEF VerbosePasTreeMem}writeln('TPasModule.Destroy interface');{$ENDIF}
+  ReleaseAndNil(TPasElement(InterfaceSection));
+  {$IFDEF VerbosePasTreeMem}writeln('TPasModule.Destroy implementation');{$ENDIF}
+  ReleaseAndNil(TPasElement(ImplementationSection));
+  {$IFDEF VerbosePasTreeMem}writeln('TPasModule.Destroy initialization');{$ENDIF}
   ReleaseAndNil(TPasElement(InitializationSection));
+  {$IFDEF VerbosePasTreeMem}writeln('TPasModule.Destroy finalization');{$ENDIF}
   ReleaseAndNil(TPasElement(FinalizationSection));
+  {$IFDEF VerbosePasTreeMem}writeln('TPasModule.Destroy inherited');{$ENDIF}
   inherited Destroy;
+  {$IFDEF VerbosePasTreeMem}writeln('TPasModule.Destroy END');{$ENDIF}
 end;
 
 
@@ -2070,7 +2352,7 @@ var
 begin
   for i := 0 to Modules.Count - 1 do
     TPasModule(Modules[i]).Release;
-  Modules.Free;
+  FreeAndNil(Modules);
   inherited Destroy;
 end;
 
@@ -2085,8 +2367,8 @@ end;
 
 destructor TPasAliasType.Destroy;
 begin
-  if Assigned(DestType) then
-    DestType.Release;
+  ReleaseAndNil(TPasElement(DestType));
+  ReleaseAndNil(TPasElement(Expr));
   inherited Destroy;
 end;
 
@@ -2122,7 +2404,7 @@ var
 begin
   for i := 0 to Values.Count - 1 do
     TPasEnumValue(Values[i]).Release;
-  Values.Free;
+  FreeAndNil(Values);
   inherited Destroy;
 end;
 
@@ -2150,16 +2432,6 @@ begin
 end;
 
 
-destructor TPasSetType.Destroy;
-begin
-  if Assigned(EnumType) then
-    begin
-    EnumType.Release;
-    end;
-  inherited Destroy;
-end;
-
-
 constructor TPasVariant.Create(const AName: string; AParent: TPasElement);
 begin
   inherited Create(AName, AParent);
@@ -2174,9 +2446,9 @@ Var
 begin
   For I:=0 to Values.Count-1 do
     TPasElement(Values[i]).Release;
-  Values.Free;
+  FreeAndNil(Values);
   if Assigned(Members) then
-    Members.Release;
+    ReleaseAndNil(TpasElement(Members));
   inherited Destroy;
 end;
 
@@ -2202,6 +2474,7 @@ begin
       S.Free;
     end;
     Result:=Result+');';
+    if Full then ;
     end;
 end;
 
@@ -2222,24 +2495,29 @@ constructor TPasRecordType.Create(const AName: string; AParent: TPasElement);
 begin
   inherited Create(AName, AParent);
   Members := TFPList.Create;
+  GenericTemplateTypes:=TFPList.Create;
 end;
 
 destructor TPasRecordType.Destroy;
 var
   i: Integer;
 begin
+  for i := 0 to GenericTemplateTypes.Count - 1 do
+    TPasElement(GenericTemplateTypes[i]).Release;
+  FreeAndNil(GenericTemplateTypes);
+
   for i := 0 to Members.Count - 1 do
     TPasVariable(Members[i]).Release;
-  Members.Free;
+  FreeAndNil(Members);
 
   if Assigned(VariantEl) then
-    VariantEl.Release;
+    ReleaseAndNil(TPasElement(VariantEl));
 
   if Assigned(Variants) then
   begin
     for i := 0 to Variants.Count - 1 do
       TPasVariant(Variants[i]).Release;
-    Variants.Free;
+    FreeAndNil(Variants);
   end;
 
   inherited Destroy;
@@ -2266,17 +2544,17 @@ begin
     TPasElement(Members[i]).Release;
   for i := 0 to Interfaces.Count - 1 do
     TPasElement(Interfaces[i]).Release;
-  Members.Free;
+  FreeAndNil(Members);
   if Assigned(AncestorType) then
     AncestorType.Release;
   if Assigned(HelperForType) then
     HelperForType.Release;
   ReleaseAndNil(TPasElement(GUIDExpr));
-  Modifiers.Free;
-  Interfaces.Free;
+  FreeAndNil(Modifiers);
+  FreeAndNil(Interfaces);
   for i := 0 to GenericTemplateTypes.Count - 1 do
     TPasElement(GenericTemplateTypes[i]).Release;
-  GenericTemplateTypes.Free;
+  FreeAndNil(GenericTemplateTypes);
   inherited Destroy;
 end;
 
@@ -2290,6 +2568,8 @@ begin
     okSpecialize : Result := SPasTreeSpecializedType;
     okClassHelper : Result:=SPasClassHelperType;
     okRecordHelper : Result:=SPasRecordHelperType;
+  else
+    Result:='ObjKind('+IntToStr(ord(ObjKind))+')';
   end;
 end;
 
@@ -2309,6 +2589,21 @@ begin
     ForEachChildCall(aMethodCall,Arg,TPasElement(Members[i]),false);
   for i:=0 to GenericTemplateTypes.Count-1 do
     ForEachChildCall(aMethodCall,Arg,TPasElement(GenericTemplateTypes[i]),false);
+end;
+
+procedure TPasClassType.SetGenericTemplates(AList: TFPList);
+
+Var
+  I : Integer;
+
+begin
+  ObjKind:=okGeneric;
+  For I:=0 to AList.Count-1 do
+    begin
+    TPasElement(AList[i]).Parent:=Self;
+    GenericTemplateTypes.Add(AList[i]);
+    end;
+  ObjKind:=okGeneric;
 end;
 
 function TPasClassType.FindMember(MemberClass: TPTreeElement; const MemberName: String): TPasElement;
@@ -2362,6 +2657,26 @@ begin
     Result:=''
 end;
 
+function TPasClassType.IsSealed: Boolean;
+begin
+  Result:=HasModifier('sealed');
+end;
+
+function TPasClassType.IsAbstract: Boolean;
+begin
+  Result:=HasModifier('abstract');
+end;
+
+function TPasClassType.HasModifier(const aModifier: String): Boolean;
+var
+  i: Integer;
+begin
+  for i:=0 to Modifiers.Count-1 do
+    if CompareText(aModifier,Modifiers[i])=0 then
+      exit(true);
+  Result:=false;
+end;
+
 function TPasClassType.IsPacked: Boolean;
 begin
   Result:=PackMode<>pmNone;
@@ -2378,6 +2693,45 @@ begin
 end;
 
 { TPasProcedureType }
+
+function TPasProcedureType.GetIsNested: Boolean;
+begin
+  Result:=ptmIsNested in Modifiers;
+end;
+
+function TPasProcedureType.GetIsOfObject: Boolean;
+begin
+  Result:=ptmOfObject in Modifiers;
+end;
+
+function TPasProcedureType.GetIsReference: Boolean;
+begin
+  Result:=ptmReferenceTo in Modifiers;
+end;
+
+procedure TPasProcedureType.SetIsNested(const AValue: Boolean);
+begin
+  if AValue then
+    Include(Modifiers,ptmIsNested)
+  else
+    Exclude(Modifiers,ptmIsNested);
+end;
+
+procedure TPasProcedureType.SetIsOfObject(const AValue: Boolean);
+begin
+  if AValue then
+    Include(Modifiers,ptmOfObject)
+  else
+    Exclude(Modifiers,ptmOfObject);
+end;
+
+procedure TPasProcedureType.SetIsReference(AValue: Boolean);
+begin
+  if AValue then
+    Include(Modifiers,ptmReferenceTo)
+  else
+    Exclude(Modifiers,ptmReferenceTo);
+end;
 
 constructor TPasProcedureType.Create(const AName: string; AParent: TPasElement);
 begin
@@ -2405,7 +2759,8 @@ function TPasProcedureType.CreateArgument(const AName,
 begin
   Result := TPasArgument.Create(AName, Self);
   Args.Add(Result);
-  Result.ArgType := TPasUnresolvedTypeRef.Create(AUnresolvedTypeName, Result);
+  if AUnresolvedTypeName<>'' then
+    Result.ArgType := TPasUnresolvedTypeRef.Create(AUnresolvedTypeName, Result);
 end;
 
 procedure TPasProcedureType.ForEachCall(const aMethodCall: TOnForEachPasElement;
@@ -2456,6 +2811,8 @@ begin
     (e.g. in Constants) }
   ReleaseAndNil(TPasElement(VarType));
   ReleaseAndNil(TPasElement(Expr));
+  ReleaseAndNil(TPasElement(LibraryName));
+  ReleaseAndNil(TPasElement(ExportName));
   inherited Destroy;
 end;
 
@@ -2508,7 +2865,7 @@ var
 begin
   for i := 0 to Overloads.Count - 1 do
     TPasProcedure(Overloads[i]).Release;
-  Overloads.Free;
+  FreeAndNil(Overloads);
   inherited Destroy;
 end;
 
@@ -2575,7 +2932,7 @@ begin
 
   for i := 0 to Locals.Count - 1 do
     TPasElement(Locals[i]).Release;
-  Locals.Free;
+  FreeAndNil(Locals);
 
   if Assigned(ProcType) then
     ProcType.Release;
@@ -2608,7 +2965,7 @@ end;
 
 destructor TPasImplCommands.Destroy;
 begin
-  Commands.Free;
+  FreeAndNil(Commands);
   inherited Destroy;
 end;
 
@@ -2627,7 +2984,7 @@ begin
   if IfBranch=nil then
     begin
     IfBranch:=Element;
-    element.AddRef;
+    Element.AddRef;
     end
   else if ElseBranch=nil then
     begin
@@ -2646,10 +3003,12 @@ end;
 procedure TPasImplIfElse.ForEachCall(const aMethodCall: TOnForEachPasElement;
   const Arg: Pointer);
 begin
-  inherited ForEachCall(aMethodCall, Arg);
   ForEachChildCall(aMethodCall,Arg,ConditionExpr,false);
-  ForEachChildCall(aMethodCall,Arg,IfBranch,false);
-  ForEachChildCall(aMethodCall,Arg,ElseBranch,false);
+  if Elements.IndexOf(IfBranch)<0 then
+    ForEachChildCall(aMethodCall,Arg,IfBranch,false);
+  if Elements.IndexOf(ElseBranch)<0 then
+    ForEachChildCall(aMethodCall,Arg,ElseBranch,false);
+  inherited ForEachCall(aMethodCall, Arg);
 end;
 
 function TPasImplIfElse.Condition: string;
@@ -2683,12 +3042,13 @@ end;
 procedure TPasImplForLoop.ForEachCall(const aMethodCall: TOnForEachPasElement;
   const Arg: Pointer);
 begin
-  inherited ForEachCall(aMethodCall, Arg);
   ForEachChildCall(aMethodCall,Arg,VariableName,false);
   ForEachChildCall(aMethodCall,Arg,Variable,false);
   ForEachChildCall(aMethodCall,Arg,StartExpr,false);
   ForEachChildCall(aMethodCall,Arg,EndExpr,false);
-  ForEachChildCall(aMethodCall,Arg,Body,false);
+  if Elements.IndexOf(Body)<0 then
+    ForEachChildCall(aMethodCall,Arg,Body,false);
+  inherited ForEachCall(aMethodCall, Arg);
 end;
 
 function TPasImplForLoop.Down: boolean;
@@ -2724,7 +3084,7 @@ var
 begin
   for i := 0 to Elements.Count - 1 do
     TPasImplElement(Elements[i]).Release;
-  Elements.Free;
+  FreeAndNil(Elements);
   inherited Destroy;
 end;
 
@@ -2898,6 +3258,7 @@ end;
 function TPasModule.GetDeclaration(full : boolean): string;
 begin
   Result := 'Unit ' + Name;
+  if full then ;
 end;
 
 procedure TPasModule.ForEachCall(const aMethodCall: TOnForEachPasElement;
@@ -2962,10 +3323,7 @@ function TPasAliasType.GetDeclaration(full: Boolean): string;
 begin
   Result:=DestType.Name;
   If Full then
-    begin
-    Result:=Name+' = '+Result;
-    ProcessHints(False,Result);
-    end;
+    Result:=FixTypeDecl(Result);
 end;
 
 procedure TPasAliasType.ForEachCall(const aMethodCall: TOnForEachPasElement;
@@ -2979,20 +3337,14 @@ function TPasClassOfType.GetDeclaration (full : boolean) : string;
 begin
   Result:='Class of '+DestType.Name;
   If Full then
-    begin
-    Result:=Name+' = '+Result;
-    ProcessHints(False,Result);
-    end;
+    Result:=FixTypeDecl(Result);
 end;
 
 function TPasRangeType.GetDeclaration (full : boolean) : string;
 begin
   Result:=RangeStart+'..'+RangeEnd;
   If Full then
-    begin
-    Result:=Name+' = '+Result;
-    ProcessHints(False,Result);
-    end;
+    Result:=FixTypeDecl(Result);
 end;
 
 procedure TPasRangeType.ForEachCall(const aMethodCall: TOnForEachPasElement;
@@ -3031,10 +3383,7 @@ begin
   else
     Result:=Result+'const';
   If Full Then
-    begin
-    Result:=Name+' = '+Result;
-    ProcessHints(False,Result);
-    end;
+    Result:=FixTypeDecl(Result);
 end;
 
 procedure TPasArrayType.ForEachCall(const aMethodCall: TOnForEachPasElement;
@@ -3069,10 +3418,7 @@ begin
   If Assigned(Eltype) then
     Result:=Result+' of '+ElType.Name;
   If Full Then
-    begin
-    Result:=Name+' = '+Result;
-    ProcessHints(False,Result);
-    end;
+    Result:=FixTypeDecl(Result);
 end;
 
 procedure TPasFileType.ForEachCall(const aMethodCall: TOnForEachPasElement;
@@ -3113,7 +3459,7 @@ Var
 begin
   S:=TStringList.Create;
   Try
-    If Full then
+    If Full and (Name<>'') then
       S.Add(Name+' = (')
     else
       S.Add('(');
@@ -3130,6 +3476,12 @@ begin
   end;
 end;
 
+destructor TPasSetType.Destroy;
+begin
+  ReleaseAndNil(TPasElement(EnumType));
+  inherited Destroy;
+end;
+
 function TPasSetType.GetDeclaration (full : boolean) : string;
 
 Var
@@ -3141,7 +3493,7 @@ begin
     begin
     S:=TStringList.Create;
     Try
-      If Full then
+      If Full and (Name<>'') then
         S.Add(Name+'= Set of (')
       else
         S.Add('Set of (');
@@ -3231,7 +3583,6 @@ function TPasRecordType.GetDeclaration (full : boolean) : string;
 Var
   S : TStringList;
   temp : string;
-
 begin
   S:=TStringList.Create;
   Try
@@ -3241,13 +3592,14 @@ begin
         Temp:='bitpacked '+Temp
       else
         Temp:='packed '+Temp;
-    If Full then
+    If Full and (Name<>'') then
       Temp:=Name+' = '+Temp;
     S.Add(Temp);
     GetMembers(S);
     S.Add('end');
     Result:=S.Text;
-    ProcessHints(False, Result);
+    if Full then
+      ProcessHints(False, Result);
   finally
     S.free;
   end;
@@ -3265,6 +3617,8 @@ begin
   if Variants<>nil then
     for i:=0 to Variants.Count-1 do
       ForEachChildCall(aMethodCall,Arg,TPasElement(Variants[i]),false);
+  for i:=0 to GenericTemplateTypes.Count-1 do
+    ForEachChildCall(aMethodCall,Arg,TPasElement(GenericTemplateTypes[i]),false);
 end;
 
 function TPasRecordType.IsPacked: Boolean;
@@ -3290,6 +3644,17 @@ begin
     Result:=TPasElement(Members[i]).InheritsFrom(TPasProcedureBase) or
             TPasElement(Members[i]).InheritsFrom(TPasProperty);
     Inc(I);
+    end;
+end;
+
+procedure TPasRecordType.SetGenericTemplates(AList: TFPList);
+var
+  I: Integer;
+begin
+  For I:=0 to AList.Count-1 do
+    begin
+    TPasElement(AList[i]).Parent:=Self;
+    GenericTemplateTypes.Add(AList[i]);
     end;
 end;
 
@@ -3610,7 +3975,7 @@ end;
 function TPasProcedure.IsStatic: Boolean;
 
 begin
-  Result:=pmStatic in FModifiers;
+  Result:=ptmStatic in ProcType.Modifiers;
 end;
 
 function TPasProcedure.IsForward: Boolean;
@@ -3749,7 +4114,7 @@ begin
       Result:=ArgType.Name
     else
       Result:=ArgType.GetDeclaration(False);
-    If Full then
+    If Full and (Name<>'') then
       Result:=Name+': '+Result;
     end
   else If Full then
@@ -3779,6 +4144,7 @@ end;
 procedure TPassTreeVisitor.Visit(obj: TPasElement);
 begin
   // Needs to be implemented by descendents.
+  if Obj=nil then ;
 end;
 
 { TPasSection }
@@ -3793,16 +4159,54 @@ destructor TPasSection.Destroy;
 var
   i: Integer;
 begin
+  {$IFDEF VerbosePasTreeMem}writeln('TPasSection.Destroy UsesList');{$ENDIF}
   for i := 0 to UsesList.Count - 1 do
     TPasType(UsesList[i]).Release;
   FreeAndNil(UsesList);
+  {$IFDEF VerbosePasTreeMem}writeln('TPasSection.Destroy UsesClause');{$ENDIF}
+  for i := 0 to length(UsesClause) - 1 do
+    UsesClause[i].Release;
+  SetLength(UsesClause,0);
 
+  {$IFDEF VerbosePasTreeMem}writeln('TPasSection.Destroy inherited');{$ENDIF}
   inherited Destroy;
+  {$IFDEF VerbosePasTreeMem}writeln('TPasSection.Destroy END');{$ENDIF}
 end;
 
-procedure TPasSection.AddUnitToUsesList(const AUnitName: string);
+function TPasSection.AddUnitToUsesList(const AUnitName: string;
+  aName: TPasExpr; InFilename: TPrimitiveExpr; aModule: TPasElement;
+  UsesUnit: TPasUsesUnit): TPasUsesUnit;
+var
+  l: Integer;
 begin
-  UsesList.Add(TPasUnresolvedTypeRef.Create(AUnitName, Self));
+  if (InFilename<>nil) and (InFilename.Kind<>pekString) then
+    raise Exception.Create('');
+  if aModule=nil then
+    aModule:=TPasUnresolvedUnitRef.Create(AUnitName, Self);
+  l:=length(UsesClause);
+  SetLength(UsesClause,l+1);
+  if UsesUnit=nil then
+    begin
+    UsesUnit:=TPasUsesUnit.Create(AUnitName,Self);
+    if aName<>nil then
+      begin
+      Result.SourceFilename:=aName.SourceFilename;
+      Result.SourceLinenumber:=aName.SourceLinenumber;
+      end;
+    end;
+  UsesClause[l]:=UsesUnit;
+  UsesUnit.Expr:=aName;
+  UsesUnit.InFilename:=InFilename;
+  UsesUnit.Module:=aModule;
+  Result:=UsesUnit;
+
+  UsesList.Add(aModule);
+  aModule.AddRef;
+end;
+
+function TPasSection.ElementTypeName: string;
+begin
+  Result := SPasTreeSection;
 end;
 
 procedure TPasSection.ForEachCall(const aMethodCall: TOnForEachPasElement;
@@ -3811,8 +4215,8 @@ var
   i: Integer;
 begin
   inherited ForEachCall(aMethodCall, Arg);
-  for i:=0 to UsesList.Count-1 do
-    ForEachChildCall(aMethodCall,Arg,TPasElement(UsesList[i]),true);
+  for i:=0 to length(UsesClause)-1 do
+    ForEachChildCall(aMethodCall,Arg,UsesClause[i],false);
 end;
 
 { TProcedureBody }
@@ -3854,15 +4258,16 @@ begin
     Body.AddRef;
     end
   else
-    raise Exception.Create('TPasImplWhileDo.AddElement body already set - please report this bug');
+    raise Exception.Create('TPasImplWhileDo.AddElement body already set');
 end;
 
 procedure TPasImplWhileDo.ForEachCall(const aMethodCall: TOnForEachPasElement;
   const Arg: Pointer);
 begin
-  inherited ForEachCall(aMethodCall, Arg);
   ForEachChildCall(aMethodCall,Arg,ConditionExpr,false);
-  ForEachChildCall(aMethodCall,Arg,Body,false);
+  if Elements.IndexOf(Body)<0 then
+    ForEachChildCall(aMethodCall,Arg,Body,false);
+  inherited ForEachCall(aMethodCall, Arg);
 end;
 
 function TPasImplWhileDo.Condition: string;
@@ -3905,9 +4310,10 @@ end;
 procedure TPasImplCaseOf.ForEachCall(const aMethodCall: TOnForEachPasElement;
   const Arg: Pointer);
 begin
-  inherited ForEachCall(aMethodCall, Arg);
   ForEachChildCall(aMethodCall,Arg,CaseExpr,false);
-  ForEachChildCall(aMethodCall,Arg,ElseBranch,false);
+  if Elements.IndexOf(ElseBranch)<0 then
+    ForEachChildCall(aMethodCall,Arg,ElseBranch,false);
+  inherited ForEachCall(aMethodCall, Arg);
 end;
 
 function TPasImplCaseOf.Expression: string;
@@ -3948,6 +4354,8 @@ begin
     Body:=Element;
     Body.AddRef;
     end
+  else
+    raise Exception.Create('TPasImplCaseStatement.AddElement body already set');
 end;
 
 procedure TPasImplCaseStatement.AddExpression(const Expr: TPasExpr);
@@ -3961,10 +4369,11 @@ procedure TPasImplCaseStatement.ForEachCall(
 var
   i: Integer;
 begin
-  inherited ForEachCall(aMethodCall, Arg);
   for i:=0 to Expressions.Count-1 do
     ForEachChildCall(aMethodCall,Arg,TPasElement(Expressions[i]),false);
-  ForEachChildCall(aMethodCall,Arg,Body,false);
+  if Elements.IndexOf(Body)<0 then
+    ForEachChildCall(aMethodCall,Arg,Body,false);
+  inherited ForEachCall(aMethodCall, Arg);
 end;
 
 { TPasImplWithDo }
@@ -3994,7 +4403,9 @@ begin
     begin
     Body:=Element;
     Body.AddRef;
-    end;
+    end
+  else
+    raise Exception.Create('TPasImplWithDo.AddElement body already set');
 end;
 
 procedure TPasImplWithDo.AddExpression(const Expression: TPasExpr);
@@ -4007,10 +4418,11 @@ procedure TPasImplWithDo.ForEachCall(const aMethodCall: TOnForEachPasElement;
 var
   i: Integer;
 begin
-  inherited ForEachCall(aMethodCall, Arg);
   for i:=0 to Expressions.Count-1 do
     ForEachChildCall(aMethodCall,Arg,TPasElement(Expressions[i]),false);
-  ForEachChildCall(aMethodCall,Arg,Body,false);
+  if Elements.IndexOf(Body)<0 then
+    ForEachChildCall(aMethodCall,Arg,Body,false);
+  inherited ForEachCall(aMethodCall, Arg);
 end;
 
 { TPasImplTry }
@@ -4073,10 +4485,11 @@ end;
 procedure TPasImplExceptOn.ForEachCall(const aMethodCall: TOnForEachPasElement;
   const Arg: Pointer);
 begin
-  inherited ForEachCall(aMethodCall, Arg);
   ForEachChildCall(aMethodCall,Arg,VarEl,false);
   ForEachChildCall(aMethodCall,Arg,TypeEl,false);
-  ForEachChildCall(aMethodCall,Arg,Body,false);
+  if Elements.IndexOf(Body)<0 then
+    ForEachChildCall(aMethodCall,Arg,Body,false);
+  inherited ForEachCall(aMethodCall, Arg);
 end;
 
 function TPasImplExceptOn.VariableName: String;
@@ -4121,9 +4534,10 @@ end;
 
 { TPrimitiveExpr }
 
-function TPrimitiveExpr.GetDeclaration(Full : Boolean):AnsiString;
+function TPrimitiveExpr.GetDeclaration(full: Boolean): string;
 begin
   Result:=Value;
+  if full then ;
 end;
 
 constructor TPrimitiveExpr.Create(AParent : TPasElement; AKind: TPasExprKind; const AValue : Ansistring);
@@ -4140,13 +4554,14 @@ begin
   Value:=ABoolValue;
 end;
 
-Function TBoolConstExpr.GetDeclaration(Full: Boolean):AnsiString;
+function TBoolConstExpr.GetDeclaration(full: Boolean): string;
 
 begin
   If Value then
     Result:='True'
   else
-    Result:='False';  
+    Result:='False';
+  if full then ;
 end;
 
 
@@ -4155,10 +4570,15 @@ end;
 
 function TUnaryExpr.GetDeclaration(full: Boolean): string;
 
+Const
+  WordOpcodes = [eopDiv,eopMod,eopshr,eopshl,eopNot,eopAnd,eopOr,eopXor];
+
 begin
   Result:=OpCodeStrings[Opcode];
+  if OpCode in WordOpCodes  then
+    Result:=Result+' ';
   If Assigned(Operand) then
-    Result:=Result+Operand.GetDeclaration(Full);
+    Result:=Result+' '+Operand.GetDeclaration(Full);
 end;
 
 constructor TUnaryExpr.Create(AParent : TPasElement; AOperand: TPasExpr; AOpCode: TExprOpCode);
@@ -4221,7 +4641,7 @@ begin
   If Assigned(Right) then
   begin
     op := Right.GetDeclaration(Full);
-    if (OpLevel(Right) < 5) and (OpLevel(Right) >= OpLevel(Self)) then
+    if OpLevel(Left) < OpLevel(Self) then
       Result := Result + '(' + op + ')'
     else
       Result := Result + op;
@@ -4283,6 +4703,8 @@ begin
     Result := '[' + Result + ']'
   else
     Result := '(' + Result + ')';
+  if full and Assigned(Value) then
+    Result:=Value.GetDeclaration(True)+Result;
 end;
 
 procedure TParamsExpr.AddParam(xp:TPasExpr);
@@ -4359,6 +4781,7 @@ var
 begin
   for i:=0 to length(Fields)-1 do
     Fields[i].ValueExp.Release;
+  Fields:=nil;
   inherited Destroy;
 end;
 
@@ -4370,13 +4793,15 @@ begin
   SetLength(Fields, i+1);
   Fields[i].Name:=AName;
   Fields[i].ValueExp:=Value;
+  Value.Parent:=Self;
 end;
 
 { TNilExpr }
 
-Function TNilExpr.GetDeclaration(Full :Boolean):AnsiString;
+function TNilExpr.GetDeclaration(full: Boolean): string;
 begin
   Result:='Nil';
+  if full then ;
 end;
 
 { TInheritedExpr }
@@ -4384,13 +4809,15 @@ end;
 function TInheritedExpr.GetDeclaration(full: Boolean): string;
 begin
   Result:='Inherited';
+  if full then ;
 end;
 
 { TSelfExpr }
 
-Function TSelfExpr.GetDeclaration(Full :Boolean):AnsiString;
+function TSelfExpr.GetDeclaration(full: Boolean): string;
 begin
   Result:='Self';
+  if full then ;
 end;
 
 { TArrayValues }
@@ -4432,6 +4859,7 @@ var
 begin
   for i:=0 to length(Values)-1 do
     Values[i].Release;
+  Values:=nil;
   inherited Destroy;
 end;
 
@@ -4442,6 +4870,7 @@ begin
   i:=length(Values);
   SetLength(Values, i+1);
   Values[i]:=AValue;
+  AValue.Parent:=Self;
 end;
 
 { TNilExpr }
@@ -4476,7 +4905,7 @@ end;
 
 destructor TPasLabels.Destroy;
 begin
-  Labels.Free;
+  FreeAndNil(Labels);
   inherited Destroy;
 end;
 

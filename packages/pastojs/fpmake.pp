@@ -19,7 +19,7 @@ begin
 {$endif ALLPACKAGES}
 
     P.Version:='3.1.1';
-    P.OSes := AllOses;
+    P.OSes := AllOses-[embedded,msdos,win16,macos,palmos];
     P.Dependencies.Add('fcl-js');
     P.Dependencies.Add('fcl-passrc');
 
@@ -33,6 +33,7 @@ begin
     P.Options.Add('-S2h');
 
     T:=P.Targets.AddUnit('fppas2js.pp');
+    T:=P.Targets.AddUnit('fppjssrcmap.pp');
 {$ifndef ALLPACKAGES}
     Run;
     end;

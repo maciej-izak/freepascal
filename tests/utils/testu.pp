@@ -41,6 +41,8 @@ type
     Category      : string;
     Note          : string;
     Files         : string;
+    ConfigFileSrc : string;
+    ConfigFileDst : string;
     WpoParas      : string;
     WpoPasses     : longint;
     DelFiles      : string;
@@ -49,6 +51,8 @@ type
 Const
   DoVerbose : boolean = false;
   DoSQL     : boolean = false;
+  MaxLogSize : LongInt = 50000;
+
 
 procedure TrimB(var s:string);
 procedure TrimE(var s:string);
@@ -283,6 +287,25 @@ begin
                if GetEntry('FILES') then
                 r.Files:=res
               else
+                if GetEntry('CONFIGFILE') then
+                  begin
+                    l:=Pos(' ',res);
+                    if l>0 then
+                      begin
+                        r.ConfigFileSrc:=Copy(res,1,l-1);
+                        r.ConfigFileDst:=Copy(res,l+1,Length(res)-l+1);
+                        if r.ConfigFileSrc='' then
+                          Verbose(V_Error,'Config file source is empty');
+                        if r.ConfigFileDst='' then
+                          Verbose(V_Error,'Config file destination is empty');
+                      end
+                    else
+                      begin
+                        r.ConfigFileSrc:=res;
+                        r.ConfigFileDst:=res;
+                      end;
+                  end
+              else
                 if GetEntry('WPOPARAS') then
                  r.wpoparas:=res
               else
@@ -320,7 +343,8 @@ begin
   While Not(EOF(F)) do
     begin
     ReadLn(F,S);
-    Result:=Result+S+LineEnding;
+    if length(Result)<MaxLogSize then
+      Result:=Result+S+LineEnding;
     end;
   Close(F);
 end;

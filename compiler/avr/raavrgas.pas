@@ -53,13 +53,13 @@ Unit raavrgas;
       { aasm }
       cpuinfo,aasmbase,aasmtai,aasmdata,aasmcpu,
       { symtable }
-      symconst,symbase,symtype,symsym,symtable,
+      symconst,symbase,symtype,symsym,symtable,symdef,
       { parser }
       scanner,
       procinfo,
       itcpugas,
       rabase,rautils,
-      cgbase,cgutils,cgobj
+      cgbase,cgutils,cgobj,paramgr
       ;
 
 
@@ -71,14 +71,11 @@ Unit raavrgas;
         end;
 
       const
-        extraregs : array[0..8] of treg2str = (
-          (name: 'X'; reg : NR_R26),
+        extraregs : array[0..5] of treg2str = (
           (name: 'XL'; reg : NR_R26),
           (name: 'XH'; reg : NR_R27),
-          (name: 'Y'; reg : NR_R28),
           (name: 'YL'; reg : NR_R28),
           (name: 'YH'; reg : NR_R29),
-          (name: 'Z'; reg : NR_R30),
           (name: 'ZL'; reg : NR_R30),
           (name: 'ZH'; reg : NR_R31)
         );
@@ -110,7 +107,8 @@ Unit raavrgas;
     procedure tavrattreader.ReadSym(oper : tavroperand);
       var
         tempstr, mangledname : string;
-        typesize,l,k : aint;
+        typesize : tcgint;
+        l,k : tcgint;
       begin
         tempstr:=actasmpattern;
         Consume(AS_ID);
@@ -206,7 +204,7 @@ Unit raavrgas;
     Procedure tavrattreader.BuildOperand(oper : tavroperand);
       var
         expr : string;
-        typesize,l : aint;
+        typesize,l : tcgint;
 
 
         procedure AddLabelOperand(hl:tasmlabel);
@@ -231,7 +229,7 @@ Unit raavrgas;
             hasdot  : boolean;
             l,
             toffset,
-            tsize   : aint;
+            tsize   : tcgint;
           begin
             if not(actasmtoken in [AS_DOT,AS_PLUS,AS_MINUS]) then
              exit;
@@ -259,8 +257,11 @@ Unit raavrgas;
                     will generate buggy code. Allow it only for explicit typecasting }
                   if hasdot and
                      (not oper.hastype) and
-                     (tabstractnormalvarsym(oper.opr.localsym).owner.symtabletype=parasymtable) and
-                     (current_procinfo.procdef.proccalloption<>pocall_register) then
+                     (oper.opr.localsym.typ=paravarsym) and
+                     (not(po_assembler in current_procinfo.procdef.procoptions) or
+                      (tparavarsym(oper.opr.localsym).paraloc[calleeside].location^.loc<>LOC_REGISTER) or
+                      (not is_implicit_pointer_object_type(oper.opr.localsym.vardef) and
+                       not paramanager.push_addr_param(oper.opr.localsym.varspez,oper.opr.localsym.vardef,current_procinfo.procdef.proccalloption))) then
                     Message(asmr_e_cannot_access_field_directly_for_parameters);
                   inc(oper.opr.localsymofs,l)
                 end;
@@ -295,10 +296,14 @@ Unit raavrgas;
               AS_PLUS:
                 Begin
                   oper.opr.ref.offset:=BuildConstExpression(True,False);
-                  if actasmtoken<>AS_LPAREN then
-                    Message(asmr_e_invalid_reference_syntax)
-                  else
-                    BuildReference(oper);
+                  case actasmtoken of
+                    AS_LPAREN:
+                      BuildReference(oper);
+                    AS_COMMA:
+                      exit;
+                    else
+                      Message(asmr_e_invalid_reference_syntax)
+                  end;
                 end;
               AS_LPAREN:
                 BuildReference(oper);
@@ -373,8 +378,11 @@ Unit raavrgas;
                   oper.opr.ref.offset:=BuildConstExpression(True,False);
 
                   { absolute memory addresss? }
-                  if actopcode in [A_LDS,A_STS] then
-                    BuildReference(oper)
+                  if (actopcode in [A_LDS,A_STS]) and (actasmtoken<>AS_COMMA) then
+                    begin
+                      if not(MaybeBuildReference) then
+                        Message(asmr_e_invalid_reference_syntax);
+                    end
                   else
                     begin
                       ofs:=oper.opr.ref.offset;
@@ -514,9 +522,19 @@ Unit raavrgas;
                   oper.opr.typ:=OPR_REFERENCE;
 
                   reference_reset_base(oper.opr.ref,tempreg,0,1,[]);
-                  oper.opr.ref.addressmode:=AM_POSTINCREMENT;
 
-                  consume(AS_PLUS);
+                  { add a constant expression? }
+                  if actasmtoken=AS_PLUS then
+                    begin
+                      consume(AS_PLUS);
+                      if actasmtoken in [AS_INTNUM,AS_ID] then
+                        begin
+                          l:=BuildConstExpression(true,false);
+                          inc(oper.opr.ref.offset,l);
+                        end
+                      else
+                        oper.opr.ref.addressmode:=AM_POSTINCREMENT;
+                    end;
                 end
               else if (actasmtoken in [AS_END,AS_SEPARATOR,AS_COMMA]) then
                 Begin

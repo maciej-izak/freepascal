@@ -356,16 +356,32 @@ const
 
 {$else FPC_HAS_TYPE_EXTENDED}
 
+    {$ifndef FPC_SYSTEM_HAS_TRUNC}
     {$define FPC_SYSTEM_HAS_TRUNC}
     function fpc_trunc_real(d : ValReal) : int64;compilerproc; assembler; nostackframe;
       asm
         cvttsd2si   %xmm0,%rax;
       end;
+    {$endif FPC_SYSTEM_HAS_TRUNC}
 
+    {$ifndef FPC_SYSTEM_HAS_ROUND}
     {$define FPC_SYSTEM_HAS_ROUND}
     function fpc_round_real(d : ValReal) : int64;compilerproc; assembler; nostackframe;
       asm
         cvtsd2si   %xmm0,%rax;
       end;
+    {$endif FPC_SYSTEM_HAS_ROUND}
+
+    {$ifndef FPC_SYSTEM_HAS_FRAC}
+    {$define FPC_SYSTEM_HAS_FRAC}
+    function fpc_frac_real(d: ValReal) : ValReal;compilerproc; assembler; nostackframe;
+      asm
+        cvttsd2si   %xmm0,%rax
+        { Windows defines %xmm4 and %xmm5 as first non-parameter volatile registers;
+          on SYSV systems all are considered as such, so use %xmm4 }
+        cvtsi2sd    %rax,%xmm4
+        subsd       %xmm4,%xmm0
+      end;
+    {$endif FPC_SYSTEM_HAS_FRAC}
 
 {$endif FPC_HAS_TYPE_EXTENDED}

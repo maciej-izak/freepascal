@@ -32,6 +32,22 @@
     function GetSSECSR : dword; deprecated 'Renamed to GetMXCSR';
 {$endif}
 
+{$if defined(cpum68k)}
+{$if defined(fpu68881) or defined(fpucoldfire)}
+    const
+    {$ifdef FPC_68K_SYSTEM_HAS_FPU_EXCEPTIONS}
+       Default68KFPCR: DWord = $3400; { Enable OVFL, OPERR and DZ, round to nearest, default precision }
+    {$else}
+       Default68KFPCR: DWord = 0;
+    {$endif}
+
+    procedure SetFPCR(x: DWord);
+    procedure SetFPSR(x: DWord);
+    function GetFPCR: DWord;
+    function GetFPSR: DWord;
+{$endif}
+{$endif}
+
   type
     TFPURoundingMode = (rmNearest, rmDown, rmUp, rmTruncate);
     TFPUPrecisionMode = (pmSingle, pmReserved, pmDouble, pmExtended);
@@ -119,7 +135,7 @@ procedure float_raise(i: TFPUExceptionMask);
       TFloatSpecial = (fsZero,fsNZero,fsDenormal,fsNDenormal,fsPositive,fsNegative,
                        fsInf,fsNInf,fsNaN,fsInvalidOp);
 
-{$ifdef SUPPORT_EXTENDED}
+{$if defined(SUPPORT_EXTENDED) or defined(FPC_SOFT_FPUX80)}
       TExtended80Rec = packed record
       private
         function GetExp : QWord;
@@ -142,9 +158,13 @@ procedure float_raise(i: TFPUExceptionMask);
 {$else ENDIAN_LITTLE}
           2: (_Exp: Word; Frac : QWord);
 {$endif ENDIAN_LITTLE}
+{$ifdef SUPPORT_EXTENDED}
           3: (Value: Extended);
+{$else}
+          3: (Value: array[0..9] of Byte);
+{$endif}
       end;
-{$endif SUPPORT_EXTENDED}
+{$endif SUPPORT_EXTENDED or FPC_SOFT_FPUX80}
 
 {$ifdef SUPPORT_DOUBLE}
       TDoubleRec = packed record

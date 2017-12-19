@@ -60,6 +60,9 @@ unit cgobj;
           executionweight : longint;
           alignment : talignment;
           rg        : array[tregistertype] of trgobj;
+{$if defined(cpu8bitalu) or defined(cpu16bitalu)}
+          has_next_reg: bitpacked array[TSuperRegister] of boolean;
+{$endif cpu8bitalu or cpu16bitalu}
        {$ifdef flowgraph}
           aktflownode:word;
        {$endif}
@@ -88,6 +91,17 @@ unit cgobj;
           function gettempregister(list:TAsmList):Tregister;virtual;
           {Does the generic cg need SIMD registers, like getmmxregister? Or should
            the cpu specific child cg object have such a method?}
+
+{$if defined(cpu8bitalu) or defined(cpu16bitalu)}
+          {# returns the next virtual register }
+          function GetNextReg(const r: TRegister): TRegister;virtual;
+{$endif cpu8bitalu or cpu16bitalu}
+{$ifdef cpu8bitalu}
+          {# returns the register with the offset of ofs of a continuous set of register starting with r }
+          function GetOffsetReg(const r : TRegister;ofs : shortint) : TRegister;virtual;abstract;
+          {# returns the register with the offset of ofs of a continuous set of register starting with r and being continued with rhi }
+          function GetOffsetReg64(const r,rhi: TRegister;ofs : shortint): TRegister;virtual;abstract;
+{$endif cpu8bitalu}
 
           procedure add_reg_instruction(instr:Tai;r:tregister);virtual;
           procedure add_move_instruction(instr:Taicpu);virtual;
@@ -263,6 +277,8 @@ unit cgobj;
           procedure a_loadfpu_reg_loc(list: TAsmList; fromsize: tcgsize; const reg: tregister; const loc: tlocation);
           procedure a_loadfpu_reg_cgpara(list : TAsmList;size : tcgsize;const r : tregister;const cgpara : TCGPara);virtual;
           procedure a_loadfpu_ref_cgpara(list : TAsmList;size : tcgsize;const ref : treference;const cgpara : TCGPara);virtual;
+
+          procedure a_loadfpu_intreg_reg(list: TAsmList; fromsize, tosize : tcgsize; intreg, fpureg: tregister); virtual;
 
           { vector register move instructions }
           procedure a_loadmm_reg_reg(list: TAsmList; fromsize, tosize : tcgsize;reg1, reg2: tregister;shuffle : pmmshuffle); virtual;
@@ -552,7 +568,7 @@ implementation
 
     uses
        globals,systems,
-       verbose,paramgr,symtable,symsym,
+       verbose,paramgr,symsym,
        tgobj,cutils,procinfo;
 
 {*****************************************************************************
@@ -571,6 +587,9 @@ implementation
 
     procedure tcg.init_register_allocators;
       begin
+{$if defined(cpu8bitalu) or defined(cpu16bitalu)}
+        fillchar(has_next_reg,sizeof(has_next_reg),0);
+{$endif cpu8bitalu or cpu16bitalu}
         fillchar(rg,sizeof(rg),0);
         add_reg_instruction_hook:=@add_reg_instruction;
         executionweight:=1;
@@ -582,6 +601,9 @@ implementation
         { Safety }
         fillchar(rg,sizeof(rg),0);
         add_reg_instruction_hook:=nil;
+{$if defined(cpu8bitalu) or defined(cpu16bitalu)}
+        fillchar(has_next_reg,sizeof(has_next_reg),0);
+{$endif cpu8bitalu or cpu16bitalu}
       end;
 
     {$ifdef flowgraph}
@@ -598,10 +620,76 @@ implementation
     {$endif}
 
     function tcg.getintregister(list:TAsmList;size:Tcgsize):Tregister;
+{$ifdef cpu8bitalu}
+      var
+        tmp1,tmp2,tmp3 : TRegister;
+{$endif cpu8bitalu}
       begin
         if not assigned(rg[R_INTREGISTER]) then
           internalerror(200312122);
+{$if defined(cpu8bitalu)}
+        case size of
+          OS_8,OS_S8:
+            Result:=rg[R_INTREGISTER].getregister(list,cgsize2subreg(R_INTREGISTER,size));
+          OS_16,OS_S16:
+            begin
+              Result:=getintregister(list, OS_8);
+              has_next_reg[getsupreg(Result)]:=true;
+              { ensure that the high register can be retrieved by
+                GetNextReg
+              }
+              if getintregister(list, OS_8)<>GetNextReg(Result) then
+                internalerror(2011021331);
+            end;
+          OS_32,OS_S32:
+            begin
+              Result:=getintregister(list, OS_8);
+              has_next_reg[getsupreg(Result)]:=true;
+              tmp1:=getintregister(list, OS_8);
+              has_next_reg[getsupreg(tmp1)]:=true;
+              { ensure that the high register can be retrieved by
+                GetNextReg
+              }
+              if tmp1<>GetNextReg(Result) then
+                internalerror(2011021332);
+              tmp2:=getintregister(list, OS_8);
+              has_next_reg[getsupreg(tmp2)]:=true;
+              { ensure that the upper register can be retrieved by
+                GetNextReg
+              }
+              if tmp2<>GetNextReg(tmp1) then
+                internalerror(2011021333);
+              tmp3:=getintregister(list, OS_8);
+              { ensure that the upper register can be retrieved by
+                GetNextReg
+              }
+              if tmp3<>GetNextReg(tmp2) then
+                internalerror(2011021334);
+            end;
+          else
+            internalerror(2011021330);
+        end;
+{$elseif defined(cpu16bitalu)}
+        case size of
+          OS_8, OS_S8,
+          OS_16, OS_S16:
+            Result:=rg[R_INTREGISTER].getregister(list,cgsize2subreg(R_INTREGISTER,size));
+          OS_32, OS_S32:
+            begin
+              Result:=getintregister(list, OS_16);
+              has_next_reg[getsupreg(Result)]:=true;
+              { ensure that the high register can be retrieved by
+                GetNextReg
+              }
+              if getintregister(list, OS_16)<>GetNextReg(Result) then
+                internalerror(2013030202);
+            end;
+          else
+            internalerror(2013030201);
+        end;
+{$elseif defined(cpu32bitalu) or defined(cpu64bitalu)}
         result:=rg[R_INTREGISTER].getregister(list,cgsize2subreg(R_INTREGISTER,size));
+{$endif}
       end;
 
 
@@ -638,6 +726,28 @@ implementation
       begin
         result:=rg[R_TEMPREGISTER].getregister(list,R_SUBWHOLE);
       end;
+
+
+{$if defined(cpu8bitalu) or defined(cpu16bitalu)}
+    function tcg.GetNextReg(const r: TRegister): TRegister;
+      begin
+{$ifndef AVR}
+        { the AVR code generator depends on the fact that it can do GetNextReg also on physical registers }
+        if getsupreg(r)<first_int_imreg then
+          internalerror(2013051401);
+        if not has_next_reg[getsupreg(r)] then
+          internalerror(2017091103);
+{$else AVR}
+        if (getsupreg(r)>=first_int_imreg) and not(has_next_reg[getsupreg(r)]) then
+          internalerror(2017091103);
+{$endif AVR}
+        if getregtype(r)<>R_INTREGISTER then
+          internalerror(2017091101);
+        if getsubreg(r)<>R_SUBWHOLE then
+          internalerror(2017091102);
+        result:=TRegister(longint(r)+1);
+      end;
+{$endif cpu8bitalu or cpu16bitalu}
 
 
     function Tcg.makeregsize(list:TAsmList;reg:Tregister;size:Tcgsize):Tregister;
@@ -1089,57 +1199,156 @@ implementation
         hreg : tregister;
         cgsize: tcgsize;
       begin
-         case paraloc.loc of
-           LOC_REGISTER :
-             begin
-               hreg:=paraloc.register;
-               cgsize:=paraloc.size;
-               if paraloc.shiftval>0 then
-                 a_op_const_reg_reg(list,OP_SHL,OS_INT,paraloc.shiftval,paraloc.register,paraloc.register)
-               { in case the original size was 3 or 5/6/7 bytes, the value was
-                 shifted to the top of the to 4 resp. 8 byte register on the
-                 caller side and needs to be stored with those bytes at the
-                 start of the reference -> don't shift right }
-               else if (paraloc.shiftval<0) and
-                       ((-paraloc.shiftval) in [1,2,4]) then
-                 begin
-                   a_op_const_reg_reg(list,OP_SHR,OS_INT,-paraloc.shiftval,paraloc.register,paraloc.register);
-                   { convert to a register of 1/2/4 bytes in size, since the
-                     original register had to be made larger to be able to hold
-                     the shifted value }
-                   cgsize:=int_cgsize(tcgsize2size[OS_INT]-(-paraloc.shiftval div 8));
-                   hreg:=getintregister(list,cgsize);
-                   a_load_reg_reg(list,OS_INT,cgsize,paraloc.register,hreg);
-                 end;
-               a_load_reg_ref(list,paraloc.size,cgsize,hreg,ref);
-             end;
-           LOC_MMREGISTER :
-             begin
-               case paraloc.size of
-                 OS_F32,
-                 OS_F64,
-                 OS_F128:
-                   a_loadmm_reg_ref(list,paraloc.size,paraloc.size,paraloc.register,ref,mms_movescalar);
-                 OS_M8..OS_M128,
-                 OS_MS8..OS_MS128:
-                   a_loadmm_reg_ref(list,paraloc.size,paraloc.size,paraloc.register,ref,nil);
-                 else
-                   internalerror(2010053102);
-               end;
-             end;
-           LOC_FPUREGISTER :
-             a_loadfpu_reg_ref(list,paraloc.size,paraloc.size,paraloc.register,ref);
-           LOC_REFERENCE :
-             begin
-               reference_reset_base(href,paraloc.reference.index,paraloc.reference.offset,align,[]);
-               { use concatcopy, because it can also be a float which fails when
-                 load_ref_ref is used. Don't copy data when the references are equal }
-               if not((href.base=ref.base) and (href.offset=ref.offset)) then
-                 g_concatcopy(list,href,ref,sizeleft);
-             end;
-           else
-             internalerror(2002081302);
-         end;
+        case paraloc.loc of
+          LOC_REGISTER :
+            begin
+              hreg:=paraloc.register;
+              cgsize:=paraloc.size;
+              if paraloc.shiftval>0 then
+                a_op_const_reg_reg(list,OP_SHL,OS_INT,paraloc.shiftval,paraloc.register,paraloc.register)
+              { in case the original size was 3 or 5/6/7 bytes, the value was
+                shifted to the top of the to 4 resp. 8 byte register on the
+                caller side and needs to be stored with those bytes at the
+                start of the reference -> don't shift right }
+              else if (paraloc.shiftval<0) and
+                      ((-paraloc.shiftval) in [8,16,32]) then
+                begin
+                  a_op_const_reg_reg(list,OP_SHR,OS_INT,-paraloc.shiftval,paraloc.register,paraloc.register);
+                  { convert to a register of 1/2/4 bytes in size, since the
+                    original register had to be made larger to be able to hold
+                    the shifted value }
+                  cgsize:=int_cgsize(tcgsize2size[OS_INT]-(-paraloc.shiftval div 8));
+                  if cgsize=OS_NO then
+                    cgsize:=OS_INT;
+                  hreg:=getintregister(list,cgsize);
+                  a_load_reg_reg(list,OS_INT,cgsize,paraloc.register,hreg);
+                end;
+              { use the exact size to avoid overwriting of adjacent data }
+              if tcgsize2size[cgsize]<=sizeleft then
+                a_load_reg_ref(list,paraloc.size,cgsize,hreg,ref)
+              else
+                case sizeleft of
+                  1,2,4,8:
+                    a_load_reg_ref(list,paraloc.size,int_cgsize(sizeleft),hreg,ref);
+                  3:
+                    begin
+                      if target_info.endian=endian_big then
+                        begin
+                          href:=ref;
+                          inc(href.offset,2);
+                          a_load_reg_ref(list,paraloc.size,OS_8,hreg,href);
+                          a_op_const_reg_reg(list,OP_SHR,OS_INT,8,hreg,hreg);
+                          a_load_reg_ref(list,paraloc.size,OS_16,hreg,ref);
+                        end
+                      else
+                        begin
+                          a_load_reg_ref(list,paraloc.size,OS_16,hreg,ref);
+                          href:=ref;
+                          inc(href.offset,2);
+                          a_op_const_reg_reg(list,OP_SHR,cgsize,16,hreg,hreg);
+                          a_load_reg_ref(list,paraloc.size,OS_8,hreg,href);
+                        end
+                    end;
+                  5:
+                    begin
+                      if target_info.endian=endian_big then
+                        begin
+                          href:=ref;
+                          inc(href.offset,4);
+                          a_load_reg_ref(list,paraloc.size,OS_8,hreg,href);
+                          a_op_const_reg_reg(list,OP_SHR,OS_INT,8,hreg,hreg);
+                          a_load_reg_ref(list,paraloc.size,OS_32,hreg,ref);
+                        end
+                      else
+                       begin
+                          a_load_reg_ref(list,paraloc.size,OS_32,hreg,ref);
+                          href:=ref;
+                          inc(href.offset,4);
+                          a_op_const_reg_reg(list,OP_SHR,cgsize,32,hreg,hreg);
+                          a_load_reg_ref(list,paraloc.size,OS_8,hreg,href);
+                        end
+                    end;
+                  6:
+                    begin
+                      if target_info.endian=endian_big then
+                        begin
+                          href:=ref;
+                          inc(href.offset,4);
+                          a_load_reg_ref(list,paraloc.size,OS_16,hreg,href);
+                          a_op_const_reg_reg(list,OP_SHR,OS_INT,16,hreg,hreg);
+                          a_load_reg_ref(list,paraloc.size,OS_32,hreg,ref);
+                        end
+                      else
+                       begin
+                          a_load_reg_ref(list,paraloc.size,OS_32,hreg,ref);
+                          href:=ref;
+                          inc(href.offset,4);
+                          a_op_const_reg_reg(list,OP_SHR,cgsize,32,hreg,hreg);
+                          a_load_reg_ref(list,paraloc.size,OS_16,hreg,href);
+                        end
+                    end;
+                  7:
+                    begin
+                      if target_info.endian=endian_big then
+                        begin
+                          href:=ref;
+                          inc(href.offset,6);
+                          a_load_reg_ref(list,paraloc.size,OS_8,hreg,href);
+
+                          a_op_const_reg_reg(list,OP_SHR,OS_INT,8,hreg,hreg);
+                          href:=ref;
+                          inc(href.offset,4);
+                          a_load_reg_ref(list,paraloc.size,OS_16,hreg,href);
+
+                          a_op_const_reg_reg(list,OP_SHR,OS_INT,16,hreg,hreg);
+                          a_load_reg_ref(list,paraloc.size,OS_32,hreg,ref);
+                        end
+                      else
+                       begin
+                          a_load_reg_ref(list,paraloc.size,OS_32,hreg,ref);
+
+                          href:=ref;
+                          inc(href.offset,4);
+                          a_op_const_reg_reg(list,OP_SHR,cgsize,32,hreg,hreg);
+                          a_load_reg_ref(list,paraloc.size,OS_16,hreg,href);
+
+                          inc(href.offset,2);
+                          a_op_const_reg_reg(list,OP_SHR,cgsize,16,hreg,hreg);
+                          a_load_reg_ref(list,paraloc.size,OS_8,hreg,href);
+                        end
+                    end;
+                  else
+                    { other sizes not allowed }
+                    Internalerror(2017080901);
+                end;
+            end;
+          LOC_MMREGISTER :
+            begin
+              case paraloc.size of
+                OS_F32,
+                OS_F64,
+                OS_F128:
+                  a_loadmm_reg_ref(list,paraloc.size,paraloc.size,paraloc.register,ref,mms_movescalar);
+                OS_M8..OS_M128,
+                OS_MS8..OS_MS128:
+                  a_loadmm_reg_ref(list,paraloc.size,paraloc.size,paraloc.register,ref,nil);
+                else
+                  internalerror(2010053102);
+              end;
+            end;
+          LOC_FPUREGISTER :
+            a_loadfpu_reg_ref(list,paraloc.size,paraloc.size,paraloc.register,ref);
+          LOC_REFERENCE :
+            begin
+              reference_reset_base(href,paraloc.reference.index,paraloc.reference.offset,align,[]);
+              { use concatcopy, because it can also be a float which fails when
+                load_ref_ref is used. Don't copy data when the references are equal }
+              if not((href.base=ref.base) and (href.offset=ref.offset)) then
+                g_concatcopy(list,href,ref,sizeleft);
+            end;
+          else
+            internalerror(2002081302);
+        end;
       end;
 
 
@@ -1158,6 +1367,8 @@ implementation
                    a_load_reg_reg(list,paraloc.size,regsize,paraloc.register,reg);
                  R_MMREGISTER:
                    a_loadmm_intreg_reg(list,paraloc.size,regsize,paraloc.register,reg,mms_movescalar);
+                 R_FPUREGISTER:
+                   a_loadfpu_intreg_reg(list,paraloc.size,regsize,paraloc.register,reg);
                  else
                    internalerror(2009112422);
                end;
@@ -1430,6 +1641,8 @@ implementation
             a_load_reg_reg(list,loc.size,tosize,loc.register,reg);
           LOC_CONSTANT:
             a_load_const_reg(list,tosize,loc.value,reg);
+          LOC_MMREGISTER,LOC_CMMREGISTER:
+            a_loadmm_reg_intreg(list,loc.size,tosize,loc.register,reg,mms_movescalar);
           else
             internalerror(200109092);
         end;
@@ -1505,6 +1718,12 @@ implementation
                 if a=0 then
                   op:=OP_MOVE;
             end;
+          OP_XOR :
+            begin
+              { xor with zero returns same result }
+              if a = 0 then
+                op:=OP_NONE;
+            end;
           OP_DIV :
             begin
               { division by 1 returns result }
@@ -1539,11 +1758,26 @@ implementation
                if a = 0 then
                  op:=OP_NONE;
             end;
-        OP_SAR,OP_SHL,OP_SHR,OP_ROL,OP_ROR:
+        OP_SAR,OP_SHL,OP_SHR:
            begin
-              if a = 0 then
-                op:=OP_NONE;
+             if a = 0 then
+               op:=OP_NONE;
            end;
+        OP_ROL,OP_ROR:
+          begin
+            case size of
+              OS_64,OS_S64:
+                a:=a and 63;
+              OS_32,OS_S32:
+                a:=a and 31;
+              OS_16,OS_S16:
+                a:=a and 15;
+              OS_8,OS_S8:
+                a:=a and 7;
+            end;
+            if a = 0 then
+              op:=OP_NONE;
+          end;
         end;
       end;
 
@@ -1668,6 +1902,21 @@ implementation
       end;
 
 
+    procedure tcg.a_loadfpu_intreg_reg(list : TAsmList; fromsize,tosize : tcgsize; intreg,fpureg : tregister);
+      var
+        tmpref: treference;
+      begin
+        if not(tcgsize2size[fromsize] in [4,8]) or
+           not(tcgsize2size[tosize] in [4,8]) or
+           (tcgsize2size[fromsize]<>tcgsize2size[tosize]) then
+          internalerror(2017070902);
+        tg.gettemp(list,tcgsize2size[fromsize],tcgsize2size[fromsize],tt_normal,tmpref);
+        a_load_reg_ref(list,fromsize,fromsize,intreg,tmpref);
+        a_loadfpu_ref_reg(list,tosize,tosize,tmpref,fpureg);
+        tg.ungettemp(list,tmpref);
+      end;
+
+
     procedure tcg.a_op_const_ref(list : TAsmList; Op: TOpCG; size: TCGSize; a: tcgint; const ref: TReference);
       var
         tmpreg : tregister;
@@ -1698,7 +1947,14 @@ implementation
       begin
         tmpreg:=getintregister(list,size);
         a_load_ref_reg(list,size,size,ref,tmpreg);
-        a_op_reg_reg(list,op,size,reg,tmpreg);
+        if op in [OP_NEG,OP_NOT] then
+          begin
+            if reg<>NR_NO then
+              internalerror(2017040901);
+            a_op_reg_reg(list,op,size,tmpreg,tmpreg);
+          end
+        else
+          a_op_reg_reg(list,op,size,reg,tmpreg);
         a_load_reg_ref(list,size,size,tmpreg,ref);
       end;
 
@@ -1777,6 +2033,58 @@ implementation
             a_load_const_reg(list, size, a, dst);
             exit;
           end;
+{$ifdef cpu8bitalu}
+        OP_SHL:
+          begin
+            if a=8 then
+              case size of
+                OS_S16,OS_16:
+                  begin
+                    a_load_reg_reg(list,OS_8,OS_8,src,GetNextReg(dst));
+                    a_load_const_reg(list,OS_8,0,dst);
+                    exit;
+                  end;
+              end;
+          end;
+        OP_SHR:
+          begin
+            if a=8 then
+              case size of
+                OS_S16,OS_16:
+                  begin
+                    a_load_reg_reg(list,OS_8,OS_8,GetNextReg(src),dst);
+                    a_load_const_reg(list,OS_8,0,GetNextReg(dst));
+                    exit;
+                  end;
+              end;
+          end;
+{$endif cpu8bitalu}
+{$ifdef cpu16bitalu}
+        OP_SHL:
+          begin
+            if a=16 then
+              case size of
+                OS_S32,OS_32:
+                  begin
+                    a_load_reg_reg(list,OS_16,OS_16,src,GetNextReg(dst));
+                    a_load_const_reg(list,OS_16,0,dst);
+                    exit;
+                  end;
+              end;
+          end;
+        OP_SHR:
+          begin
+            if a=16 then
+              case size of
+                OS_S32,OS_32:
+                  begin
+                    a_load_reg_reg(list,OS_16,OS_16,GetNextReg(src),dst);
+                    a_load_const_reg(list,OS_16,0,GetNextReg(dst));
+                    exit;
+                  end;
+              end;
+          end;
+{$endif cpu16bitalu}
       end;
       a_load_reg_reg(list,size,size,src,dst);
       a_op_const_reg(list,op,size,a,dst);

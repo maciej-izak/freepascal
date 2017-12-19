@@ -937,10 +937,34 @@ begin
 end;
 
 
-function TStringHelper.LastIndexOf(const AValue: string; AStartIndex: Integer;
-  ACount: Integer): Integer;
+function TStringHelper.LastIndexOf(const AValue: string; AStartIndex: Integer; ACount: Integer): Integer;
+  
+var
+  I,L,LS,M : Integer;
+  S : String;
+  P : PChar;
+    
 begin
-  Result:=LastIndexOf(AValue,AStartIndex,AStartIndex+1);
+  Result:=-1;
+  LS:=system.Length(Self);
+  L:=system.Length(AValue);
+  if (L=0) or (L>LS) then
+    Exit;
+  P:=PChar(AValue);  
+  S:=Self;
+  I:=AStartIndex+1; // 1 based
+  if (I>LS) then
+    I:=LS;
+  I:=I-L+1;
+  M:=AStartIndex-ACount+1; // 1 based
+  if M<1 then
+    M:=1;
+  while (Result=-1) and (I>=M) do
+    begin
+    if (0=StrLComp(PChar(@S[I]),P,L)) then
+      Result:=I-1;
+    Dec(I);
+    end;
 end;
 
 
@@ -1483,6 +1507,7 @@ end;
 {$define FLOATTYPE:=Single}
 {$define TFloatRec:=TSingleRec}
 {$i syshelpf.inc}
+{$UNDEF TFloatRec}
 {$ENDIF FPC_HAS_TYPE_SINGLE}
 
 { ---------------------------------------------------------------------
@@ -1493,6 +1518,7 @@ end;
 {$define FLOATTYPE:=Double}
 {$define TFloatRec:=TDoubleRec}
 {$i syshelpf.inc}
+{$UNDEF TFloatRec}
 {$ENDIF FPC_HAS_TYPE_DOUBLE}
 
 { ---------------------------------------------------------------------
@@ -1504,6 +1530,7 @@ end;
 {$define FLOATTYPE:=Extended}
 {$define TFloatRec:=TExtended80Rec}
 {$i syshelpf.inc}
+{$UNDEF TFloatRec}
 {$ENDIF FPC_HAS_TYPE_EXTENDED}
 
 { ---------------------------------------------------------------------

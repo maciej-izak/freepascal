@@ -44,6 +44,7 @@ Type
     Procedure TestAssignmentMinus;
     Procedure TestAssignmentMul;
     Procedure TestAssignmentDivision;
+    Procedure TestAssignmentMissingSemicolonError;
     Procedure TestCall;
     Procedure TestCallComment;
     Procedure TestCallQualified;
@@ -112,7 +113,18 @@ Type
     Procedure TestTryExceptOnIfElse;
     procedure TestTryExceptRaise;
     Procedure TestAsm;
+    Procedure TestAsmBlock;
+    Procedure TestAsmBlockWithEndLabel;
+    Procedure TestAsmBlockInIfThen;
+    Procedure TestGotoInIfThen;
+    procedure AssignToAddress;
+    procedure FinalizationNoSemicolon;
+    procedure MacroComment;
+    Procedure PlatformIdentifier;
+    Procedure PlatformIdentifier2;
+    Procedure OnIdentifier;
   end;
+
 
 implementation
 
@@ -342,6 +354,12 @@ begin
   AssertExpression('Left side is variable',A.Left,pekIdent,'a');
 end;
 
+procedure TTestStatementParser.TestAssignmentMissingSemicolonError;
+begin
+  DeclareVar('integer');
+  ExpectParserError('Semicolon expected, but "a" found',['a:=1','a:=2']);
+end;
+
 procedure TTestStatementParser.TestCall;
 
 Var
@@ -401,11 +419,11 @@ begin
   S:=Statement as TPasImplSimple;
   AssertExpression('Doit call',S.Expr,pekBinary,TBinaryExpr);
   B:=S.Expr as TBinaryExpr;
-  AssertExpression('Unit name part 1',B.Left,pekIdent,'Unita');
-  AssertExpression('Second part of unit name',B.Right,pekBinary,TBinaryExpr);
-  B:=B.Right as TBinaryExpr;
-  AssertExpression('Unit name part 2',B.Left,pekIdent,'ClassB');
   AssertExpression('Doit call',B.Right,pekIdent,'Doit');
+  AssertExpression('First two parts of unit name',B.left,pekBinary,TBinaryExpr);
+  B:=B.left as TBinaryExpr;
+  AssertExpression('Unit name part 1',B.Left,pekIdent,'Unita');
+  AssertExpression('Unit name part 2',B.right,pekIdent,'ClassB');
 end;
 
 procedure TTestStatementParser.TestCallNoArgs;
@@ -1644,6 +1662,118 @@ begin
   AssertEquals('token 2 ','eax',T.Tokens[1]);
   AssertEquals('token 3 ',',',T.Tokens[2]);
   AssertEquals('token 4 ','1',T.Tokens[3]);
+end;
+
+procedure TTestStatementParser.TestAsmBlock;
+begin
+  Source.Add('{$MODE DELPHI}');
+  Source.Add('function BitsHighest(X: Cardinal): Integer;');
+  Source.Add('asm');
+  Source.Add('end;');
+  Source.Add('begin');
+  Source.Add('end.');
+  ParseModule;
+end;
+
+procedure TTestStatementParser.TestAsmBlockWithEndLabel;
+begin
+  Source.Add('{$MODE DELPHI}');
+  Source.Add('function BitsHighest(X: Cardinal): Integer;');
+  Source.Add('asm');
+  Source.Add('  MOV ECX, EAX');
+  Source.Add('  MOV EAX, -1');
+  Source.Add('  BSR EAX, ECX');
+  Source.Add('  JNZ @@End');
+  Source.Add('  MOV EAX, -1');
+  Source.Add('@@End:');
+  Source.Add('end;');
+  Source.Add('begin');
+  Source.Add('end.');
+  ParseModule;
+end;
+
+procedure TTestStatementParser.TestAsmBlockInIfThen;
+begin
+  Source.Add('{$MODE DELPHI}');
+  Source.Add('function Get8087StatusWord(ClearExceptions: Boolean): Word;');
+  Source.Add('  begin');
+  Source.Add('    if ClearExceptions then');
+  Source.Add('    asm');
+  Source.Add('    end');
+  Source.Add('    else');
+  Source.Add('    asm');
+  Source.Add('    end;');
+  Source.Add('  end;');
+  Source.Add('  begin');
+  Source.Add('  end.');
+  ParseModule;
+end;
+
+procedure TTestStatementParser.AssignToAddress;
+
+begin
+  AddStatements(['@Proc:=Nil']);
+  ParseModule;
+end;
+
+procedure TTestStatementParser.FinalizationNoSemicolon;
+begin
+  Source.Add('unit afile;');
+  Source.Add('{$mode objfpc}');
+  Source.Add('interface');
+  Source.Add('implementation');
+  Source.Add('initialization');
+  Source.Add('  writeln(''qqq'')');
+  Source.Add('finalization');
+  Source.Add('  write(''rrr'')');
+  ParseModule;
+end;
+
+procedure TTestStatementParser.MacroComment;
+begin
+  AddStatements(['{$MACRO ON}',
+  '{$DEFINE func := //}',
+  '  calltest;',
+  '  func (''1'',''2'',''3'');',
+  'CallTest2;'
+  ]);
+  ParseModule;
+end;
+
+procedure TTestStatementParser.PlatformIdentifier;
+begin
+  AddStatements(['write(platform);']);
+  ParseModule;
+end;
+
+procedure TTestStatementParser.PlatformIdentifier2;
+begin
+  AddStatements(['write(libs+platform);']);
+  ParseModule;
+end;
+
+procedure TTestStatementParser.OnIdentifier;
+begin
+  Source.Add('function TryOn(const on: boolean): boolean;');
+  Source.Add('  begin');
+  Source.Add('  end;');
+  Source.Add('  begin');
+  Source.Add('  end.');
+  ParseModule;
+end;
+
+procedure TTestStatementParser.TestGotoInIfThen;
+
+begin
+  AddStatements(['if expr then',
+  '  dosomething',
+  '   else if expr2 then',
+  '    goto try_qword',
+  '  else',
+  '    dosomething;',
+  '  try_qword:',
+  '  dosomething;']);
+  ParseModule;
 end;
 
 initialization

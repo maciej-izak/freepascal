@@ -20,7 +20,10 @@ units=$(SYSTEMUNIT) $(CPU_UNITS) uuchar objpas iso7185 extpas strings heapmgr co
        sysconst
 #implicitunits=exeinfo \
 #      cp1250 cp1251 cp1252 cp1253 cp1254 cp1255 cp1256 cp1257 cp1258 \
-#      cp437 cp646 cp850 cp856 cp866 cp874 cp932 cp936 cp949 cp950 cp8859_1 cp8859_5 cp8859_2 cp852
+#      cp437 cp646 cp737 cp775 cp850 cp852 cp855 cp856 cp857 cp860 cp861 cp862 \
+#      cp863 cp864 cp865 cp866 cp869 cp874 cp3021 cp8859_1 cp8859_2 cp8859_3 cp8859_4 \
+#      cp8859_5 cp8859_6 cp8859_7 cp8859_8 cp8859_9 cp8859_10 cp8859_11 \
+#      cp8859_13 cp8859_14 cp8859_15 cp8859_16 cpkoi8_r cpkoi8_u
 
 #rsts=math rtlconsts varutils typinfo variants classes sysconst dateutil
 
@@ -45,7 +48,6 @@ COMMON=$(RTL)/common
 PROCINC=$(RTL)/$(CPU_TARGET)
 UNITPREFIX=rtl
 SYSTEMUNIT=system
-override FPCOPT+=@rtl.cfg
 LOADERS=
 ifeq ($(ARCH),mipsel)
 ifeq ($(SUBARCH),pic32mx)
@@ -93,6 +95,7 @@ endif
 endif
 
 ifeq ($(ARCH),avr)
+CPU_SPECIFIC_COMMON_UNITS=intrinsics
 ifeq ($(SUBARCH),avr25)
 CPU_UNITS=attiny44a attiny26 attiny48 attiny10 attiny84a attiny2313 attiny461 attiny43u \
           attiny24a attiny88 attiny40 attiny861 attiny85 attiny20 attiny24 attiny9 \
@@ -128,7 +131,7 @@ CPU_UNITS=at90usb1287 atmega1284 atmega1281 atmega128rfa1 atmega1284p at90can128
 CPU_UNITS_DEFINED=1
 endif
 ifeq ($(SUBARCH),avr6)
-CPU_UNITS=atmega2561 atmega2560
+CPU_UNITS=atmega2561 atmega2560 avrsim
 CPU_UNITS_DEFINED=1
 endif
 ifeq ($(CPU_UNITS_DEFINED),)
@@ -194,7 +197,7 @@ startup$(OEXT) : $(CPU_TARGET)/startup.s
 #
 
 $(SYSTEMUNIT)$(PPUEXT) : $(SYSTEMUNIT).pp $(SYSDEPS) $(INC)/softfpu.pp
-        $(COMPILER) -Us -Sg $(SYSTEMUNIT).pp $(REDIR)
+        $(COMPILER) -Us -Sg $(SYSTEMUNIT).pp @rtl.cfg $(REDIR)
 
 uuchar$(PPUEXT): $(INC)/uuchar.pp $(SYSTEMUNIT)$(PPUEXT)
 	$(COMPILER) $<
@@ -325,7 +328,11 @@ extpas$(PPUEXT) : $(INC)/extpas.pp dos$(PPUEXT) $(SYSTEMUNIT)$(PPUEXT)
 #
 
 define CPU_UNITS_RULE
+ifeq ($(ARCH),avr)
+$(1)$(PPUEXT): $(ARCH)/$(1).pp intrinsics$(PPUEXT) $(SYSTEMUNIT)$(PPUEXT)
+else
 $(1)$(PPUEXT): $(ARCH)/$(1).pp $(SYSTEMUNIT)$(PPUEXT)
+endif
 endef
 
 $(foreach unit,$(CPU_UNITS),$(eval $(call CPU_UNITS_RULE,$(unit))))
@@ -357,3 +364,6 @@ ctypes$(PPUEXT) :  $(INC)/ctypes.pp $(SYSTEMUNIT)$(PPUEXT)
 
 fpcylix$(PPUEXT) : fpcylix.pp cthreads$(PPUEXT) cwstring$(PPUEXT) dynlibs$(PPUEXT) objpas$(PPUEXT) $(SYSTEMUNIT)$(PPUEXT)
 	$(COMPILER) fpcylix.pp
+	
+intrinsics$(PPUEXT) : $(PROCINC)/intrinsics.pp $(SYSTEMUNIT)$(PPUEXT)
+	$(COMPILER) $(PROCINC)/intrinsics.pp

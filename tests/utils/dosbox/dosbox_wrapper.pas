@@ -1,17 +1,27 @@
 {$MODE objfpc}{$H+}
 
 uses
-  SysUtils, StrUtils, Process;
+  SysUtils, StrUtils,
+{$ifdef UseSignals}
+  signals,
+{$endif def UseSignals}
+  Process;
 
 const
   use_temp_dir : boolean = true;
+  need_cwsdpmi : boolean = false;
+  cwsdpmi_file : string = '';
   hide_execution : boolean = true;
   do_exit : boolean = true;
   verbose : boolean = false;
+  DosBoxProcess: TProcess = nil;
 
   dosbox_timeout : integer = 100;  { default timeout in seconds }
 var
   OutputFileName : String;
+  DosBoxDir: string;
+  ExitCode: Integer = 255;
+  DosBoxBinaryPath: string;
 
 function GenerateTempDir: string;
 var
@@ -46,7 +56,7 @@ procedure GenerateDosBoxConf(const ADosBoxDir: string);
 var
   SourceConfFileName, TargetConfFileName: string;
   SourceFile, TargetFile: TextFile;
-  S: string;
+  OrigS, S: string;
 begin
   SourceConfFileName := ExtractFilePath(ParamStr(0)) + 'dosbox.conf';
   TargetConfFileName := ADosBoxDir + 'dosbox.conf';
@@ -62,12 +72,15 @@ begin
       while not EoF(SourceFile) do
       begin
         Readln(SourceFile, S);
+        OrigS:=S;
         S := AnsiReplaceStr(S, '$DosBoxDir', ADosBoxDir);
         S := AnsiReplaceStr(S, '$wrapper_output', OutputFileName);
         if do_exit then
           S := AnsiReplaceStr(S, '$exit', 'exit')
         else
           S := AnsiReplaceStr(S, '$exit', '');
+        If verbose and (OrigS <> S) then
+          Writeln('"',OrigS,'" transformed into "',S,'"');
         Writeln(TargetFile, S);
       end;
     finally
@@ -180,56 +193,92 @@ end;
 
 procedure ExecuteDosBox(const ADosBoxBinaryPath, ADosBoxDir: string);
 var
-  Process: TProcess;
   Time: Integer = 0;
 begin
-  Process := TProcess.Create(nil);
+  DosBoxProcess := TProcess.Create(nil);
   try
-    Process.Executable := ADosBoxBinaryPath;
-    Process.Parameters.Add('-conf');
-    Process.Parameters.Add(ADosBoxDir + 'dosbox.conf');
+    DosBoxProcess.Executable := ADosBoxBinaryPath;
+    DosBoxProcess.Parameters.Add('-conf');
+    DosBoxProcess.Parameters.Add(ADosBoxDir + 'dosbox.conf');
     if hide_execution then
-      Process.ShowWindow := swoHIDE;
-    Process.Execute;
+      DosBoxProcess.ShowWindow := swoHIDE;
+    DosBoxProcess.Execute;
     repeat
       Inc(Time);
       if (Time > 10*dosbox_timeout) and do_exit then
         break;
       Sleep(100);
-    until not Process.Running;
-    if Process.Running then
+    until not DosBoxProcess.Running;
+    if DosBoxProcess.Running then
     begin
       Writeln('Timeout exceeded. Killing dosbox...');
-      Process.Terminate(254);
+      DosBoxProcess.Terminate(254);
+      Sleep(100);
     end;
   finally
-    Process.Free;
+    DosBoxProcess.Free;
+    DosBoxProcess:=nil;
     EchoOutput;
   end;
 end;
 
+
+procedure DeleteIfExists(const AFileName: string);
+begin
+  if FileExists(AFileName) then
+    DeleteFile(AFileName);
+end;
+
 procedure Cleanup(const ADosBoxDir: string);
-
-  procedure DeleteIfExists(const AFileName: string);
-  begin
-    if FileExists(AFileName) then
-      DeleteFile(AFileName);
-  end;
-
 begin
   DeleteIfExists(ADosBoxDir + 'dosbox.conf');
   DeleteIfExists(ADosBoxDir + 'EXITCODE.TXT');
   DeleteIfExists(ADosBoxDir + 'EXITCODE.EXE');
+  DeleteIfExists(ADosBoxDir + 'CWSDPMI.EXE');
   DeleteIfExists(ADosBoxDir + 'TEST.EXE');
   RmDir(ADosBoxDir);
 end;
 
+
+{$ifdef UseSignals}
+const
+  SignalCalled : boolean = false;
+  SignalNb : longint = 0;
+
+function DosBoxSignal(signal:longint):longint; cdecl;
+
+begin
+  SignalCalled:=true;
+  SignalNb:=signal;
+end;
+{$endif def UseSignals}
+
+procedure ExitProc;
 var
-  DosBoxDir: string;
-  ExitCode: Integer = 255;
-  DosBoxBinaryPath: string;
+  count : longint;
+begin
+  if assigned(DosBoxProcess) and (DosBoxProcess.Running) then
+    begin
+      Writeln('In ExitProc. Killing dosbox...');
+      DosBoxProcess.Terminate(254*1024);
+      Sleep(100);
+      count:=1;
+      while (DosBoxProcess.Running) do
+        begin
+          Sleep(100);
+          inc(count);
+          if (count mod 20=0) then
+            DosBoxProcess.Terminate(254*1024+count);
+        end;
+      if count>1 then
+        Writeln('In ExitProc. Wait for termination dosbox..., time=',count/10);
+      EchoOutput;
+    end;
+end;
+
 begin
   Randomize;
+
 
   if GetEnvironmentVariable('DOSBOX_NO_TEMPDIR')<>'' then
     begin
@@ -250,6 +299,12 @@ begin
     begin
       verbose:=true;
       Writeln('verbose set to true');
+    end;
+  if (GetEnvironmentVariable('DOSBOX_NEEDS_CWSDPMI')<>'') or
+     (GetEnvironmentVariable('TEST_OS_TARGET')='go32v2') then
+    begin
+      need_cwsdpmi:=true;
+      Writeln('need_cwsdpmi set to true');
     end;
   if GetEnvironmentVariable('DOSBOX_TIMEOUT')<>'' then
     begin
@@ -286,16 +341,39 @@ begin
       if DosBoxDir='' then
         DosBoxDir:=GetCurrentDir+DirectorySeparator;
       Writeln('Using DosBoxDir=',DosBoxDir);
+      { Get rid of previous exicode.txt file }
+      DeleteIfExists(DosBoxDir + 'EXITCODE.TXT');
     end;
   try
+{$ifdef UseSignals}
+    Signal(SIGINT,@DosBoxSignal);
+    Signal(SIGQUIT,@DosBoxSignal);
+    Signal(SIGTERM,@DosBoxSignal);
+{$endif def UseSignals}
     GenerateDosBoxConf(DosBoxDir);
     CopyFile(ExtractFilePath(ParamStr(0)) + 'exitcode.exe', DosBoxDir + 'EXITCODE.EXE');
     CopyFile(ParamStr(1), DosBoxDir + 'TEST.EXE');
+    if need_cwsdpmi then
+      begin
+        cwsdpmi_file:=FileSearch('cwsdpmi.exe',GetEnvironmentVariable('PATH'));
+        if cwsdpmi_file<>'' then
+          CopyFile(cwsdpmi_file, DosBoxDir + 'CWSDPMI.EXE')
+        else if verbose then
+          writeln('cwsdpmi executable missing');
+      end;
     ExecuteDosBox(DosBoxBinaryPath, DosBoxDir);
-    ExitCode := ReadExitCode(DosBoxDir);
   finally
-    if use_temp_dir then
-      Cleanup(DosBoxDir);
+    ExitProc;
   end;
+{$ifdef UseSignals}
+  if SignalCalled then
+    begin
+      Writeln('Signal ',SignalNb,' called');
+    end;
+{$endif def UseSignals}
+  ExitProc;
+  ExitCode:=ReadExitCode(DosBoxDir);
+  if use_temp_dir then
+    Cleanup(DosBoxDir);
   halt(ExitCode);
 end.

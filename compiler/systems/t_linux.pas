@@ -28,7 +28,7 @@ interface
 
   uses
     aasmdata,
-    symsym,symdef,ppu,
+    symsym,
     import,export,expunix,link;
 
   type
@@ -77,10 +77,10 @@ implementation
     SysUtils,
     cutils,cfileutl,cclasses,
     verbose,systems,globtype,globals,
-    symconst,script,
+    cscript,
     fmodule,
     aasmbase,aasmtai,aasmcpu,cpubase,
-    cgbase,cgobj,cgutils,ogbase,ncgutil,
+    cgbase,ogbase,
     comprsrc,
     ogelf,owar,
     rescmn, i_linux
@@ -160,6 +160,12 @@ begin
 {$ifdef powerpc}
       LibrarySearchPath.AddPath(sysrootpath,'/usr/lib/powerpc-linux-gnu',true);
 {$endif powerpc}
+{$ifdef m68k}
+      LibrarySearchPath.AddPath(sysrootpath,'/usr/lib/m68k-linux-gnu',true);
+{$endif m68k}
+{$ifdef sparc64}
+      LibrarySearchPath.AddPath(sysrootpath,'/usr/lib/sparc64-linux-gnu',true);
+{$endif sparc64}
     end;
 end;
 
@@ -208,6 +214,11 @@ const defdynlinker='/lib/ld-linux-aarch64.so.1';
 {$ifdef mips}
   const defdynlinker='/lib/ld.so.1';
 {$endif mips}
+
+{$ifdef sparc64}
+  const defdynlinker='/lib64/ld-linux.so.2';
+{$endif sparc64}
+
 
 procedure SetupDynlinker(out DynamicLinker:string;out libctype:TLibcType);
 begin
@@ -301,12 +312,13 @@ const
 {$ifdef powerpc}   platform_select='-b elf32-powerpc -m elf32ppclinux';{$endif}
 {$ifdef POWERPC64} platform_select='';{$endif}
 {$ifdef sparc}     platform_select='-b elf32-sparc -m elf32_sparc';{$endif}
+{$ifdef sparc64}   platform_select='-b elf64-sparc -m elf64_sparc';{$endif}
 {$ifdef arm}       platform_select='';{$endif} {unknown :( }
 {$ifdef aarch64}   platform_select='';{$endif} {unknown :( }
 {$ifdef m68k}      platform_select='';{$endif} {unknown :( }
 {$ifdef mips}
-  {$ifdef mipsel}  
-	           platform_select='-EL';
+  {$ifdef mipsel}
+                   platform_select='-EL';
   {$else}
                    platform_select='-EB';
   {$endif}
@@ -1823,6 +1835,11 @@ initialization
   RegisterExport(system_SPARC_linux,texportliblinux);
   RegisterTarget(system_SPARC_linux_info);
 {$endif SPARC}
+{$ifdef SPARC64}
+  RegisterImport(system_SPARC64_linux,timportliblinux);
+  RegisterExport(system_SPARC64_linux,texportliblinux);
+  RegisterTarget(system_SPARC64_linux_info);
+{$endif SPARC64}
 {$ifdef ARM}
   RegisterImport(system_arm_linux,timportliblinux);
   RegisterExport(system_arm_linux,texportliblinux);

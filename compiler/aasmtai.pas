@@ -564,7 +564,7 @@ interface
        tai_section = class(tai)
           sectype  : TAsmSectiontype;
           secorder : TasmSectionorder;
-          secalign : byte;
+          secalign : longint;
           name     : pshortstring;
           sec      : TObjSection; { used in binary writer }
           destructor Destroy;override;
@@ -574,7 +574,7 @@ interface
          private
           { this constructor is made private on purpose }
           { because sections should be created via new_section() }
-          constructor Create(Asectype:TAsmSectiontype;const Aname:string;Aalign:byte;Asecorder:TasmSectionorder=secorder_default);
+          constructor Create(Asectype:TAsmSectiontype;const Aname:string;Aalign:longint;Asecorder:TasmSectionorder=secorder_default);
 {$pop}
        end;
 
@@ -795,7 +795,7 @@ interface
            procedure derefimpl;override;
            procedure SetCondition(const c:TAsmCond);
            procedure allocate_oper(opers:longint);
-           procedure loadconst(opidx:longint;l:aint);
+           procedure loadconst(opidx:longint;l:tcgint);
            procedure loadsymbol(opidx:longint;s:tasmsymbol;sofs:longint);
            procedure loadlocal(opidx:longint;s:pointer;sofs:longint;indexreg:tregister;scale:byte;getoffset,forceref:boolean);
            procedure loadref(opidx:longint;const r:treference);
@@ -933,6 +933,9 @@ interface
 implementation
 
     uses
+{$ifdef x86}
+      aasmcpu,
+{$endif x86}
       SysUtils,
       verbose,
       globals;
@@ -1167,7 +1170,7 @@ implementation
                              TAI_SECTION
  ****************************************************************************}
 
-    constructor tai_section.Create(Asectype:TAsmSectiontype;const Aname:string;Aalign:byte;Asecorder:TasmSectionorder=secorder_default);
+    constructor tai_section.Create(Asectype:TAsmSectiontype;const Aname:string;Aalign:longint;Asecorder:TasmSectionorder=secorder_default);
       begin
         inherited Create;
         typ:=ait_section;
@@ -1183,7 +1186,7 @@ implementation
       begin
         inherited ppuload(t,ppufile);
         sectype:=TAsmSectiontype(ppufile.getbyte);
-        secalign:=ppufile.getbyte;
+        secalign:=ppufile.getlongint;
         name:=ppufile.getpshortstring;
         sec:=nil;
       end;
@@ -1199,7 +1202,7 @@ implementation
       begin
         inherited ppuwrite(ppufile);
         ppufile.putbyte(byte(sectype));
-        ppufile.putbyte(secalign);
+        ppufile.putlongint(secalign);
         ppufile.putstring(name^);
       end;
 
@@ -2553,7 +2556,7 @@ implementation
       end;
 
 
-    procedure tai_cpu_abstract.loadconst(opidx:longint;l:aint);
+    procedure tai_cpu_abstract.loadconst(opidx:longint;l:tcgint);
       begin
         allocate_oper(opidx+1);
         with oper[opidx]^ do
@@ -2603,6 +2606,10 @@ implementation
 
 
     procedure tai_cpu_abstract.loadref(opidx:longint;const r:treference);
+{$ifdef x86}
+      var
+        si_param: ShortInt;
+{$endif}
       begin
         allocate_oper(opidx+1);
         with oper[opidx]^ do
@@ -2617,7 +2624,17 @@ implementation
 {$ifdef x86}
             { We allow this exception for x86, since overloading this would be
               too much of a a speed penalty}
-            if (ref^.segment<>NR_NO) and (ref^.segment<>NR_DS) then
+            if is_x86_parameterized_string_op(opcode) then
+              begin
+                si_param:=get_x86_string_op_si_param(opcode);
+                if (si_param<>-1) and (taicpu(self).OperandOrder=op_att) then
+                  si_param:=x86_parameterized_string_op_param_count(opcode)-si_param-1;
+                if (si_param=opidx) and (ref^.segment<>NR_NO) and (ref^.segment<>NR_DS) then
+                  segprefix:=ref^.segment;
+              end
+            else if (opcode=A_XLAT) and (ref^.segment<>NR_NO) and (ref^.segment<>NR_DS) then
+              segprefix:=ref^.segment
+            else if (ref^.segment<>NR_NO) and (ref^.segment<>get_default_segment_of_ref(ref^)) then
               segprefix:=ref^.segment;
 {$endif}
 {$ifndef llvm}
@@ -2673,6 +2690,10 @@ implementation
 
 
     procedure tai_cpu_abstract.loadoper(opidx:longint;o:toper);
+{$ifdef x86}
+      var
+        si_param: ShortInt;
+{$endif x86}
       begin
         allocate_oper(opidx+1);
         clearop(opidx);
@@ -2691,7 +2712,19 @@ implementation
                   new(ref);
                   ref^:=o.ref^;
 {$ifdef x86}
-                  if (ref^.segment<>NR_NO) and (ref^.segment<>NR_DS) then
+                  { We allow this exception for x86, since overloading this would be
+                    too much of a a speed penalty}
+                  if is_x86_parameterized_string_op(opcode) then
+                    begin
+                      si_param:=get_x86_string_op_si_param(opcode);
+                      if (si_param<>-1) and (taicpu(self).OperandOrder=op_att) then
+                        si_param:=x86_parameterized_string_op_param_count(opcode)-si_param-1;
+                      if (si_param=opidx) and (ref^.segment<>NR_NO) and (ref^.segment<>NR_DS) then
+                        segprefix:=ref^.segment;
+                    end
+                  else if (opcode=A_XLAT) and (ref^.segment<>NR_NO) and (ref^.segment<>NR_DS) then
+                    segprefix:=ref^.segment
+                  else if (ref^.segment<>NR_NO) and (ref^.segment<>get_default_segment_of_ref(ref^)) then
                     segprefix:=ref^.segment;
 {$endif x86}
                   if assigned(add_reg_instruction_hook) then

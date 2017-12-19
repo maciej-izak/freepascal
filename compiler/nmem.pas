@@ -154,8 +154,8 @@ implementation
     uses
       globtype,systems,constexp,
       cutils,verbose,globals,
-      symconst,symbase,defutil,defcmp,
-      nadd,nbas,nflw,ninl,nutils,objcutil,
+      symconst,defutil,defcmp,
+      nadd,nbas,nflw,nutils,objcutil,
       wpobase,
 {$ifdef i8086}
       cpuinfo,
@@ -638,8 +638,14 @@ implementation
         result:=false;
         res:=nil;
         if (realsource.nodetype=loadn) and
-           (tloadnode(realsource).symtableentry.typ=absolutevarsym) and
-           (tabsolutevarsym(tloadnode(realsource).symtableentry).abstyp=toaddr) then
+           (tloadnode(realsource).symtableentry.typ=labelsym) then
+          begin
+            resultdef:=voidcodepointertype;
+            result:=true;
+          end
+        else if (realsource.nodetype=loadn) and
+                (tloadnode(realsource).symtableentry.typ=absolutevarsym) and
+                (tabsolutevarsym(tloadnode(realsource).symtableentry).abstyp=toaddr) then
           begin
             offset:=tabsolutevarsym(tloadnode(realsource).symtableentry).addroffset;
             hp:=left;
@@ -1319,7 +1325,7 @@ implementation
     function is_big_untyped_addrnode(p: tnode): boolean;
       begin
         is_big_untyped_addrnode:=(p.nodetype=addrn) and
-	  not (nf_typedaddr in p.flags) and (taddrnode(p).left.resultdef.size > 1);
+          not (nf_typedaddr in p.flags) and (taddrnode(p).left.resultdef.size > 1);
       end;
 
 end.

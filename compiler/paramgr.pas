@@ -28,10 +28,10 @@ unit paramgr;
   interface
 
     uses
-       cclasses,globtype,
+       globtype,
        cpubase,cgbase,cgutils,
        parabase,
-       aasmtai,aasmdata,
+       aasmdata,
        symconst,symtype,symsym,symdef;
 
     type
@@ -175,8 +175,9 @@ implementation
 
     uses
        systems,
-       cgobj,hlcgobj,tgobj,
-       defutil,verbose;
+       cgobj,tgobj,
+       defutil,verbose,
+       hlcgobj;
 
     { true if the location in paraloc can be reused as localloc }
     function tparamanager.param_use_paraloc(const cgpara:tcgpara):boolean;
@@ -626,7 +627,7 @@ implementation
         if ((tf_safecall_exceptions in target_info.flags) and
             (pd.proccalloption=pocall_safecall)) or
            (
-             (pd.proctypeoption=potype_constructor)and
+             (pd.proctypeoption=potype_constructor) and
              (
                is_record(def) or
                (

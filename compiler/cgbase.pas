@@ -70,7 +70,7 @@ interface
          addr_full,
          addr_pic,
          addr_pic_no_got
-         {$IF defined(POWERPC) or defined(POWERPC64) or defined(SPARC) or defined(MIPS)}
+         {$IF defined(POWERPC) or defined(POWERPC64) or defined(SPARC) or defined(MIPS) or defined(SPARC64)}
          ,
          addr_low,         // bits 48-63
          addr_high,        // bits 32-47
@@ -84,7 +84,7 @@ interface
          addr_highera,     // bits 32-47, adjusted
          addr_highesta     // bits 48-63, adjusted
          {$ENDIF}
-         {$ENDIF POWERPC or POWERPC64 or SPARC or MIPS}
+         {$ENDIF POWERPC or POWERPC64 or SPARC or MIPS or SPARC64}
          {$IFDEF MIPS}
          ,
          addr_pic_call16,  // like addr_pic, but generates call16 reloc instead of got16
@@ -110,6 +110,10 @@ interface
          ,addr_gotpage
          ,addr_gotpageoffset
          {$ENDIF AARCH64}
+         {$ifdef SPARC64}
+         ,addr_gdop_hix22
+         ,addr_gdop_lox22
+         {$endif SPARC64}
          );
 
 
@@ -200,7 +204,16 @@ interface
         R_SUBMMWHOLE,  { = 11; complete MM register, size depends on CPU }
         { For Intel X86 AVX-Register }
         R_SUBMMX,     { = 12; 128 BITS }
-        R_SUBMMY      { = 13; 256 BITS }
+        R_SUBMMY,     { = 13; 256 BITS }
+        { Subregisters for the flags register (x86) }
+        R_SUBFLAGCARRY,     { = 14; Carry flag }
+        R_SUBFLAGPARITY,    { = 15; Parity flag }
+        R_SUBFLAGAUXILIARY, { = 16; Auxiliary flag }
+        R_SUBFLAGZERO,      { = 17; Zero flag }
+        R_SUBFLAGSIGN,      { = 18; Sign flag }
+        R_SUBFLAGOVERFLOW,  { = 19; Overflow flag }
+        R_SUBFLAGINTERRUPT, { = 20; Interrupt enable flag }
+        R_SUBFLAGDIRECTION  { = 21; Direction flag }
       );
       TSubRegisterSet = set of TSubRegister;
 

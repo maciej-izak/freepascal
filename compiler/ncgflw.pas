@@ -28,7 +28,7 @@ interface
 
     uses
       globtype,
-      aasmbase,aasmdata,node,nflw,
+      aasmbase,aasmdata,nflw,
       pass_2,cgutils,ncgutil;
 
     type
@@ -125,11 +125,11 @@ implementation
 
     uses
       cutils,
-      verbose,globals,systems,constexp,
+      verbose,globals,systems,
       symconst,symdef,symsym,symtable,symtype,aasmtai,aasmcpu,defutil,
       procinfo,cgbase,parabase,
       fmodule,
-      cpubase,ncon,
+      cpubase,
       tgobj,paramgr,
       cgobj,hlcgobj,nutils
       ;
@@ -1114,7 +1114,6 @@ implementation
          oldContinueLabel,
          oldBreakLabel : tasmlabel;
          finallyexceptionstate: tcgexceptionstatehandler.texceptionstate;
-         prefinallyflowcontrol : tflowcontrol;
          excepttemps : tcgexceptionstatehandler.texceptiontemps;
          reasonreg : tregister;
       begin

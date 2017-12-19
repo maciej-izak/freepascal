@@ -1937,10 +1937,20 @@ Function CompareDateTime(const A, B: TDateTime): TValueRelationship;
 begin
   If SameDateTime(A,B) then
     Result:=EqualsValue
-  else If A>B then
-    Result:=GreaterThanValue
-  else
-    Result:=LessThanValue
+  else if trunc(a)=trunc(b) then
+    begin
+    if abs(frac(a))>abs(frac(b)) then 
+      result:=GreaterThanValue
+    else 
+      result:=LessThanValue;
+    end 
+  else 
+    begin
+    if a>b then 
+      result:=GreaterThanValue
+    else 
+      result:=LessThanValue;
+    end;
 end;
 
 
@@ -2143,7 +2153,8 @@ begin
   year := (100*b) + d - 4800 + ( m div 10 );
   result := TryEncodeDate ( Year, Month, Day, ADateTime );
   if Result then
-    ADateTime:=IncMilliSecond(IncHour(ADateTime,-12),MillisecondOfTheDay(Abs(Frac(aValue))));
+//    ADateTime:=IncMilliSecond(IncHour(ADateTime,-12),MillisecondOfTheDay(Abs(Frac(aValue))));
+    ADateTime:=ADateTime+frac(AValue-0.5);
 end;
 
 Function DateTimeToModifiedJulianDate(const AValue: TDateTime): Double;

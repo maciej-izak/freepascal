@@ -88,17 +88,17 @@ interface
     function free_ldt_descriptor(d : word) : boolean;
     function segment_to_descriptor(seg : word) : word;
     function get_next_selector_increment_value : word;
-    function get_segment_base_address(d : word) : longint;
-    function set_segment_base_address(d : word;s : longint) : boolean;
-    function set_segment_limit(d : word;s : longint) : boolean;
-    function set_descriptor_access_right(d : word;w : word) : longint;
+    function get_segment_base_address(d : word) : dword;
+    function set_segment_base_address(d : word;s : dword) : boolean;
+    function set_segment_limit(d : word;s : dword): boolean;
+    function set_descriptor_access_right(d : word;w : word) : boolean;
     function create_code_segment_alias_descriptor(seg : word) : word;
-    function get_linear_addr(phys_addr : longint;size : longint) : longint;
+    function get_linear_addr(phys_addr : dword;size : longint) : dword;
     function free_linear_addr_mapping(linear_addr: dword): boolean;
-    function get_segment_limit(d : word) : longint;
+    function get_segment_limit(d : word) : dword;
     function get_descriptor_access_right(d : word) : longint;
     function get_page_size:longint;
-    function map_device_in_memory_block(handle,offset,pagecount,device:longint):boolean;
+    function map_device_in_memory_block(handle,offset,pagecount,device:dword):boolean;
     function get_page_attributes(handle, offset, pagecount: dword; buf: pointer): boolean;
     function set_page_attributes(handle, offset, pagecount: dword; buf: pointer): boolean;
     function realintr(intnr : word;var regs : trealregs) : boolean;
@@ -771,7 +771,7 @@ interface
          end;
       end;
 
-    function get_segment_base_address(d : word) : longint;
+    function get_segment_base_address(d : word) : dword;
 
       begin
          asm
@@ -902,24 +902,24 @@ interface
     function lock_data(var data;size : longint) : boolean;
 
       var
-         linearaddr : longint;
+         linearaddr : dword;
 
       begin
          if get_run_mode<>rm_dpmi then
            exit;
-         linearaddr:=longint(@data)+get_segment_base_address(get_ds);
+         linearaddr:=dword(@data)+get_segment_base_address(get_ds);
          lock_data:=lock_linear_region(linearaddr,size);
       end;
 
     function lock_code(functionaddr : pointer;size : longint) : boolean;
 
       var
-         linearaddr : longint;
+         linearaddr : dword;
 
       begin
          if get_run_mode<>rm_dpmi then
            exit;
-         linearaddr:=longint(functionaddr)+get_segment_base_address(get_cs);
+         linearaddr:=dword(functionaddr)+get_segment_base_address(get_cs);
          lock_code:=lock_linear_region(linearaddr,size);
       end;
 
@@ -950,26 +950,26 @@ interface
     function unlock_data(var data;size : longint) : boolean;
 
       var
-         linearaddr : longint;
+         linearaddr : dword;
       begin
          if get_run_mode<>rm_dpmi then
            exit;
-         linearaddr:=longint(@data)+get_segment_base_address(get_ds);
+         linearaddr:=dword(@data)+get_segment_base_address(get_ds);
          unlock_data:=unlock_linear_region(linearaddr,size);
       end;
 
     function unlock_code(functionaddr : pointer;size : longint) : boolean;
 
       var
-         linearaddr : longint;
+         linearaddr : dword;
       begin
          if get_run_mode<>rm_dpmi then
            exit;
-         linearaddr:=longint(functionaddr)+get_segment_base_address(get_cs);
+         linearaddr:=dword(functionaddr)+get_segment_base_address(get_cs);
          unlock_code:=unlock_linear_region(linearaddr,size);
       end;
 
-    function set_segment_base_address(d : word;s : longint) : boolean;
+    function set_segment_base_address(d : word;s : dword) : boolean;
 
       begin
          asm
@@ -987,7 +987,7 @@ interface
          end;
       end;
 
-    function set_descriptor_access_right(d : word;w : word) : longint;
+    function set_descriptor_access_right(d : word;w : word) : boolean;
 
       begin
          asm
@@ -998,12 +998,12 @@ interface
             int $0x31
             pushf
             call test_int31
-            movw %ax,__RESULT
+            movb %al,__RESULT
             popl %ebx
          end;
       end;
 
-    function set_segment_limit(d : word;s : longint) : boolean;
+    function set_segment_limit(d : word;s : dword) : boolean;
 
       begin
          asm
@@ -1033,7 +1033,7 @@ interface
             movl %eax,__RESULT
          end;
       end;
-    function get_segment_limit(d : word) : longint;
+    function get_segment_limit(d : word) : dword;
 
       begin
          asm
@@ -1076,7 +1076,7 @@ interface
          end;
       end;
 
-    function get_linear_addr(phys_addr : longint;size : longint) : longint;
+    function get_linear_addr(phys_addr : dword;size : longint) : dword;
 
       begin
          asm
@@ -1143,7 +1143,7 @@ interface
          get_run_mode:=_run_mode;
       end;
 
-    function map_device_in_memory_block(handle,offset,pagecount,device:longint):boolean;
+    function map_device_in_memory_block(handle,offset,pagecount,device:dword):boolean;
       begin
          asm
            pushl %ebx

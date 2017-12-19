@@ -71,14 +71,13 @@ interface
 
     uses
       cutils,verbose,globtype,globals,
-      aasmbase,aasmtai,aasmdata,aasmcpu,symconst,symdef,symtable,paramgr,
-      nutils,ncon,ncal,
+      aasmbase,aasmdata,symconst,symdef,symtable,
+      nutils,ncon,
       cpubase,systems,
-      procinfo,pass_2,
+      pass_2,
       cgbase,
       cgutils,cgobj,hlcgobj,
       fmodule,
-      ncgutil,
       tgobj
       ;
 
@@ -218,6 +217,9 @@ interface
         resflags.reg1:=NR_NO;
         resflags.reg2:=NR_NO;
         resflags.cond:=OC_NONE;
+{$elseif defined(sparcgen)}
+        { Load left node into flag F_NE/F_E }
+        resflags.Init(NR_ICC,F_NE);
 {$else}
         { Load left node into flag F_NE/F_E }
         resflags:=F_NE;
@@ -736,6 +738,11 @@ interface
               begin
                 location.register:=left.location.register;
                 hlcg.g_ptrtypecast_reg(current_asmdata.CurrAsmList,left.resultdef,resultdef,location.register);
+              end;
+            LOC_CONSTANT:
+              begin
+                 location.register:=hlcg.getaddressregister(current_asmdata.CurrAsmList,resultdef);
+                 hlcg.a_load_const_reg(current_asmdata.CurrAsmList,resultdef,left.location.value,location.register);
               end
             else
               internalerror(121120001);

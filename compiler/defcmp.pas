@@ -103,7 +103,8 @@ interface
           tc_interface_2_variant,
           tc_variant_2_interface,
           tc_array_2_dynarray,
-          tc_elem_2_openarray
+          tc_elem_2_openarray,
+          tc_arrayconstructor_2_dynarray
        );
 
     function compare_defs_ext(def_from,def_to : tdef;
@@ -296,11 +297,23 @@ implementation
                      exit;
                    end;
 
-                 { one is definitely a constraint, for the other we don't
-                   care right now }
-                 doconv:=tc_equal;
-                 compare_defs_ext:=te_exact;
-                 exit;
+                 { maybe we are in generic type declaration/implementation.
+                   In this case constraint in comparison to not specialized generic
+                   is not "exact" nor "incompatible" }
+                 if not(((df_genconstraint in def_from.defoptions) and
+                        ([df_generic,df_specialization]*def_to.defoptions=[df_generic])
+                      ) or
+                      (
+                        (df_genconstraint in def_to.defoptions) and
+                        ([df_generic,df_specialization]*def_from.defoptions=[df_generic]))
+                    ) then
+                   begin
+                     { one is definitely a constraint, for the other we don't
+                       care right now }
+                     doconv:=tc_equal;
+                     compare_defs_ext:=te_exact;
+                     exit;
+                   end;
                end;
            end;
 
@@ -964,7 +977,43 @@ implementation
                         { to dynamic array }
                         else if is_dynamic_array(def_to) then
                          begin
-                           if equal_defs(tarraydef(def_from).elementdef,tarraydef(def_to).elementdef) then
+                           if is_array_constructor(def_from) then
+                             begin
+                               { array constructor -> dynamic array }
+                               if is_void(tarraydef(def_from).elementdef) then
+                                 begin
+                                   { only needs to loose to [] -> open array }
+                                   eq:=te_convert_l2;
+                                   doconv:=tc_arrayconstructor_2_dynarray;
+                                 end
+                               else
+                                 begin
+                                   { this should loose to the array constructor -> open array conversions,
+                                     but it might happen that the end of the convert levels is reached :/ }
+                                   subeq:=compare_defs_ext(tarraydef(def_from).elementdef,
+                                                        tarraydef(def_to).elementdef,
+                                                        { reason for cdo_allow_variant: see webtbs/tw7070a and webtbs/tw7070b }
+                                                        arrayconstructorn,hct,hpd,[cdo_check_operator,cdo_allow_variant]);
+                                   if (subeq>=te_equal) then
+                                     begin
+                                       eq:=te_convert_l2;
+                                     end
+                                   else
+                                     { an array constructor is not a dynamic array, so
+                                       use a lower level of compatibility than that one of
+                                       of the elements }
+                                     if subeq>te_convert_l5 then
+                                      begin
+                                        eq:=pred(pred(subeq));
+                                      end
+                                    else if subeq>te_convert_l6 then
+                                      eq:=pred(subeq)
+                                    else
+                                      eq:=subeq;
+                                   doconv:=tc_arrayconstructor_2_dynarray;
+                                 end;
+                             end
+                           else if equal_defs(tarraydef(def_from).elementdef,tarraydef(def_to).elementdef) then
                              begin
                                { dynamic array -> dynamic array }
                                if is_dynamic_array(def_from) then

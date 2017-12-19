@@ -202,11 +202,19 @@ begin
       P.Options.Add('-Fu../compiler/x86');
     if CompilerTarget in [powerpc, powerpc64] then
       P.Options.Add('-Fu../compiler/ppcgen');
+    if CompilerTarget in [sparc, sparc64] then
+      begin
+        P.Options.Add('-Fu../compiler/sparcgen');
+        P.Options.add('-Fi../compiler/sparcgen');
+      end;
     if CompilerTarget = x86_64 then
       P.Options.Add('-dNOOPT');
     if CompilerTarget = mipsel then
       P.Options.Add('-Fu../compiler/mips');
 
+    { powerpc64-aix compiled IDE needs -CTsmalltoc option }
+    if (Defaults.OS=aix) and (Defaults.CPU=powerpc64) then
+     P.Options.Add('-CTsmalltoc');
     { Handle SPECIALLINK environment variable if available }
     s:=GetEnvironmentVariable('SPECIALLINK');
     if s<>'' then

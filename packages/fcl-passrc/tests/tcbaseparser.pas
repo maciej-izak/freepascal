@@ -8,7 +8,7 @@ uses
   Classes, SysUtils, fpcunit, pastree, pscanner, pparser, testregistry;
 
 const
-  MainFilename = 'afile.pp';
+  DefaultMainFilename = 'afile.pp';
 Type
   { TTestEngine }
 
@@ -27,11 +27,12 @@ Type
 
   { TTestParser }
 
-  TTestParser= class(TTestCase)
+  TTestParser = class(TTestCase)
   Private
     FDeclarations: TPasDeclarations;
     FDefinition: TPasElement;
     FEngine : TPasTreeContainer;
+    FMainFilename: string;
     FModule: TPasModule;
     FParseResult: TPasElement;
     FScanner : TPascalScanner;
@@ -58,6 +59,7 @@ Type
     Procedure StartImplementation;
     Procedure EndSource;
     Procedure Add(Const ALine : String);
+    Procedure Add(Const Lines : array of String);
     Procedure StartParsing;
     Procedure ParseDeclarations;
     Procedure ParseModule;
@@ -78,6 +80,7 @@ Type
     Procedure AssertEquals(Const Msg : String; AExpected, AActual: TPasMemberVisibility); overload;
     Procedure AssertEquals(Const Msg : String; AExpected, AActual: TProcedureModifier); overload;
     Procedure AssertEquals(Const Msg : String; AExpected, AActual: TProcedureModifiers); overload;
+    Procedure AssertEquals(Const Msg : String; AExpected, AActual: TProcTypeModifiers); overload;
     Procedure AssertEquals(Const Msg : String; AExpected, AActual: TAssignKind); overload;
     Procedure AssertEquals(Const Msg : String; AExpected, AActual: TProcedureMessageType); overload;
     Procedure AssertEquals(Const Msg : String; AExpected, AActual: TOperatorType); overload;
@@ -96,6 +99,7 @@ Type
     // If set, Will be freed in teardown
     Property ParseResult : TPasElement Read FParseResult Write FParseResult;
     Property UseImplementation : Boolean Read FUseImplementation Write FUseImplementation;
+    Property MainFilename: string read FMainFilename write FMainFilename;
   end;
 
 function ExtractFileUnitName(aFilename: string): string;
@@ -400,6 +404,7 @@ function TTestEngine.CreateElement(AClass: TPTreeElement; const AName: String;
   AParent: TPasElement; AVisibility: TPasMemberVisibility;
   const ASourceFilename: String; ASourceLinenumber: Integer): TPasElement;
 begin
+  //writeln('TTestEngine.CreateElement ',AName,' ',AClass.ClassName);
   Result := AClass.Create(AName, AParent);
   Result.Visibility := AVisibility;
   Result.SourceFilename := ASourceFilename;
@@ -409,9 +414,12 @@ begin
 //    Writeln('Saving comment : ',CurrentParser.SavedComments);
     Result.DocComment:=CurrentParser.SavedComments;
     end;
-  If not Assigned(FList) then
-    FList:=TFPList.Create;
-  FList.Add(Result);
+  if AName<>'' then
+    begin
+    If not Assigned(FList) then
+      FList:=TFPList.Create;
+    FList.Add(Result);
+    end;
 end;
 
 function TTestEngine.FindElement(const AName: String): TPasElement;
@@ -427,7 +435,7 @@ begin
     While (Result=Nil) and (I>=0) do
       begin
       if CompareText(TPasElement(FList[I]).Name,AName)=0 then
-        Result:=TPasElement(Flist[i]);
+        Result:=TPasElement(FList[i]);
       Dec(i);
       end;
     end;
@@ -462,6 +470,9 @@ end;
 procedure TTestParser.CleanupParser;
 
 begin
+  {$IFDEF VerbosePasResolverMem}
+  writeln('TTestParser.CleanupParser START');
+  {$ENDIF}
   if Not Assigned(FModule) then
     FreeAndNil(FDeclarations)
   else
@@ -469,17 +480,38 @@ begin
   FImplementation:=False;
   FEndSource:=False;
   FIsUnit:=False;
+  {$IFDEF VerbosePasResolverMem}
+  writeln('TTestParser.CleanupParser FModule');
+  {$ENDIF}
   if Assigned(FModule) then
-    begin
-    FModule.Release;
-    FModule:=nil;
-    end;
+    ReleaseAndNil(TPasElement(FModule));
+  {$IFDEF VerbosePasResolverMem}
+  writeln('TTestParser.CleanupParser FSource');
+  {$ENDIF}
   FreeAndNil(FSource);
+  {$IFDEF VerbosePasResolverMem}
+  writeln('TTestParser.CleanupParser FParseResult');
+  {$ENDIF}
   FreeAndNil(FParseResult);
+  {$IFDEF VerbosePasResolverMem}
+  writeln('TTestParser.CleanupParser FParser');
+  {$ENDIF}
   FreeAndNil(FParser);
+  {$IFDEF VerbosePasResolverMem}
+  writeln('TTestParser.CleanupParser FEngine');
+  {$ENDIF}
   FreeAndNil(FEngine);
+  {$IFDEF VerbosePasResolverMem}
+  writeln('TTestParser.CleanupParser FScanner');
+  {$ENDIF}
   FreeAndNil(FScanner);
+  {$IFDEF VerbosePasResolverMem}
+  writeln('TTestParser.CleanupParser FResolver');
+  {$ENDIF}
   FreeAndNil(FResolver);
+  {$IFDEF VerbosePasResolverMem}
+  writeln('TTestParser.CleanupParser END');
+  {$ENDIF}
 end;
 
 procedure TTestParser.ResetParser;
@@ -491,14 +523,24 @@ end;
 
 procedure TTestParser.SetUp;
 begin
+  FMainFilename:=DefaultMainFilename;
   Inherited;
   SetupParser;
 end;
 
 procedure TTestParser.TearDown;
 begin
+  {$IFDEF VerbosePasResolverMem}
+  writeln('TTestParser.TearDown START CleanupParser');
+  {$ENDIF}
   CleanupParser;
+  {$IFDEF VerbosePasResolverMem}
+  writeln('TTestParser.TearDown inherited');
+  {$ENDIF}
   Inherited;
+  {$IFDEF VerbosePasResolverMem}
+  writeln('TTestParser.TearDown END');
+  {$ENDIF}
 end;
 
 procedure TTestParser.CreateEngine(var TheEngine: TPasTreeContainer);
@@ -595,6 +637,14 @@ end;
 procedure TTestParser.Add(const ALine: String);
 begin
   FSource.Add(ALine);
+end;
+
+procedure TTestParser.Add(const Lines: array of String);
+var
+  i: Integer;
+begin
+  for i:=Low(Lines) to High(Lines) do
+    Add(Lines[i]);
 end;
 
 procedure TTestParser.StartParsing;
@@ -801,6 +851,27 @@ procedure TTestParser.AssertEquals(const Msg: String; AExpected,
         If (Result<>'') then
            Result:=Result+',';
         Result:=Result+GetEnumName(TypeInfo(TProcedureModifier),Ord(m))
+        end;
+  end;
+begin
+  AssertEquals(Msg,Sn(AExpected),SN(AActual));
+end;
+
+procedure TTestParser.AssertEquals(const Msg: String; AExpected,
+  AActual: TProcTypeModifiers);
+
+  Function Sn (S : TProcTypeModifiers) : String;
+
+  Var
+    m : TProcTypeModifier;
+  begin
+    Result:='';
+    For M:=Low(TProcTypeModifier) to High(TProcTypeModifier) do
+      If (m in S) then
+        begin
+        If (Result<>'') then
+           Result:=Result+',';
+        Result:=Result+GetEnumName(TypeInfo(TProcTypeModifier),Ord(m))
         end;
   end;
 begin

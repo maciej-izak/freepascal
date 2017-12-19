@@ -27,7 +27,7 @@ interface
 
     uses
       symtype,symdef,symbase,
-      node,ncal,
+      node,ncal,compinnr,
       tokens,globtype,globals,constexp,
       pgentype;
 
@@ -75,7 +75,7 @@ implementation
        { module }
        fmodule,ppu,
        { pass 1 }
-       pass_1,htypechk,
+       pass_1,
        nmat,nadd,nmem,nset,ncnv,ninl,ncon,nld,nflw,nbas,nutils,
        { parser }
        scanner,
@@ -152,8 +152,7 @@ implementation
       var
          p1,p2,argname : tnode;
          prev_in_args,
-         old_named_args_allowed,
-         old_allow_array_constructor : boolean;
+         old_named_args_allowed : boolean;
       begin
          if token=end_of_paras then
            begin
@@ -162,12 +161,10 @@ implementation
            end;
          { save old values }
          prev_in_args:=in_args;
-         old_allow_array_constructor:=allow_array_constructor;
          old_named_args_allowed:=named_args_allowed;
          { set para parsing values }
          in_args:=true;
          named_args_allowed:=false;
-         allow_array_constructor:=true;
          p2:=nil;
          repeat
            if __namedpara then
@@ -214,7 +211,6 @@ implementation
                  end
              end;
          until not try_to_consume(_COMMA);
-         allow_array_constructor:=old_allow_array_constructor;
          in_args:=prev_in_args;
          named_args_allowed:=old_named_args_allowed;
          parse_paras:=p2;
@@ -264,7 +260,7 @@ implementation
        end;
 
 
-     function statement_syssym(l : byte) : tnode;
+     function statement_syssym(l : tinlinenumber) : tnode;
       var
         p1,p2,paras  : tnode;
         err,
@@ -476,9 +472,10 @@ implementation
             end;
 
           in_typeinfo_x,
-          in_objc_encode_x :
+          in_objc_encode_x,
+          in_gettypekind_x:
             begin
-              if (l=in_typeinfo_x) or
+              if (l in [in_typeinfo_x,in_gettypekind_x]) or
                  (m_objectivec1 in current_settings.modeswitches) then
                 begin
                   consume(_LKLAMMER);
@@ -497,7 +494,7 @@ implementation
                   begin
                     ttypenode(p1).allowed:=true;
                     { allow helpers for TypeInfo }
-                    if l=in_typeinfo_x then
+                    if l in [in_typeinfo_x,in_gettypekind_x] then
                       ttypenode(p1).helperallowed:=true;
                   end;
     {              else
@@ -601,6 +598,22 @@ implementation
               consume(_RKLAMMER);
               statement_syssym:=p1;
             end;
+
+{$ifdef i8086}
+          in_faraddr_x :
+            begin
+              consume(_LKLAMMER);
+              got_addrn:=true;
+              p1:=factor(true,[]);
+              { inside parentheses a full expression is allowed, see also tests\webtbs\tb27517.pp }
+              if token<>_RKLAMMER then
+                p1:=sub_expr(opcompare,[ef_accept_equal],p1);
+              p1:=geninlinenode(in_faraddr_x,false,p1);
+              got_addrn:=false;
+              consume(_RKLAMMER);
+              statement_syssym:=p1;
+            end;
+{$endif i8086}
 
           in_ofs_x :
             begin
@@ -717,29 +730,7 @@ implementation
 
           in_concat_x :
             begin
-              consume(_LKLAMMER);
-              in_args:=true;
-              { Translate to x:=x+y[+z]. The addnode will do the
-                type checking }
-              p2:=nil;
-              repeat
-                p1:=comp_expr([ef_accept_equal]);
-                if p2<>nil then
-                  p2:=caddnode.create(addn,p2,p1)
-                else
-                  begin
-                    { Force string type if it isn't yet }
-                    if not(
-                           (p1.resultdef.typ=stringdef) or
-                           is_chararray(p1.resultdef) or
-                           is_char(p1.resultdef)
-                          ) then
-                      inserttypeconv(p1,cshortstringtype);
-                    p2:=p1;
-                  end;
-              until not try_to_consume(_COMMA);
-              consume(_RKLAMMER);
-              statement_syssym:=p2;
+              statement_syssym:=inline_concat;
             end;
 
           in_read_x,
@@ -1012,8 +1003,11 @@ implementation
               end;
           end;
 
-         { only need to get the address of the procedure? }
-         if getaddr then
+         { only need to get the address of the procedure? Check token because
+           in the case of opening parenthesis is possible to get pointer to 
+           function result (lack of checking for token was the reason of
+           tw10933.pp test failure) }
+         if getaddr and (token<>_LKLAMMER) then
            begin
              { for now we don't support pointers to generic functions, but since
                this is only temporary we use a non translated message }
@@ -2761,6 +2755,7 @@ implementation
            storedpattern: string;
            callflags: tcallnodeflags;
            t : ttoken;
+           wasgenericdummy,
            allowspecialize,
            isspecialize,
            unit_found : boolean;
@@ -2892,6 +2887,40 @@ implementation
                      end;
                  end;
 
+               wasgenericdummy:=false;
+               if assigned(srsym) and
+                   (sp_generic_dummy in srsym.symoptions) and
+                   (
+                     (
+                       (m_delphi in current_settings.modeswitches) and
+                       not (token in [_LT, _LSHARPBRACKET]) and
+                       (srsym.typ=typesym) and
+                       (ttypesym(srsym).typedef.typ=undefineddef)
+                     )
+                     or
+                     (
+                       not (m_delphi in current_settings.modeswitches) and
+                       not isspecialize and
+                       (
+                         not parse_generic or
+                         not (
+                           assigned(current_structdef) and
+                           assigned(get_generic_in_hierarchy_by_name(srsym,current_structdef))
+                         )
+                       )
+                     )
+                   ) then
+                 begin
+                   srsym:=resolve_generic_dummysym(srsym.name);
+                   if assigned(srsym) then
+                     srsymtable:=srsym.owner
+                   else
+                     begin
+                       srsymtable:=nil;
+                       wasgenericdummy:=true;
+                     end;
+                 end;
+
                { check hints, but only if it isn't a potential generic symbol;
                  that is checked in sub_expr if it isn't a generic }
                if assigned(srsym) and
@@ -2944,7 +2973,10 @@ implementation
                      end
                    else
                      begin
-                       identifier_not_found(orgstoredpattern,tokenpos);
+                       if wasgenericdummy then
+                         messagepos(tokenpos,parser_e_no_generics_as_types)
+                       else
+                         identifier_not_found(orgstoredpattern,tokenpos);
                        srsym:=generrorsym;
                        srsymtable:=nil;
                      end;
@@ -3254,7 +3286,6 @@ implementation
            p1,p2 : tnode;
            lastp,
            buildp : tarrayconstructornode;
-           old_allow_array_constructor : boolean;
          begin
            buildp:=nil;
            lastp:=nil;
@@ -3264,9 +3295,6 @@ implementation
              buildp:=carrayconstructornode.create(nil,buildp)
            else
             repeat
-              { nested array constructors are not allowed, see also tests/webtbs/tw17213.pp }
-              old_allow_array_constructor:=allow_array_constructor;
-              allow_array_constructor:=false;
               p1:=comp_expr([ef_accept_equal]);
               if try_to_consume(_POINTPOINT) then
                 begin
@@ -3284,9 +3312,9 @@ implementation
                  lastp.right:=carrayconstructornode.create(p1,nil);
                  lastp:=tarrayconstructornode(lastp.right);
                end;
-             allow_array_constructor:=old_allow_array_constructor;
            { there could be more elements }
            until not try_to_consume(_COMMA);
+           buildp.allow_array_constructor:=block_type in [bt_body,bt_except];
            factor_read_set:=buildp;
          end;
 
@@ -3321,6 +3349,7 @@ implementation
          filepos    : tfileposinfo;
          callflags  : tcallnodeflags;
          idstr      : tidstring;
+         useself,
          dopostfix,
          again,
          updatefpos,
@@ -3420,7 +3449,7 @@ implementation
                       allowed }
                     if is_objectpascal_helper(current_structdef) and
                         (m_delphi in current_settings.modeswitches) and
-                        is_record(tobjectdef(current_structdef).extendeddef) then
+                        (tobjectdef(current_structdef).helpertype=ht_record) then
                       Message(parser_e_inherited_not_in_record);
                     if (current_structdef.typ=objectdef) then
                       begin
@@ -3479,6 +3508,7 @@ implementation
                        case srsym.typ of
                          procsym:
                            begin
+                             useself:=false;
                              if is_objectpascal_helper(current_structdef) then
                                begin
                                  { for a helper load the procdef either from the
@@ -3492,18 +3522,31 @@ implementation
                                        assigned(tobjectdef(current_structdef).childof) then
                                      hdef:=tobjectdef(current_structdef).childof
                                    else
-                                     hdef:=tobjectdef(srsym.Owner.defowner).extendeddef
+                                     begin
+                                       hdef:=tobjectdef(srsym.Owner.defowner).extendeddef;
+                                       useself:=true;
+                                     end
                                  else
-                                   hdef:=tdef(srsym.Owner.defowner);
+                                   begin
+                                     hdef:=tdef(srsym.Owner.defowner);
+                                     useself:=true;
+                                   end;
                                end
                              else
                                hdef:=hclassdef;
                              if (po_classmethod in current_procinfo.procdef.procoptions) or
                                 (po_staticmethod in current_procinfo.procdef.procoptions) then
                                hdef:=cclassrefdef.create(hdef);
-                             p1:=ctypenode.create(hdef);
-                             { we need to allow helpers here }
-                             ttypenode(p1).helperallowed:=true;
+                             if useself then
+                               begin
+                                 p1:=ctypeconvnode.create_internal(load_self_node,hdef);
+                               end
+                             else
+                               begin
+                                 p1:=ctypenode.create(hdef);
+                                 { we need to allow helpers here }
+                                 ttypenode(p1).helperallowed:=true;
+                               end;
                            end;
                          propertysym:
                            ;

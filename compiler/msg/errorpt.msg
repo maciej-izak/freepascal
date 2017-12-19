@@ -13,6 +13,9 @@
 #   but WITHOUT ANY WARRANTY; without even the implied warranty of
 #   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 #
+
+# CodePage 850
+
 #
 # The constants are build in the following order:
 # <part>_<type>_<txtidentifier>
@@ -3330,7 +3333,6 @@ S*2Aas_Monta usando o GNU AS
 3*2Tnetwlibc_M¢dulo Novell Netware (libc)
 3*2Topenbsd_OpenBSD
 3*2Tos2_OS/2 / eComStation
-3*2Tsunos_SunOS/Solaris
 3*2Tsymbian_Symbian OS
 3*2Tsolaris_Solaris
 3*2Twatcom_Watcom compatible DOS extender

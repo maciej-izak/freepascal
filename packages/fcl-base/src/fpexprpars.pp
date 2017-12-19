@@ -25,8 +25,8 @@ uses
 Type
   // tokens
   TTokenType = (ttPlus, ttMinus, ttLessThan, ttLargerThan, ttEqual, ttDiv,
-                ttMul, ttLeft, ttRight, ttLessThanEqual, ttLargerThanEqual,
-                ttunequal, ttNumber, ttString, ttIdentifier,
+                ttMod, ttMul, ttLeft, ttRight, ttLessThanEqual,
+                ttLargerThanEqual, ttunequal, ttNumber, ttString, ttIdentifier,
                 ttComma, ttAnd, ttOr, ttXor, ttTrue, ttFalse, ttNot, ttif,
                 ttCase, ttPower, ttEOF); // keep ttEOF last
 
@@ -329,6 +329,17 @@ Type
     Procedure GetNodeValue(var Result : TFPExpressionResult); override;
   end;
 
+  { TFPModuloOperation }
+
+  TFPModuloOperation = Class(TMathOperation)
+  Public
+    Procedure Check; override;
+    Function AsString : string ; override;
+    Function NodeType : TResultType; override;
+    Procedure GetNodeValue(var Result : TFPExpressionResult); override;
+  end;
+
+
   { TFPPowerOperation }
   TFPPowerOperation = class(TMathOperation)
   public
@@ -567,6 +578,9 @@ Type
     Procedure Check; override;
     Constructor CreateFunction(AID : TFPExprIdentifierDef; Const Args : TExprArgumentArray); virtual;
     Destructor Destroy; override;
+    Procedure InitAggregate; override;
+    Procedure UpdateAggregate; override;
+    Function HasAggregate : Boolean; override;
     Property ArgumentNodes : TExprArgumentArray Read FArgumentNodes;
     Property ArgumentParams : TExprParameterArray Read FArgumentParams;
     Function AsString : String; override;
@@ -871,6 +885,37 @@ Procedure FreeBuiltIns;
 
 begin
   FreeAndNil(Builtins);
+end;
+
+{ TFPModuloOperation }
+
+procedure TFPModuloOperation.Check;
+begin
+  CheckNodeType(Left,[rtInteger]);
+  CheckNodeType(Right,[rtInteger]);
+  inherited Check;
+end;
+
+function TFPModuloOperation.AsString: string;
+begin
+  Result:=Left.AsString+' mod '+Right.asString;
+end;
+
+function TFPModuloOperation.NodeType: TResultType;
+begin
+  Result:=rtInteger;
+end;
+
+procedure TFPModuloOperation.GetNodeValue(var Result: TFPExpressionResult);
+
+Var
+  RRes : TFPExpressionResult;
+
+begin
+  Left.GetNodeValue(Result);
+  Right.GetNodeValue(RRes);
+  Result.ResInteger:=Result.ResInteger mod RRes.ResInteger;
+  Result.ResultType:=rtInteger;
 end;
 
 { TAggregateMax }
@@ -1240,6 +1285,8 @@ begin
     Result:=ttif
   else if (S='case') then
     Result:=ttcase
+  else if (S='mod') then
+    Result:=ttMod
   else
     Result:=ttIdentifier;
 end;
@@ -1620,7 +1667,7 @@ begin
 {$ifdef debugexpr}  Writeln('Level 4 ',TokenName(TokenType),': ',CurrentToken);{$endif debugexpr}
   Result:=Level5;
   try
-    while (TokenType in [ttMul,ttDiv]) do
+    while (TokenType in [ttMul,ttDiv,ttMod]) do
       begin
       tt:=TokenType;
       GetToken;
@@ -1629,6 +1676,7 @@ begin
       Case tt of
         ttMul : Result:=TFPMultiplyOperation.Create(Result,Right);
         ttDiv : Result:=TFPDivideOperation.Create(Result,Right);
+        ttMod : Result:=TFPModuloOperation.Create(Result,Right);
       end;
       end;
   Except
@@ -3382,6 +3430,19 @@ begin
     end;
 end;
 
+function TFPExprFunction.HasAggregate: Boolean;
+var
+  I: Integer;
+begin
+  Result := true;
+  if IsAggregate then
+    exit;
+  For I:=0 to Length(FArgumentNodes)-1 do
+    if FArgumentNodes[I].HasAggregate then
+      exit;
+  Result := false;
+end;
+
 procedure TFPExprFunction.Check;
 
 Var
@@ -3426,6 +3487,22 @@ begin
   For I:=0 to Length(FArgumentNodes)-1 do
     FreeAndNil(FArgumentNodes[I]);
   inherited Destroy;
+end;
+
+procedure TFPExprFunction.InitAggregate;
+var
+  I: Integer;
+begin
+  For I:=0 to Length(FArgumentNodes)-1 do
+    FArgumentNodes[i].InitAggregate;
+end;
+
+procedure TFPExprFunction.UpdateAggregate;
+var
+  I: Integer;
+begin
+  For I:=0 to Length(FArgumentNodes)-1 do
+    FArgumentNodes[i].UpdateAggregate;
 end;
 
 function TFPExprFunction.AsString: String;
@@ -3853,6 +3930,11 @@ begin
   Result.resDateTime:=StrToDateTimeDef(Args[0].resString,Args[1].resDateTime);
 end;
 
+procedure BuiltInFormatFloat(Var Result : TFPExpressionResult; Const Args : TExprParameterArray);
+begin
+  result.ResString := FormatFloat(Args[0].resString, Args[1].ResFloat);
+end;
+
 Procedure BuiltInBoolToStr(Var Result : TFPExpressionResult; Const Args : TExprParameterArray);
 
 begin
@@ -4008,6 +4090,7 @@ begin
       AddFunction(bcConversion,'strtotimedef','D','SD',@BuiltInStrToTimeDef);
       AddFunction(bcConversion,'strtodatetime','D','S',@BuiltInStrToDateTime);
       AddFunction(bcConversion,'strtodatetimedef','D','SD',@BuiltInStrToDateTimeDef);
+      AddFunction(bcConversion,'formatfloat','S','SF',@BuiltInFormatFloat);
       end;
     if bcAggregate in Categories then
       begin

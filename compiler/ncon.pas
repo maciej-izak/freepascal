@@ -27,9 +27,8 @@ interface
 
     uses
       globtype,widestr,constexp,
-      cclasses,
       node,
-      aasmbase,aasmtai,aasmdata,cpuinfo,globals,
+      aasmbase,cpuinfo,globals,
       symconst,symtype,symdef,symsym;
 
     type
@@ -61,7 +60,7 @@ interface
             _rangecheck determines if the value of the ordinal should be checked
             against the ranges of the type definition.
           }
-          constructor create(v : tconstexprint;def:tdef; _rangecheck : boolean);virtual;
+          constructor create(const v : tconstexprint;def:tdef; _rangecheck : boolean);virtual;
           constructor ppuload(t:tnodetype;ppufile:tcompilerppufile);override;
           procedure ppuwrite(ppufile:tcompilerppufile);override;
           procedure buildderefimpl;override;
@@ -141,6 +140,7 @@ interface
           function pass_1 : tnode;override;
           function pass_typecheck:tnode;override;
           function docompare(p: tnode) : boolean; override;
+          function elements : AInt;
        end;
        tsetconstnodeclass = class of tsetconstnode;
 
@@ -173,7 +173,7 @@ interface
        cguidconstnode : tguidconstnodeclass = tguidconstnode;
        cnilnode : tnilnodeclass=tnilnode;
 
-    function genintconstnode(v : TConstExprInt) : tordconstnode;
+    function genintconstnode(const v : TConstExprInt) : tordconstnode;
     function genenumnode(v : tenumsym) : tordconstnode;
 
     { some helper routines }
@@ -191,10 +191,10 @@ implementation
       cutils,
       verbose,systems,sysutils,
       defcmp,defutil,procinfo,
-      cpubase,cgbase,
+      cgbase,
       nld;
 
-    function genintconstnode(v : TConstExprInt) : tordconstnode;
+    function genintconstnode(const v : TConstExprInt) : tordconstnode;
       var
         htype : tdef;
       begin
@@ -486,7 +486,7 @@ implementation
                               TORDCONSTNODE
 *****************************************************************************}
 
-    constructor tordconstnode.create(v : tconstexprint;def:tdef;_rangecheck : boolean);
+    constructor tordconstnode.create(const v : tconstexprint;def:tdef;_rangecheck : boolean);
 
       begin
          inherited create(ordconstn);
@@ -1070,11 +1070,11 @@ implementation
         typedef:=tdef(typedefderef.resolve);
       end;
 
+    type
+       setbytes = array[0..31] of byte;
+       Psetbytes = ^setbytes;
 
     procedure tsetconstnode.adjustforsetbase;
-      type
-         setbytes = array[0..31] of byte;
-         Psetbytes = ^setbytes;
       var
         i, diff: longint;
       begin
@@ -1143,6 +1143,18 @@ implementation
       begin
         docompare:=(inherited docompare(p)) and
                    (value_set^=Tsetconstnode(p).value_set^);
+      end;
+
+
+    function tsetconstnode.elements : AInt;
+      var
+        i : longint;
+      begin
+        result:=0;
+        if not(assigned(value_set)) then
+          exit;
+        for i:=0 to tsetdef(resultdef).size-1 do
+          result:=result+ PopCnt(Psetbytes(value_set)^[i]);
       end;
 
 

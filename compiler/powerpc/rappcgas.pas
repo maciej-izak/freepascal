@@ -56,13 +56,13 @@ Unit rappcgas;
       { parser }
       procinfo,
       rabase,rautils,
-      cgbase,cgobj,cgppc
+      cgbase,cgobj,cgppc,paramgr
       ;
 
     procedure tppcattreader.ReadSym(oper : tppcoperand);
       var
          tempstr, mangledname : string;
-         typesize,l,k : aint;
+         typesize,l,k : tcgint;
       begin
         tempstr:=actasmpattern;
         Consume(AS_ID);
@@ -139,7 +139,7 @@ Unit rappcgas;
         end;
 
       var
-        l : aint;
+        l : tcgint;
         relsym: string;
         asmsymtyp: tasmsymtype;
         isflags: tindsymflags;
@@ -287,7 +287,7 @@ Unit rappcgas;
     Procedure tppcattreader.BuildOperand(oper : tppcoperand);
       var
         expr : string;
-        typesize,l : aint;
+        typesize,l : tcgint;
 
 
         procedure AddLabelOperand(hl:tasmlabel);
@@ -312,7 +312,7 @@ Unit rappcgas;
             hasdot  : boolean;
             l,
             toffset,
-            tsize   : aint;
+            tsize   : tcgint;
           begin
             if not(actasmtoken in [AS_DOT,AS_PLUS,AS_MINUS]) then
              exit;
@@ -340,8 +340,11 @@ Unit rappcgas;
                     will generate buggy code. Allow it only for explicit typecasting }
                   if hasdot and
                      (not oper.hastype) and
-                     (tabstractvarsym(oper.opr.localsym).owner.symtabletype=parasymtable) and
-                     (current_procinfo.procdef.proccalloption<>pocall_register) then
+                     (oper.opr.localsym.typ=paravarsym) and
+                     (not(po_assembler in current_procinfo.procdef.procoptions) or
+                      (tparavarsym(oper.opr.localsym).paraloc[calleeside].location^.loc<>LOC_REGISTER) or
+                      (not is_implicit_pointer_object_type(oper.opr.localsym.vardef) and
+                       not paramanager.push_addr_param(oper.opr.localsym.varspez,oper.opr.localsym.vardef,current_procinfo.procdef.proccalloption))) then
                     Message(asmr_e_cannot_access_field_directly_for_parameters);
                   inc(oper.opr.localsymofs,l)
                 end;
@@ -408,7 +411,7 @@ Unit rappcgas;
       var
         tempreg : tregister;
         hl : tasmlabel;
-        ofs : aint;
+        ofs : tcgint;
       Begin
         expr:='';
         case actasmtoken of

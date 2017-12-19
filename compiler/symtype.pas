@@ -33,7 +33,7 @@ interface
       { symtable }
       symconst,symbase,
       { aasm }
-      aasmbase,ppu,cpuinfo
+      aasmbase,ppu
       ;
 
     type
@@ -49,7 +49,7 @@ interface
                      TDef
 ************************************************}
 
-      tgeTSymtable = (gs_none,gs_record,gs_local,gs_para);
+      tgetsymtable = (gs_none,gs_record,gs_local,gs_para);
 
       tdef = class(TDefEntry)
         protected
@@ -84,7 +84,7 @@ interface
          function  structalignment:shortint;virtual;
          function  getvardef:longint;virtual;abstract;
          function  getparentdef:tdef;virtual;
-         function  geTSymtable(t:tgeTSymtable):TSymtable;virtual;
+         function  getsymtable(t:tgetsymtable):TSymtable;virtual;
          function  is_publishable:boolean;virtual;abstract;
          function  needs_inittable:boolean;virtual;abstract;
          function  needs_separate_initrtti:boolean;virtual;abstract;
@@ -175,10 +175,10 @@ interface
         function  empty:boolean;
         function getcopy: tpropaccesslist;
         procedure addsym(slt:tsltype;p:tsym);
-        procedure addconst(slt:tsltype;v:TConstExprInt;d:tdef);
+        procedure addconst(slt:tsltype;const v:TConstExprInt;d:tdef);
         procedure addtype(slt:tsltype;d:tdef);
         procedure addsymderef(slt:tsltype;d:tderef);
-        procedure addconstderef(slt:tsltype;v:TConstExprInt;d:tderef);
+        procedure addconstderef(slt:tsltype;const v:TConstExprInt;d:tderef);
         procedure addtypederef(slt:tsltype;d:tderef);
         procedure clear;
         procedure resolve;
@@ -193,14 +193,12 @@ interface
          procedure checkerror;
          procedure getguid(var g: tguid);
          function  getexprint:Tconstexprint;
-         function  getptruint:TConstPtrUInt;
          procedure getposinfo(var p:tfileposinfo);
          procedure getderef(var d:tderef);
          function  getpropaccesslist:tpropaccesslist;
          function  getasmsymbol:tasmsymbol;
          procedure putguid(const g: tguid);
          procedure putexprint(const v:tconstexprint);
-         procedure PutPtrUInt(v:TConstPtrUInt);
          procedure putposinfo(const p:tfileposinfo);
          procedure putderef(const d:tderef);
          procedure putpropaccesslist(p:tpropaccesslist);
@@ -364,7 +362,7 @@ implementation
       end;
 
 
-    function tdef.geTSymtable(t:tgeTSymtable):TSymtable;
+    function tdef.getsymtable(t:tgetsymtable):TSymtable;
       begin
         result:=nil;
       end;
@@ -609,7 +607,7 @@ implementation
       end;
 
 
-    procedure tpropaccesslist.addconst(slt:tsltype;v:TConstExprInt;d:tdef);
+    procedure tpropaccesslist.addconst(slt:tsltype;const v:TConstExprInt;d:tdef);
       var
         hp : ppropaccesslistitem;
       begin
@@ -651,7 +649,7 @@ implementation
       end;
 
 
-    procedure tpropaccesslist.addconstderef(slt:tsltype;v:TConstExprInt;d:tderef);
+    procedure tpropaccesslist.addconstderef(slt:tsltype;const v:TConstExprInt;d:tderef);
       begin
         addconst(slt,v,nil);
         lastsym^.valuedefderef:=d;
@@ -897,16 +895,6 @@ implementation
     end;
 
 
-    function tcompilerppufile.getPtrUInt:TConstPtrUInt;
-      begin
-        {$if sizeof(TConstPtrUInt)=8}
-          result:=tconstptruint(getint64);
-        {$else}
-          result:=TConstPtrUInt(getlongint);
-        {$endif}
-      end;
-
-
     procedure tcompilerppufile.getposinfo(var p:tfileposinfo);
       var
         info : byte;
@@ -1096,16 +1084,6 @@ implementation
       putbyte(byte(v.signed));
       putint64(v.svalue);
     end;
-
-
-    procedure tcompilerppufile.PutPtrUInt(v:TConstPtrUInt);
-      begin
-        {$if sizeof(TConstPtrUInt)=8}
-          putint64(int64(v));
-        {$else}
-          putlongint(longint(v));
-        {$endif}
-      end;
 
 
     procedure tcompilerppufile.putderef(const d:tderef);

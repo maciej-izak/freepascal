@@ -369,10 +369,14 @@ var S: PMemoryStream;
     Title: string;
     XDataOfs: word;
     XData: array[0..1024] of byte;
+
 procedure GetData(var B; Size: word);
 begin
-  Move(XData[XDataOfs],B,Size);
-  Inc(XDataOfs,Size);
+  if Size>0 Then
+    Begin
+      Move(XData[XDataOfs],B,Size);
+      Inc(XDataOfs,Size);
+    End;   
 end;
 procedure ProcessWindowInfo;
 var W: PWindow;
@@ -382,6 +386,9 @@ var W: PWindow;
     TP,TP2: TPoint;
     L: longint;
     R: TRect;
+    ZZ: byte;
+    Z: TRect;
+    Len : Byte;
 begin
   XDataOfs:=0;
   Desktop^.Lock;
@@ -389,8 +396,9 @@ begin
   case WI.HelpCtx of
     hcSourceWindow :
       begin
-        GetData(St[0],1);
-        GetData(St[1],ord(St[0]));
+        GetData(len,1);
+        SetLength(St,Len);
+        GetData(St[1],Len);
         W:=ITryToOpenFile(@WI.Bounds,St,0,0,false,false,true);
         if Assigned(W)=false then
           begin
@@ -532,6 +540,29 @@ begin
       end
     else
       W^.Hide;
+  ZZ:=0;
+  Desktop^.GetExtent(Z);
+  if R.A.Y>Z.B.Y-7 then
+    begin
+      R.A.Y:=Z.B.Y-7;
+      ZZ:=1;
+    end;
+  if R.A.X>Z.B.X-4 then
+    begin
+      R.A.X:=Z.B.X-4;
+      ZZ:=1;
+    end;
+  if R.A.Y<0 then
+    begin
+      R.A.Y:=0;
+      ZZ:=1;
+    end;
+  if R.A.X<0 then
+    begin
+      R.A.X:=0;
+      ZZ:=1;
+    end;
+  if ZZ<>0 then W^.MoveTo(R.A.X,R.A.Y);
   W^.Number:=WI.WinNb;
   Desktop^.Unlock;
 end;
@@ -554,7 +585,7 @@ begin
         S^.Read(WI,sizeof(WI));
         if S^.Status=stOK then
         begin
-          Title[0]:=chr(WI.TitleLen);
+          SetLength(Title,WI.TitleLen);
           S^.Read(Title[1],WI.TitleLen);
           if WI.ExtraDataSize>0 then
           S^.Read(XData,WI.ExtraDataSize);

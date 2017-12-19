@@ -368,11 +368,11 @@ end;
 
 var
    df:string;
-   d,m,y,ly:word;
+   d,m,y,ly:integer;
    n,i:longint;
    c:word;
    dp,mp,yp,which : Byte;
-   s1:string[4];
+   s1:string;
    values:array[0..3] of longint;
    LocalTime:tsystemtime;
    YearMoreThenTwoDigits : boolean;
@@ -446,6 +446,7 @@ begin
          // Check if the year has more then two digits (if n=yp, then we are evaluating the year.)
         if (n=yp) and (length(s1)>2) then YearMoreThenTwoDigits := True;
         val(s1, values[n], c);
+//        Writeln(s1,'->',values[n]);
         if c<>0 then
           begin
             FixErrorMsg(SInvalidDateFormat,s);
@@ -467,6 +468,12 @@ begin
   // Fill in values.
   getLocalTime(LocalTime);
   ly := LocalTime.Year;
+  for I:=1 to 3 do
+    if values[i]>high(Word) then
+      begin
+      errormsg:='Invalid date';
+      exit;
+      end;
   If N=3 then
    begin
      y:=values[yp];
@@ -500,6 +507,7 @@ begin
     if (defs.TwoDigitYearCenturyWindow > 0) and (Y < ly) then
       Inc(Y, 100);
     end;
+
   if not TryEncodeDate(y, m, d, result) then
     errormsg:='Invalid date';
 end;
@@ -903,13 +911,13 @@ var
   ResultLen: integer;
   ResultBuffer: array[0..255] of char;
   ResultCurrent: pchar;
-{$IFDEF MSWindows}
+{$if defined(win32) or defined(win64)}
   isEnable_E_Format : Boolean;
   isEnable_G_Format : Boolean;
   eastasiainited : boolean;
-{$ENDIF MSWindows}
+{$endif win32 or win64}
 
-{$IFDEF MSWindows}
+{$if defined(win32) or defined(win64)}
   procedure InitEastAsia;
   var     ALCID : LCID;
          PriLangID , SubLangID : Word;
@@ -940,7 +948,7 @@ var
                   );
     eastasiainited :=true;
   end;
-{$ENDIF MSWindows}
+{$endif win32 or win64}
 
   procedure StoreStr(Str: PChar; Len: Integer);
   begin
@@ -1173,7 +1181,7 @@ var
                    StoreString(' ');
                    StoreFormat(FormatSettings.LongTimeFormat, Nesting+1, True);
                  end;
-{$IFDEF MSWindows}
+{$if defined(win32) or defined(win64)}
             'E':
                begin
                  if not Eastasiainited then InitEastAsia;
@@ -1202,7 +1210,7 @@ var
 		 prevlasttoken := lastformattoken;
                  lastformattoken:=token;
                end;
-{$ENDIF MSWindows}
+{$endif win32 or win64}
           end;
 	  prevlasttoken := lastformattoken;
           lastformattoken := token;
@@ -1215,9 +1223,9 @@ var
   end;
 
 begin
-{$ifdef MSWindows}
+{$if defined(win32) or defined(win64)}
   eastasiainited:=false;
-{$endif MSWindows}
+{$endif win32 or win64}
   DecodeDateFully(DateTime, Year, Month, Day, DayOfWeek);
   DecodeTime(DateTime, Hour, Minute, Second, MilliSecond);
   ResultLen := 0;
@@ -1433,7 +1441,12 @@ end;
 
 function StrToDateTimeDef(const S: ShortString; const Defvalue : TDateTime): TDateTime;
 begin
-  if not TryStrToDateTime(s,Result) Then
+  Result:=StrToDateTimeDef(S,DefValue,DefaultFormatSettings);
+end;
+
+function StrToDateTimeDef(const S: AnsiString; const Defvalue : TDateTime; const FormatSettings: TFormatSettings): TDateTime;
+begin
+  if not TryStrToDateTime(s,Result,FormatSettings) Then
     result:=defvalue;
 end;
 

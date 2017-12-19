@@ -675,15 +675,15 @@ implementation
 
     uses
        globals,systems,
-       fmodule,export,
+       fmodule,
        verbose,defutil,paramgr,
        symtable,
        nbas,ncon,nld,ncgrtti,pass_2,
-       cpuinfo,cgobj,cutils,procinfo,
+       cgobj,cutils,procinfo,
 {$ifdef x86}
        cgx86,
 {$endif x86}
-       ncgutil,ngenutil;
+       ncgutil;
 
 
     procedure destroy_hlcodegen;
@@ -1052,7 +1052,7 @@ implementation
             LOC_REFERENCE,LOC_CREFERENCE:
               begin
                  if assigned(location^.next) then
-                   internalerror(2010052906);
+                   internalerror(2017073001);
                  reference_reset_base(ref,voidstackpointertype,location^.reference.index,location^.reference.offset,newalignment(cgpara.alignment,cgpara.intsize-sizeleft),[]);
                  if (def_cgsize(size)<>OS_NO) and
                     (size.size=sizeleft) and
@@ -1281,25 +1281,32 @@ implementation
     begin
       subsetregdef:=cgsize_orddef(sreg.subsetregsize);
       tmpreg:=getintregister(list,subsetregdef);
-      if is_signed(subsetsize) then
+      { insert shifts only if it changes bits being accessed later on }
+      if (sreg.startbit<>0) or
+        (tosize.size*8>sreg.bitlen) then
         begin
-          { sign extend in case the value has a bitsize mod 8 <> 0 }
-          { both instructions will be optimized away if not        }
-          a_op_const_reg_reg(list,OP_SHL,subsetregdef,(tcgsize2size[sreg.subsetregsize]*8)-sreg.startbit-sreg.bitlen,sreg.subsetreg,tmpreg);
-          a_op_const_reg(list,OP_SAR,subsetregdef,(tcgsize2size[sreg.subsetregsize]*8)-sreg.bitlen,tmpreg);
+          if is_signed(subsetsize) then
+            begin
+              { sign extend in case the value has a bitsize mod 8 <> 0 }
+              { both instructions will be optimized away if not        }
+              a_op_const_reg_reg(list,OP_SHL,subsetregdef,(tcgsize2size[sreg.subsetregsize]*8)-sreg.startbit-sreg.bitlen,sreg.subsetreg,tmpreg);
+              a_op_const_reg(list,OP_SAR,subsetregdef,(tcgsize2size[sreg.subsetregsize]*8)-sreg.bitlen,tmpreg);
+            end
+          else
+            begin
+              a_op_const_reg_reg(list,OP_SHR,subsetregdef,sreg.startbit,sreg.subsetreg,tmpreg);
+              stopbit:=sreg.startbit+sreg.bitlen;
+              // on x86(64), 1 shl 32(64) = 1 instead of 0
+              // use aword to prevent overflow with 1 shl 31
+              if (stopbit-sreg.startbit<>AIntBits) then
+                bitmask:=(aword(1) shl (stopbit-sreg.startbit))-1
+              else
+                bitmask:=high(aword);
+              a_op_const_reg(list,OP_AND,subsetregdef,tcgint(bitmask),tmpreg);
+            end;
         end
       else
-        begin
-          a_op_const_reg_reg(list,OP_SHR,subsetregdef,sreg.startbit,sreg.subsetreg,tmpreg);
-          stopbit:=sreg.startbit+sreg.bitlen;
-          // on x86(64), 1 shl 32(64) = 1 instead of 0
-          // use aword to prevent overflow with 1 shl 31
-          if (stopbit-sreg.startbit<>AIntBits) then
-            bitmask:=(aword(1) shl (stopbit-sreg.startbit))-1
-          else
-            bitmask:=high(aword);
-          a_op_const_reg(list,OP_AND,subsetregdef,tcgint(bitmask),tmpreg);
-        end;
+        a_load_reg_reg(list,subsetregdef,subsetregdef,sreg.subsetreg,tmpreg);
       subsetsizereg:=getintregister(list,subsetsize);
       a_load_reg_reg(list,subsetregdef,subsetsize,tmpreg,subsetsizereg);
       a_load_reg_reg(list,subsetsize,tosize,subsetsizereg,destreg);
@@ -4535,12 +4542,11 @@ implementation
 
   procedure thlcgobj.gen_initialize_code(list: TAsmList);
     begin
-      { initialize register variables }
+      { initialize global register variables }
       case current_procinfo.procdef.proctypeoption of
-         potype_unitinit:
-           TSymtable(current_module.localsymtable).SymList.ForEachCall(@initialize_regvars,list);
-         potype_proginit:
-           TSymtable(current_module.localsymtable).SymList.ForEachCall(@initialize_regvars,list);
+        potype_unitinit,
+        potype_proginit:
+          TSymtable(current_module.localsymtable).SymList.ForEachCall(@initialize_regvars,list);
       end;
 
       { initialises temp. ansi/wide string data }

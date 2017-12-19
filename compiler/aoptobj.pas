@@ -350,6 +350,11 @@ Unit AoptObj;
         function PeepHoleOptPass1Cpu(var p: tai): boolean; virtual;
         function PeepHoleOptPass2Cpu(var p: tai): boolean; virtual;
         function PostPeepHoleOptsCpu(var p: tai): boolean; virtual;
+
+        { insert debug comments about which registers are read and written by
+          each instruction. Useful for debugging the InstructionLoadsFromReg and
+          other similar functions. }
+        procedure Debug_InsertInstrRegisterDependencyInfo; virtual;
       End;
 
        Function ArrayRefsEq(const r1, r2: TReference): Boolean;
@@ -362,7 +367,7 @@ Unit AoptObj;
       cutils,
       globals,
       verbose,
-      procinfo;
+      aoptutils;
 
 
     function JumpTargetOp(ai: taicpu): poper; inline;
@@ -370,9 +375,14 @@ Unit AoptObj;
 {$if defined(MIPS)}
         { MIPS branches can have 1,2 or 3 operands, target label is the last one. }
         result:=ai.oper[ai.ops-1];
+{$elseif defined(SPARC64)}
+        if ai.ops=2 then
+          result:=ai.oper[1]
+        else
+          result:=ai.oper[0];
 {$else MIPS}
         result:=ai.oper[0];
-{$endif MIPS}
+{$endif}
       end;
 
 
@@ -1044,9 +1054,9 @@ Unit AoptObj;
         Repeat
           While Assigned(StartPai) And
                 ((StartPai.typ in (SkipInstr - [ait_regAlloc])) Or
-{$if defined(MIPS) or defined(SPARC)}
+{$ifdef cpudelayslot}
                 ((startpai.typ=ait_instruction) and (taicpu(startpai).opcode=A_NOP)) or
-{$endif MIPS or SPARC}
+{$endif cpudelayslot}
                  ((StartPai.typ = ait_label) and
                   Not(Tai_Label(StartPai).labsym.Is_Used))) Do
             StartPai := Tai(StartPai.Next);
@@ -1139,25 +1149,6 @@ Unit AoptObj;
       begin
          Result:=assigned(FindRegDealloc(reg,tai(p.Next))) or
            RegLoadedWithNewValue(reg,p);
-      end;
-
-
-    function SkipLabels(hp: tai; var hp2: tai): boolean;
-      {skips all labels and returns the next "real" instruction}
-      begin
-        while assigned(hp.next) and
-              (tai(hp.next).typ in SkipInstr + [ait_label,ait_align]) Do
-          hp := tai(hp.next);
-        if assigned(hp.next) then
-          begin
-            SkipLabels := True;
-            hp2 := tai(hp.next)
-          end
-        else
-          begin
-            hp2 := hp;
-            SkipLabels := False
-          end;
       end;
 
 
@@ -1412,10 +1403,10 @@ Unit AoptObj;
                                     no-line-info-start/end etc }
                                   if hp1.typ<>ait_marker then
                                     begin
-{$if defined(SPARC) or defined(MIPS) }
+{$ifdef cpudelayslot}
                                       if (hp1.typ=ait_instruction) and (taicpu(hp1).is_jmp) then
                                         RemoveDelaySlot(hp1);
-{$endif SPARC or MIPS }
+{$endif cpudelayslot}
                                       asml.remove(hp1);
                                       hp1.free;
                                       stoploop:=false;
@@ -1435,9 +1426,9 @@ Unit AoptObj;
                                 (p<>blockstart) then
                               begin
                                 tasmlabel(JumpTargetOp(taicpu(p))^.ref^.symbol).decrefs;
-{$if defined(SPARC) or defined(MIPS)}
+{$ifdef cpudelayslot}
                                 RemoveDelaySlot(p);
-{$endif SPARC or MIPS}
+{$endif cpudelayslot}
                                 hp2:=tai(hp1.next);
                                 asml.remove(p);
                                 p.free;
@@ -1482,9 +1473,9 @@ Unit AoptObj;
 
                                          taicpu(p).oper[0]^.ref^.symbol.increfs;
                                         }
-{$if defined(SPARC) or defined(MIPS)}
+{$ifdef cpudelayslot}
                                         RemoveDelaySlot(hp1);
-{$endif SPARC or MIPS}
+{$endif cpudelayslot}
                                         asml.remove(hp1);
                                         hp1.free;
                                         stoploop:=false;
@@ -1570,6 +1561,55 @@ Unit AoptObj;
     function TAOptObj.PostPeepHoleOptsCpu(var p: tai): boolean;
       begin
         result := false;
+      end;
+
+
+    procedure TAOptObj.Debug_InsertInstrRegisterDependencyInfo;
+      var
+        p: tai;
+        ri: tregisterindex;
+        reg: TRegister;
+        commentstr: AnsiString;
+        registers_found: Boolean;
+      begin
+        p:=tai(AsmL.First);
+        while (p<>AsmL.Last) Do
+          begin
+            if p.typ=ait_instruction then
+              begin
+{$ifdef x86}
+                taicpu(p).SetOperandOrder(op_att);
+{$endif x86}
+                commentstr:='Instruction reads';
+                registers_found:=false;
+                for ri in tregisterindex do
+                  begin
+                    reg:=regnumber_table[ri];
+                    if (reg<>NR_NO) and InstructionLoadsFromReg(reg,p) then
+                      begin
+                        commentstr:=commentstr+' '+std_regname(reg);
+                        registers_found:=true;
+                      end;
+                  end;
+                if not registers_found then
+                  commentstr:=commentstr+' no registers';
+                commentstr:=commentstr+' and writes new values in';
+                registers_found:=false;
+                for ri in tregisterindex do
+                  begin
+                    reg:=regnumber_table[ri];
+                    if (reg<>NR_NO) and RegLoadedWithNewValue(reg,p) then
+                      begin
+                        commentstr:=commentstr+' '+std_regname(reg);
+                        registers_found:=true;
+                      end;
+                  end;
+                if not registers_found then
+                  commentstr:=commentstr+' no registers';
+                AsmL.InsertAfter(tai_comment.Create(strpnew(commentstr)),p);
+              end;
+            p:=tai(p.next);
+          end;
       end;
 
 End.

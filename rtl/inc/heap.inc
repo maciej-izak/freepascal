@@ -227,8 +227,8 @@ var
 {$ifdef FPC_HAS_FEATURE_THREADING}
   heap_lock : trtlcriticalsection;
   heap_lock_use : integer;
-{$endif}
 threadvar
+{$endif}
   freelists : tfreelists;
 
 {$ifdef DUMP_MEM_USAGE}
@@ -238,7 +238,11 @@ const
   sizeusagesize = sizeusageindex shl sizeusageshift;
 type
   tsizeusagelist = array[0..sizeusageindex] of longint;
+{$ifdef FPC_HAS_FEATURE_THREADING}
 threadvar
+{$else}
+var
+{$endif}
   sizeusage, maxsizeusage: tsizeusagelist;
 {$endif}
 
@@ -1437,7 +1441,7 @@ begin
    begin
      if p<>nil then
       begin
-        MemoryManager.FreeMem(p);
+        SysFreeMem(p);
         p := nil;
       end;
    end
@@ -1445,7 +1449,7 @@ begin
    { Allocate a new block? }
    if p=nil then
     begin
-      p := MemoryManager.GetMem(size);
+      p := SysGetMem(size);
     end
   else
    begin
@@ -1471,7 +1475,7 @@ begin
       minsize:=oldsize;
       if newsize < minsize then
         minsize := newsize;
-      p2 := MemoryManager.GetMem(newsize);
+      p2 := SysGetMem(newsize);
       if p2<>nil then
         Move(p^,p2^,minsize);
       MemoryManager.FreeMem(p);

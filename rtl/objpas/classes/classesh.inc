@@ -28,8 +28,8 @@ type
    TRect=Types.TRect;
    TSmallPoint=Types.TSmallPoint;
 
-{$ifndef windows}
-   HMODULE = ptrint; // hmodule is handle on windows. Pointer eq.
+{$ifndef FPC_HAS_FEATURE_DYNLIBS}
+   HMODULE = ptrint; 
 {$else}
    HModule = System.HModule;
 {$endif}
@@ -100,7 +100,8 @@ type
     ssLeft, ssRight, ssMiddle, ssDouble,
     // Extra additions
     ssMeta, ssSuper, ssHyper, ssAltGr, ssCaps, ssNum,
-    ssScroll,ssTriple,ssQuad,ssExtra1,ssExtra2);
+    ssScroll,ssTriple,ssQuad,ssExtra1,ssExtra2,
+    ssScrollH);
 
 {$packset 1}
   TShiftState = set of TShiftStateEnum;
@@ -390,7 +391,7 @@ type
       { functions and properties to match TBits class }
       procedure SetBit(bit : longint; value : Boolean);
       procedure SetSize(value : longint);
-   Protected   
+   Protected
       procedure CheckBitIndex (Bit : longint;CurrentSize : Boolean);
    public
       { Public declarations }
@@ -669,9 +670,9 @@ type
     function AddObject(const Fmt: string; Args : Array of const; AObject: TObject): Integer; overload;
     procedure Append(const S: string);
     procedure AddStrings(TheStrings: TStrings); overload; virtual;
-    procedure AddStrings(TheStrings: TStrings; ClearFirst : Boolean); overload; 
+    procedure AddStrings(TheStrings: TStrings; ClearFirst : Boolean); overload;
     procedure AddStrings(const TheStrings: array of string); overload; virtual;
-    procedure AddStrings(const TheStrings: array of string; ClearFirst : Boolean); overload; 
+    procedure AddStrings(const TheStrings: array of string; ClearFirst : Boolean); overload;
     Procedure AddText(Const S : String); virtual;
     procedure Assign(Source: TPersistent); override;
     procedure BeginUpdate;
@@ -1012,28 +1013,39 @@ type
   protected
     function Realloc(var NewCapacity: PtrInt): Pointer; override;
   public
-    constructor Create(const ABytes: TBytes); overload;
+    constructor Create(const ABytes: TBytes); virtual; overload;
     property Bytes: TBytes read FBytes;
   end;
 
 { TStringStream }
 
-  TStringStream = class(TStream)
+  TStringStream = class(TBytesStream)
   private
-    FDataString: string;
-    FPosition: Integer;
+    FEncoding: TEncoding;
+    FOwnsEncoding : Boolean;
+    function GetDataString: string;
+    function GetUnicodeDataString: String;
   protected
-    Function GetSize : Int64; Override;
-    function GetPosition: Int64; Override;
-    procedure SetSize(NewSize: Longint); override;
   public
-    constructor Create(const AString: string = '');
-    function Read(var Buffer; Count: Longint): Longint; override;
+    constructor Create(const ABytes: TBytes); override; overload;
+    constructor Create(const AString: string = ''); overload;
+    constructor CreateRaw(const AString: RawByteString); overload;
+    constructor Create(const AString: string; AEncoding: TEncoding; AOwnsEncoding: Boolean = True); overload;
+    constructor Create(const AString: string; ACodePage: Integer); overload;
+    // UnicodeString versions
+    constructor Create(const AString: UnicodeString); overload;
+    constructor Create(const AString: UnicodeString; AEncoding: TEncoding; AOwnsEncoding: Boolean = True); overload;
+    constructor Create(const AString: UnicodeString; ACodePage: Integer); overload;
+    function ReadUnicodeString(Count: Longint): UnicodeString;
+    procedure WriteUnicodeString(const AString: UnicodeString);
+    function ReadAnsiString(Count: Longint): AnsiString;
+    procedure WriteAnsiString(const AString: AnsiString);
     function ReadString(Count: Longint): string;
-    function Seek(Offset: Longint; Origin: Word): Longint; override;
-    function Write(const Buffer; Count: Longint): Longint; override;
     procedure WriteString(const AString: string);
-    property DataString: string read FDataString;
+    property DataString: string read GetDataString;
+    Property UnicodeDataString : String Read GetUnicodeDataString;
+    Property OwnsEncoding : Boolean Read FOwnsEncoding;
+    Property Encoding : TEncoding Read FEncoding;
   end;
 
 { TResourceStream }
@@ -1077,14 +1089,14 @@ type
     destructor Destroy; override;
     function Read(pv: Pointer; cb: DWORD; pcbRead: PDWORD): HResult; virtual; stdcall;
     function Write(pv: Pointer; cb: DWORD; pcbWritten: PDWORD): HResult; virtual; stdcall;
-    function Seek(dlibMove: LargeUint; dwOrigin: Longint; out libNewPosition: LargeUint): HResult; virtual; stdcall;
+    function Seek(dlibMove: LargeInt; dwOrigin: DWORD; out libNewPosition: LargeUint): HResult; virtual; stdcall;
     function SetSize(libNewSize: LargeUint): HResult; virtual; stdcall;
     function CopyTo(stm: IStream; cb: LargeUint; out cbRead: LargeUint; out cbWritten: LargeUint): HResult; virtual; stdcall;
-    function Commit(grfCommitFlags: Longint): HResult; virtual; stdcall;
+    function Commit(grfCommitFlags: DWORD): HResult; virtual; stdcall;
     function Revert: HResult; virtual; stdcall;
-    function LockRegion(libOffset: LargeUint; cb: LargeUint; dwLockType: Longint): HResult; virtual; stdcall;
-    function UnlockRegion(libOffset: LargeUint; cb: LargeUint; dwLockType: Longint): HResult; virtual; stdcall;
-    function Stat(out statstg: TStatStg; grfStatFlag: Longint): HResult; virtual; stdcall;
+    function LockRegion(libOffset: LargeUint; cb: LargeUint; dwLockType: DWORD): HResult; virtual; stdcall;
+    function UnlockRegion(libOffset: LargeUint; cb: LargeUint; dwLockType: DWORD): HResult; virtual; stdcall;
+    function Stat(out statstg: TStatStg; grfStatFlag: DWORD): HResult; virtual; stdcall;
     function Clone(out stm: IStream): HResult; virtual; stdcall;
     property Stream: TStream read FStream;
     property StreamOwnership: TStreamOwnership read FOwnership write FOwnership;
@@ -1579,13 +1591,13 @@ type
 
 { TThread }
   TThread = Class;
-  
+
   EThread = class(Exception);
   EThreadExternalException = class(EThread);
   EThreadDestroyCalled = class(EThread);
   TSynchronizeProcVar = procedure;
   TThreadMethod = procedure of object;
-  
+
   TThreadReportStatus = Procedure(Const status : String) of Object;
 
   TThreadStatusNotifyEvent = Procedure(Sender : TThread; Const status : String) of Object;
@@ -1596,9 +1608,11 @@ type
   TThreadStatusNotifyCallBack = Procedure(Sender : TThread; AData : Pointer; Const status : String);
   TThreadExecuteCallBack = Procedure(AData : Pointer);
   TThreadExecuteStatusCallBack = Procedure(AData : Pointer; ReportStatus : TThreadReportStatus);
-  
+
   TThreadPriority = (tpIdle, tpLowest, tpLower, tpNormal, tpHigher, tpHighest,
     tpTimeCritical);
+
+
 
   TThread = class
   private type
@@ -1635,6 +1649,7 @@ type
     FSynchronizeEntry: PThreadQueueEntry;
     class function GetCurrentThread: TThread; static;
     class function GetIsSingleProcessor: Boolean; static; inline;
+    class procedure InternalQueue(aThread: TThread; aMethod: TThreadMethod; aQueueIfMain: Boolean); static;
     procedure CallOnTerminate;
     function GetPriority: TThreadPriority;
     procedure SetPriority(Value: TThreadPriority);
@@ -1652,6 +1667,7 @@ type
     procedure Execute; virtual; abstract;
     procedure Synchronize(AMethod: TThreadMethod);
     procedure Queue(aMethod: TThreadMethod);
+    procedure ForceQueue(aMethod: TThreadMethod); inline;
     property ReturnValue: Integer read FReturnValue write FReturnValue;
     property Terminated: Boolean read FTerminated;
 {$if defined(windows) or defined(OS2)}
@@ -1678,6 +1694,10 @@ type
   private
     FInitialSuspended: boolean;
 {$endif}
+{$ifdef beos}
+    FSem : pointer;
+    FSuspendedExternal: boolean;
+{$endif}
   public
     constructor Create(CreateSuspended: Boolean;
                        const StackSize: SizeUInt = DefaultStackSize);
@@ -1696,6 +1716,7 @@ type
     class function CheckTerminated: Boolean; static;
     class procedure Synchronize(AThread: TThread; AMethod: TThreadMethod);
     class procedure Queue(aThread: TThread; aMethod: TThreadMethod); static;
+    class procedure ForceQueue(aThread: TThread; aMethod: TThreadMethod); inline; static;
     class procedure RemoveQueuedEvents(aThread: TThread; aMethod: TThreadMethod); static;
     class procedure RemoveQueuedEvents(aMethod: TThreadMethod); static;
     class procedure RemoveQueuedEvents(aThread: TThread); static;
@@ -2024,9 +2045,12 @@ type
   private
     FDPos: TPoint;
     FDSize: TPoint;
+    FDPPI: Integer;
     FOnCreate: TNotifyEvent;
     FOnDestroy: TNotifyEvent;
     FOldOrder : Boolean;
+    Procedure ReadP(Reader: TReader);
+    Procedure WriteP(Writer: TWriter);
     Procedure ReadT(Reader: TReader);
     Procedure WriteT(Writer: TWriter);
     Procedure ReadL(Reader: TReader);
@@ -2051,6 +2075,7 @@ type
     Procedure BeforeDestruction; override;
     property DesignOffset: TPoint read FDPos write FDPos;
     property DesignSize: TPoint read FDSize write FDSize;
+    property DesignPPI: Integer read FDPPI write FDPPI;
   published
     property OnCreate: TNotifyEvent read FOnCreate write FOnCreate;
     property OnDestroy: TNotifyEvent read FOnDestroy write FOnDestroy;

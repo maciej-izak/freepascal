@@ -33,17 +33,16 @@ implementation
 
     uses
        SysUtils,
-       globtype,version,systems,tokens,
+       globtype,systems,tokens,
        cutils,cfileutl,cclasses,comphook,
        globals,verbose,fmodule,finput,fppu,globstat,fpcp,fpkg,
        symconst,symbase,symtype,symdef,symsym,symtable,symcreat,
        wpoinfo,
-       aasmtai,aasmdata,aasmcpu,aasmbase,
-       cgbase,cgobj,ngenutil,
+       aasmtai,aasmdata,aasmbase,aasmcpu,
+       cgbase,ngenutil,
        nbas,nutils,ncgutil,
-       link,assemble,import,export,gendef,entfile,ppu,comprsrc,dbgbase,
+       link,assemble,import,export,gendef,ppu,comprsrc,dbgbase,
        cresstr,procinfo,
-       pexports,
        objcgutl,
        pkgutil,
        wpobase,
@@ -280,7 +279,7 @@ implementation
       end;
 
 
-    procedure loaddefaultunits;
+    procedure loadsystemunit;
       begin
         { we are going to rebuild the symtablestack, clear it first }
         symtablestack.clear;
@@ -313,7 +312,11 @@ implementation
           prevent crashes when accessing .owner }
         generrorsym.owner:=systemunit;
         generrordef.owner:=systemunit;
+      end;
 
+
+    procedure loaddefaultunits;
+      begin
         { Units only required for main module }
         if not(current_module.is_unit) then
          begin
@@ -668,12 +671,12 @@ implementation
     { Insert _GLOBAL_OFFSET_TABLE_ symbol if system uses it }
 
     procedure maybe_load_got;
-{$if defined(i386) or defined (sparc)}
+{$if defined(i386) or defined (sparcgen)}
        var
          gotvarsym : tstaticvarsym;
-{$endif i386 or sparc}
+{$endif i386 or sparcgen}
       begin
-{$if defined(i386) or defined(sparc)}
+{$if defined(i386) or defined(sparcgen)}
          if (cs_create_pic in current_settings.moduleswitches) and
             (tf_pic_uses_got in target_info.flags) then
            begin
@@ -686,7 +689,7 @@ implementation
              gotvarsym.varstate:=vs_read;
              gotvarsym.refs:=1;
            end;
-{$endif i386 or sparc}
+{$endif i386 or sparcgen}
       end;
 
     function gen_implicit_initfinal(flag:word;st:TSymtable):tcgprocinfo;
@@ -695,12 +698,12 @@ implementation
         case flag of
           uf_init :
             begin
-              result:=create_main_proc(make_mangledname('',current_module.localsymtable,'init_implicit'),potype_unitinit,st);
+              result:=create_main_proc(make_mangledname('',current_module.localsymtable,'init_implicit$'),potype_unitinit,st);
               result.procdef.aliasnames.insert(make_mangledname('INIT$',current_module.localsymtable,''));
             end;
           uf_finalize :
             begin
-              result:=create_main_proc(make_mangledname('',current_module.localsymtable,'finalize_implicit'),potype_unitfinalize,st);
+              result:=create_main_proc(make_mangledname('',current_module.localsymtable,'finalize_implicit$'),potype_unitfinalize,st);
               result.procdef.aliasnames.insert(make_mangledname('FINALIZE$',current_module.localsymtable,''));
               if (not current_module.is_unit) then
                 result.procdef.aliasnames.insert('PASCALFINALIZE');
@@ -816,6 +819,7 @@ type
          finishstate:pfinishstate;
          globalstate:pglobalstate;
          consume_semicolon_after_uses:boolean;
+         feature : tfeature;
       begin
          result:=true;
 
@@ -885,6 +889,23 @@ type
            read, all following directives are parsed as well }
          setupglobalswitches;
 
+         { generate now the global symboltable,
+           define first as local to overcome dependency conflicts }
+         current_module.localsymtable:=tglobalsymtable.create(current_module.modulename^,current_module.moduleid);
+
+         { insert unitsym of this unit to prevent other units having
+           the same name }
+         tabstractunitsymtable(current_module.localsymtable).insertunit(cunitsym.create(current_module.realmodulename^,current_module));
+
+         { load default system unit, it must be loaded before interface is parsed
+           else we cannot use e.g. feature switches before the next real token }
+         loadsystemunit;
+
+         { system unit is loaded, now insert feature defines }
+         for feature:=low(tfeature) to high(tfeature) do
+           if feature in features then
+             def_system_macro('FPC_HAS_FEATURE_'+featurestr[feature]);
+
          consume(_INTERFACE);
 
          { global switches are read, so further changes aren't allowed  }
@@ -905,16 +926,9 @@ type
 
          parse_only:=true;
 
-         { generate now the global symboltable,
-           define first as local to overcome dependency conflicts }
-         current_module.localsymtable:=tglobalsymtable.create(current_module.modulename^,current_module.moduleid);
-
-         { insert unitsym of this unit to prevent other units having
-           the same name }
-         tabstractunitsymtable(current_module.localsymtable).insertunit(cunitsym.create(current_module.realmodulename^,current_module));
-
-         { load default units, like the system unit }
-         loaddefaultunits;
+         { load default units, like language mode units }
+         if not(cs_compilesystem in current_settings.moduleswitches) then
+           loaddefaultunits;
 
          { insert qualifier for the system unit (allows system.writeln) }
          if not(cs_compilesystem in current_settings.moduleswitches) and
@@ -1036,7 +1050,7 @@ type
                internalerror(200212285);
 
              { Compile the unit }
-             init_procinfo:=create_main_proc(make_mangledname('',current_module.localsymtable,'init'),potype_unitinit,current_module.localsymtable);
+             init_procinfo:=create_main_proc(make_mangledname('',current_module.localsymtable,'init$'),potype_unitinit,current_module.localsymtable);
              init_procinfo.procdef.aliasnames.insert(make_mangledname('INIT$',current_module.localsymtable,''));
              init_procinfo.parse_body;
              { save file pos for debuginfo }
@@ -1046,7 +1060,7 @@ type
              if token=_FINALIZATION then
                begin
                  { Compile the finalize }
-                 finalize_procinfo:=create_main_proc(make_mangledname('',current_module.localsymtable,'finalize'),potype_unitfinalize,current_module.localsymtable);
+                 finalize_procinfo:=create_main_proc(make_mangledname('',current_module.localsymtable,'finalize$'),potype_unitfinalize,current_module.localsymtable);
                  finalize_procinfo.procdef.aliasnames.insert(make_mangledname('FINALIZE$',current_module.localsymtable,''));
                  finalize_procinfo.parse_body;
                end
@@ -1430,6 +1444,7 @@ type
         uu : tused_unit;
         module_name: ansistring;
         pentry: ppackageentry;
+        feature : tfeature;
       begin
          Status.IsPackage:=true;
          Status.IsExe:=true;
@@ -1551,6 +1566,10 @@ type
              AddUnit('system',false);
              systemunit:=tglobalsymtable(symtablestack.top);
              load_intern_types;
+             { system unit is loaded, now insert feature defines }
+             for feature:=low(tfeature) to high(tfeature) do
+               if feature in features then
+                 def_system_macro('FPC_HAS_FEATURE_'+featurestr[feature]);
            end;
 
          {Load the units used by the program we compile.}
@@ -1864,6 +1883,7 @@ type
          sc : array of TProgramParam;
          i : Longint;
          sysinitmod: tmodule;
+         feature : tfeature;
       begin
          Status.IsLibrary:=IsLibrary;
          Status.IsPackage:=false;
@@ -2007,7 +2027,15 @@ type
            of the program                                              }
          current_module.localsymtable:=tstaticsymtable.create(current_module.modulename^,current_module.moduleid);
 
-         { load standard units (system,objpas,profile unit) }
+         { load system unit }
+         loadsystemunit;
+
+         { system unit is loaded, now insert feature defines }
+         for feature:=low(tfeature) to high(tfeature) do
+           if feature in features then
+             def_system_macro('FPC_HAS_FEATURE_'+featurestr[feature]);
+
+         { load standard units, e.g objpas,profile unit }
          loaddefaultunits;
 
          { Load units provided on the command line }
@@ -2113,7 +2141,7 @@ type
          if token=_FINALIZATION then
            begin
               { Parse the finalize }
-              finalize_procinfo:=create_main_proc(make_mangledname('',current_module.localsymtable,'finalize'),potype_unitfinalize,current_module.localsymtable);
+              finalize_procinfo:=create_main_proc(make_mangledname('',current_module.localsymtable,'finalize$'),potype_unitfinalize,current_module.localsymtable);
               finalize_procinfo.procdef.aliasnames.insert(make_mangledname('FINALIZE$',current_module.localsymtable,''));
               finalize_procinfo.procdef.aliasnames.insert('PASCALFINALIZE');
               finalize_procinfo.parse_body;

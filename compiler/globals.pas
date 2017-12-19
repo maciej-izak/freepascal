@@ -54,7 +54,7 @@ interface
          [m_delphi,m_class,m_objpas,m_result,m_string_pchar,
           m_pointer_2_procedure,m_autoderef,m_tp_procvar,m_initfinal,m_default_ansistring,
           m_out,m_default_para,m_duplicate_names,m_hintdirective,
-          m_property,m_default_inline,m_except,m_advanced_records,m_type_helpers];
+          m_property,m_default_inline,m_except,m_advanced_records];
        delphiunicodemodeswitches = delphimodeswitches + [m_systemcodepage,m_default_unicodestring];
        fpcmodeswitches =
          [m_fpc,m_string_pchar,m_nested_comment,m_repeat_forward,
@@ -287,6 +287,9 @@ interface
        description   : string;
        SetPEFlagsSetExplicity,
        SetPEOptFlagsSetExplicity,
+       SetPEOSVersionSetExplicitely,
+       SetPESubSysVersionSetExplicitely,
+       SetPEUserVersionSetExplicitely,
        ImageBaseSetExplicity,
        MinStackSizeSetExplicity,
        MaxStackSizeSetExplicity,
@@ -296,6 +299,12 @@ interface
        dllminor,
        dllrevision   : word;  { revision only for netware }
        { win pe  }
+       peosversionminor,
+       peosversionmajor,
+       pesubsysversionminor,
+       pesubsysversionmajor,
+       peuserversionminor,
+       peuserversionmajor : word;
        peoptflags,
        peflags : longint;
        minstacksize,
@@ -449,6 +458,12 @@ interface
         asmcputype : cpu_none;
         fputype : fpu_hard;
   {$endif sparc}
+  {$ifdef sparc64}
+        cputype : cpu_SPARC_V9;
+        optimizecputype : cpu_SPARC_V9;
+        asmcputype : cpu_none;
+        fputype : fpu_hard;
+  {$endif sparc64}
   {$ifdef arm}
         cputype : cpu_armv4;
         optimizecputype : cpu_armv4;
@@ -514,7 +529,7 @@ interface
         instructionset : is_arm;
 {$endif defined(ARM)}
 {$if defined(LLVM) and not defined(GENERIC_CPU)}
-        llvmversion    : llvmver_3_6_0;
+        llvmversion    : llvmver_3_9_0;
 {$endif defined(LLVM) and not defined(GENERIC_CPU)}
         controllertype : ct_none;
         pmessage : nil;
@@ -574,14 +589,13 @@ interface
 
 implementation
 
+{$if defined(macos)}
     uses
-{$ifdef macos}
-      macutils,
+      macutils;
+{$elseif defined(mswindows)}
+    uses
+      windirs;
 {$endif}
-{$ifdef mswindows}
-      windirs,
-{$endif}
-      comphook;
 
 {****************************************************************************
                                  TLinkStrMap
@@ -1512,6 +1526,9 @@ implementation
         DescriptionSetExplicity:=false;
         SetPEFlagsSetExplicity:=false;
         SetPEOptFlagsSetExplicity:=false;
+        SetPEOSVersionSetExplicitely:=false;
+        SetPESubSysVersionSetExplicitely:=false;
+        SetPEUserVersionSetExplicitely:=false;
         ImageBaseSetExplicity:=false;
         MinStackSizeSetExplicity:=false;
         MaxStackSizeSetExplicity:=false;

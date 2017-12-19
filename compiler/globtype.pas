@@ -313,7 +313,8 @@ interface
          cs_opt_remove_emtpy_proc,
          cs_opt_constant_propagate,
          cs_opt_dead_store_eliminate,
-         cs_opt_forcenostackframe
+         cs_opt_forcenostackframe,
+         cs_opt_use_load_modify_store
        );
        toptimizerswitches = set of toptimizerswitch;
 
@@ -335,14 +336,14 @@ interface
        end;
 
     const
-       OptimizerSwitchStr : array[toptimizerswitch] of string[17] = ('',
+       OptimizerSwitchStr : array[toptimizerswitch] of string[18] = ('',
          'LEVEL1','LEVEL2','LEVEL3','LEVEL4',
          'REGVAR','UNCERTAIN','SIZE','STACKFRAME',
          'PEEPHOLE','LOOPUNROLL','TAILREC','CSE',
          'DFA','STRENGTH','SCHEDULE','AUTOINLINE','USEEBP','USERBP',
          'ORDERFIELDS','FASTMATH','DEADVALUES','REMOVEEMPTYPROCS',
          'CONSTPROP',
-         'DEADSTORE','FORCENOSTACKFRAME'
+         'DEADSTORE','FORCENOSTACKFRAME','USELOADMODIFYSTORE'
        );
        WPOptimizerSwitchStr : array [twpoptimizerswitch] of string[14] = (
          'DEVIRTCALLS','OPTVMTS','SYMBOLLIVENESS'
@@ -368,7 +369,7 @@ interface
        { switches being applied to all CPUs at the given level }
        genericlevel1optimizerswitches = [cs_opt_level1,cs_opt_peephole];
        genericlevel2optimizerswitches = [cs_opt_level2,cs_opt_remove_emtpy_proc];
-       genericlevel3optimizerswitches = [cs_opt_level3,cs_opt_constant_propagate,cs_opt_nodedfa];
+       genericlevel3optimizerswitches = [cs_opt_level3,cs_opt_constant_propagate,cs_opt_nodedfa,cs_opt_use_load_modify_store];
        genericlevel4optimizerswitches = [cs_opt_level4,cs_opt_reorder_fields,cs_opt_dead_values,cs_opt_fastmath];
 
        { whole program optimizations whose information generation requires
@@ -389,7 +390,7 @@ interface
        tmodeswitch = (m_none,
          { generic }
          m_fpc,m_objfpc,m_delphi,m_tp7,m_mac,m_iso,m_extpas,
-         {$ifdef fpc_mode}m_gpc,{$endif}
+         {$ifdef gpc_mode}m_gpc,{$endif}
          { more specific }
          m_class,               { delphi class model }
          m_objpas,              { load objpas unit }
@@ -424,8 +425,8 @@ interface
                                   fields in Java) }
          m_default_unicodestring, { makes the default string type in $h+ mode unicodestring rather than
                                     ansistring; similarly, char becomes unicodechar rather than ansichar }
-         m_type_helpers,        { allows the declaration of "type helper" (non-Delphi) or "record helper"
-                                  (Delphi) for primitive types }
+         m_type_helpers,        { allows the declaration of "type helper" for all supported types
+                                  (primitive types, records, classes, interfaces) }
          m_blocks,              { support for http://en.wikipedia.org/wiki/Blocks_(C_language_extension) }
          m_isolike_io,          { I/O as it required by an ISO compatible compiler }
          m_isolike_program_para, { program parameters as it required by an ISO compatible compiler }
@@ -575,11 +576,11 @@ interface
        pocall_default = pocall_stdcall;
 {$endif}
 
-       cstylearrayofconst = [pocall_cdecl,pocall_cppdecl,pocall_mwpascal];
+       cstylearrayofconst = [pocall_cdecl,pocall_cppdecl,pocall_mwpascal,pocall_sysv_abi_cdecl,pocall_ms_abi_cdecl];
 
        modeswitchstr : array[tmodeswitch] of string[18] = ('',
          '','','','','','','',
-         {$ifdef fpc_mode}'',{$endif}
+         {$ifdef gpc_mode}'',{$endif}
          { more specific }
          'CLASS',
          'OBJPAS',

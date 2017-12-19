@@ -21,6 +21,7 @@ unit System;
 interface
 
 {$define FPC_IS_SYSTEM}
+{$define FPC_HAS_ANSI_TEXTFILEREC}
 
 {$I systemh.inc}
 {$I osdebugh.inc}
@@ -97,6 +98,8 @@ implementation
 {$if defined(cpum68k) and defined(fpusoft)}
 
 {$define fpc_softfpu_implementation}
+{$define softfpu_compiler_mul32to64}
+{$define softfpu_inline}
 {$i softfpu.pp}
 {$undef fpc_softfpu_implementation}
 
@@ -299,11 +302,8 @@ end;
 
 begin
   IsConsole := TRUE;
-  SysResetFPU;
-  if not(IsLibrary) then
-    SysInitFPU;
   StackLength := CheckInitialStkLen(InitialStkLen);
-  StackBottom := Sptr - StackLength;
+  StackBottom := StackTop - StackLength;
 { OS specific startup }
   AOS_wbMsg:=nil;
   ASYS_origDir:=0;

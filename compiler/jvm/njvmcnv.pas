@@ -97,7 +97,7 @@ interface
 implementation
 
    uses
-      verbose,globals,globtype,constexp,cutils,
+      verbose,globals,globtype,constexp,cutils,compinnr,
       symbase,symconst,symdef,symsym,symcpu,symtable,aasmbase,aasmdata,
       defutil,defcmp,jvmdef,
       cgbase,cgutils,pass_1,pass_2,
@@ -502,6 +502,7 @@ implementation
           end;
         if not assigned(procdefparas) then
           procdefparas:=carrayconstructornode.create(nil,nil);
+        procdefparas.allow_array_constructor:=true;
         constrparas:=ccallparanode.create(procdefparas,constrparas);
         result:=ccallnode.createinternmethod(cloadvmtaddrnode.create(ctypenode.create(tcpuprocvardef(resultdef).classdef)),'CREATE',constrparas);
         { typecast to the procvar type }

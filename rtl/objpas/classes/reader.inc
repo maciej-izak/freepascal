@@ -544,6 +544,13 @@ type
     Name: ShortString;
   end;
 
+{$ifdef VER3_0}
+  PersistentClassRef = TPersistentClass;
+{$else VER3_0}
+  PPersistentClass = ^TPersistentClass;
+  PersistentClassRef = PPersistentClass;
+{$endif VER3_0}
+
   PFieldClassTable = ^TFieldClassTable;
   TFieldClassTable =
 {$ifndef FPC_REQUIRES_PROPER_ALIGNMENT}
@@ -551,7 +558,7 @@ type
 {$endif FPC_REQUIRES_PROPER_ALIGNMENT}
   record
     Count: Word;
-    Entries: array[{$ifdef cpu16}0..16384 div sizeof(TPersistentClass){$else}Word{$endif}] of TPersistentClass;
+    Entries: array[{$ifdef cpu16}0..16384 div sizeof(PersistentClassRef){$else}Word{$endif}] of PersistentClassRef;
   end;
 
   PFieldTable = ^TFieldTable;
@@ -584,7 +591,7 @@ begin
       ClassTable := FieldTable^.ClassTable;
       for i := 0 to ClassTable^.Count - 1 do
       begin
-        Result := ClassTable^.Entries[i];
+        Result := ClassTable^.Entries[i]{$ifndef VER3_0}^{$endif};
         if Result.ClassNameIs(ShortClassName) then
           exit;
       end;
@@ -722,7 +729,10 @@ begin
         FOnReferenceName(Self,Ref);
       C:=FindNestedComponent(R.FRoot,Ref);
       If Assigned(C) then
-        SetObjectProp(R.FInstance,R.FPropInfo,C)
+        if R.FPropInfo^.PropType^.Kind = tkInterface then
+          SetInterfaceProp(R.FInstance,R.FPropInfo,C)
+        else
+          SetObjectProp(R.FInstance,R.FPropInfo,C)
       else
         begin
         P:=Pos('.',R.FRelative);
@@ -1256,6 +1266,8 @@ begin
 
         if PropInfo^.PropType^.Kind = tkClass then
           Obj := TObject(GetObjectProp(Instance, PropInfo))
+        //else if PropInfo^.PropType^.Kind = tkInterface then
+        //  Obj := TObject(GetInterfaceProp(Instance, PropInfo))
         else
           Obj := nil;
 
@@ -1385,7 +1397,7 @@ begin
       begin
         SetVariantProp(Instance,PropInfo,ReadVariant);
       end;
-    tkClass:
+    tkClass, tkInterface:
       case FDriver.NextValue of
         vaNil:
           begin
@@ -1696,7 +1708,7 @@ var
         FieldClassTable := FieldTable^.ClassTable;
         for i := 0 to FieldClassTable^.Count -1 do
         begin
-          Entry := FieldClassTable^.Entries[i];
+          Entry := FieldClassTable^.Entries[i]{$ifndef VER3_0}^{$endif};
           //writeln(format('Looking for %s in field table of class %s. Found %s',
             //[AClassName, ComponentClassType.ClassName, Entry.ClassName]));
           if Entry.ClassNameIs(ShortClassName) and

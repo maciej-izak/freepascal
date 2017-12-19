@@ -28,7 +28,7 @@ interface
     uses
        cclasses,constexp,
        node,globtype,globals,
-       aasmbase,aasmtai,aasmdata,ncon,nflw,symtype;
+       aasmbase,ncon,nflw,symtype;
 
     type
        TLabelType = (ltOrdinal, ltConstString);
@@ -40,6 +40,8 @@ interface
           { left and right tree node }
           less,
           greater : pcaselabel;
+
+          labellabel : TAsmLabel;
 
           { range type }
           case label_type : TLabelType of
@@ -104,7 +106,7 @@ interface
           function pass_1 : tnode;override;
           function simplify(forinline:boolean):tnode;override;
           function docompare(p: tnode): boolean; override;
-          procedure addlabel(blockid:longint;l,h : TConstExprInt); overload;
+          procedure addlabel(blockid:longint;const l,h : TConstExprInt); overload;
           procedure addlabel(blockid:longint;l,h : tstringconstnode); overload;
           procedure addblock(blockid:longint;instr:tnode);
           procedure addelseblock(instr:tnode);
@@ -128,12 +130,10 @@ interface
 implementation
 
     uses
-      systems,
       verbose,
       symconst,symdef,symsym,symtable,defutil,defcmp,
       htypechk,pass_1,
-      nadd,nbas,ncnv,nld,cgobj,cgbase,
-      widestr;
+      nadd,nbas,ncnv,nld,cgbase;
 
 
 {*****************************************************************************
@@ -1032,7 +1032,7 @@ implementation
       end;
 
 
-    procedure tcasenode.addlabel(blockid:longint;l,h : TConstExprInt);
+    procedure tcasenode.addlabel(blockid:longint;const l,h : TConstExprInt);
       var
         hcaselabel : pcaselabel;
 

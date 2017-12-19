@@ -142,6 +142,7 @@ type
     Procedure Assign(Source : TPersistent); override;
     Function AddDependency(Const APackageName : String; const AMinVersion : String = '') : TFPDependency;
     Function IsPackageBroken: Boolean;
+    Function GetDebugName: string;
     Property Dependencies : TFPDependencies Read FDependencies;
     Property OSes : TOSes Read FOSes Write FOses;
     Property CPUs : TCPUs Read FCPUs Write FCPUs;
@@ -337,6 +338,8 @@ ResourceString
   SErrDuplicatePackageName = 'Duplicate package name : "%s"';
   SErrMaxLevelExceeded     = 'Maximum number of dependency levels exceeded (%d) at package "%s".';
   SErrMirrorNotFound       = 'Mirror "%s" not found.';
+  SRepoUnknown             = 'RepositoryUnknown';
+  SPackageUnknown          = 'unknown package';
 
 
 Function MakeTargetString(CPU : TCPU;OS: TOS) : String;
@@ -365,7 +368,14 @@ end;
 
 function TFPCustomPackagesStructure.GetBuildPathDirectory(APackage: TFPPackage): string;
 begin
-  Result := '';
+  if (APackage.Repository.RepositoryType=fprtInstalled) and (APackage.SourcePath<>'') then
+    begin
+      Result := APackage.SourcePath;
+    end
+  else
+    begin
+      Result := '';
+    end;
 end;
 
 function TFPCustomPackagesStructure.GetPrefix: string;
@@ -717,6 +727,15 @@ begin
     raise Exception.Create(SErrRepositoryNotAssigned);
 end;
 
+Function TFPPackage.GetDebugName: string;
+begin
+  if not Assigned(Self) then
+    Result := SPackageUnknown
+  else if Assigned(Repository) then
+    Result:=Repository.RepositoryName+'-'+Name
+  else
+    Result:=SRepoUnknown+'-'+Name;
+end;
 
 { TFPPackages }
 
@@ -801,53 +820,9 @@ end;
 
 function TFPRepository.PackageIsBroken(APackage: TFPPackage): Boolean;
 var
-  j, i, ThisRepositoryIndex: Integer;
-  Dependency: TFPDependency;
-  Repository: TFPRepository;
-  DepPackage: TFPPackage;
+  s: string;
 begin
-  result:=false;
-
-  // We should only check for dependencies in this repository, or repositories
-  // with a lower priority.
-  ThisRepositoryIndex := -1;
-  for i := GFPpkg.RepositoryList.Count -1 downto 0 do
-    begin
-      if GFPpkg.RepositoryList.Items[i] = Self then
-        ThisRepositoryIndex := i;
-    end;
-
-  for j:=0 to APackage.Dependencies.Count-1 do
-    begin
-      Dependency:=APackage.Dependencies[j];
-      if (GFPpkg.CompilerOptions.CompilerOS in Dependency.OSes) and
-         (GFPpkg.CompilerOptions.CompilerCPU in Dependency.CPUs) then
-        begin
-          for i := ThisRepositoryIndex downto 0 do
-            begin
-              Repository := GFPpkg.RepositoryList.Items[i] as TFPRepository;
-              DepPackage := Repository.FindPackage(Dependency.FPackageName);
-              if Assigned(DepPackage) then
-                Break;
-            end;
-
-          if assigned(DepPackage) then
-            begin
-              if (Dependency.RequireChecksum<>$ffffffff) and (DepPackage.Checksum<>Dependency.RequireChecksum) then
-                begin
-                  log(llInfo,SLogPackageChecksumChanged,[APackage.Name,Self.RepositoryName,Dependency.PackageName,Repository.RepositoryName]);
-                  result:=true;
-                  exit;
-                end;
-            end
-          else
-            begin
-              log(llDebug,SDbgObsoleteDependency,[APackage.Name,Dependency.PackageName]);
-              result:=true;
-              exit;
-            end;
-        end;
-    end;
+  Result := GFPpkg.PackageIsBroken(APackage, s, Self);
 end;
 
 constructor TFPRepository.Create(AOwner: TComponent);

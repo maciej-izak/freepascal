@@ -31,7 +31,7 @@ unit cgx86;
        globtype,
        cgbase,cgutils,cgobj,
        aasmbase,aasmtai,aasmdata,aasmcpu,
-       cpubase,cpuinfo,rgobj,rgx86,rgcpu,
+       cpubase,cpuinfo,rgx86,
        symconst,symtype,symdef;
 
     type
@@ -189,9 +189,9 @@ unit cgx86;
 
     uses
        globals,verbose,systems,cutils,
-       defutil,paramgr,procinfo,
-       tgobj,ncgutil,
-       fmodule,symsym,symcpu;
+       symcpu,
+       paramgr,procinfo,
+       tgobj,ncgutil;
 
     function UseAVX: boolean;
       begin
@@ -952,6 +952,11 @@ unit cgx86;
       begin
         tmpref:=ref;
         make_simple_ref(list,tmpref);
+        if TCGSize2Size[fromsize]>TCGSize2Size[tosize] then
+          begin
+            fromsize:=tosize;
+            reg:=makeregsize(list,reg,fromsize);
+          end;
         check_register_size(fromsize,reg);
         sizes2load(fromsize,tosize,op,s);
         case s of
@@ -1991,7 +1996,8 @@ unit cgx86;
         dstsize: topsize;
         instr:Taicpu;
       begin
-        check_register_size(size,src);
+        if not(Op in [OP_SHR,OP_SHL,OP_SAR,OP_ROL,OP_ROR]) then
+          check_register_size(size,src);
         check_register_size(size,dst);
         dstsize := tcgsize2opsize[size];
         if (op=OP_MUL) and not (cs_check_overflow in current_settings.localswitches) then
@@ -2011,7 +2017,7 @@ unit cgx86;
             begin
               { Use ecx to load the value, that allows better coalescing }
               getcpuregister(list,REGCX);
-              a_load_reg_reg(list,size,REGCX_Size,src,REGCX);
+              a_load_reg_reg(list,reg_cgsize(src),REGCX_Size,src,REGCX);
               list.concat(taicpu.op_reg_reg(Topcg2asmop[op],tcgsize2opsize[size],NR_CL,dst));
               ungetcpuregister(list,REGCX);
             end;
@@ -2054,12 +2060,37 @@ unit cgx86;
 
 
     procedure tcgx86.a_op_reg_ref(list : TAsmList; Op: TOpCG; size: TCGSize;reg: TRegister; const ref: TReference);
+      const
+{$if defined(cpu64bitalu)}
+        REGCX=NR_RCX;
+        REGCX_Size = OS_64;
+{$elseif defined(cpu32bitalu)}
+        REGCX=NR_ECX;
+        REGCX_Size = OS_32;
+{$elseif defined(cpu16bitalu)}
+        REGCX=NR_CX;
+        REGCX_Size = OS_16;
+{$endif}
       var
         tmpref  : treference;
       begin
         tmpref:=ref;
         make_simple_ref(list,tmpref);
-        check_register_size(size,reg);
+        { we don't check the register size for some operations, for the following reasons:
+          NEG,NOT:
+            reg isn't used in these operations (they are unary and use only ref)
+          SHR,SHL,SAR,ROL,ROR:
+            We allow the register size to differ from the destination size.
+            This allows generating better code when performing, for example, a
+            shift/rotate in place (x:=x shl y) of a byte variable. In this case,
+            we allow the shift count (y) to be located in a 32-bit register,
+            even though x is a byte. This:
+              - reduces register pressure on i386 (because only EAX,EBX,ECX and
+                EDX have 8-bit subregisters)
+              - avoids partial register writes, which can cause various
+                performance issues on modern out-of-order execution x86 CPUs }
+        if not (op in [OP_NEG,OP_NOT,OP_SHR,OP_SHL,OP_SAR,OP_ROL,OP_ROR]) then
+          check_register_size(size,reg);
         if (op=OP_MUL) and not (cs_check_overflow in current_settings.localswitches) then
           op:=OP_IMUL;
         case op of
@@ -2068,6 +2099,14 @@ unit cgx86;
               if reg<>NR_NO then
                 internalerror(200109237);
               list.concat(taicpu.op_ref(TOpCG2AsmOp[op],tcgsize2opsize[size],tmpref));
+            end;
+          OP_SHR,OP_SHL,OP_SAR,OP_ROL,OP_ROR:
+            begin
+              { Use ecx to load the value, that allows better coalescing }
+              getcpuregister(list,REGCX);
+              a_load_reg_reg(list,reg_cgsize(reg),REGCX_Size,reg,REGCX);
+              list.concat(taicpu.op_reg_ref(TOpCG2AsmOp[op],tcgsize2opsize[size],NR_CL,tmpref));
+              ungetcpuregister(list,REGCX);
             end;
           OP_IMUL:
             begin
@@ -2386,7 +2425,7 @@ unit cgx86;
         an i7-4770 (FK) }
       if (CPUX86_HAS_AVXUNIT in cpu_capabilities[current_settings.cputype]) and
         // (cs_opt_size in current_settings.optimizerswitches) and
-         ((len=8) or (len=16) or (len=24) or (len=32) { or (len=40) or (len=48)}) then
+         ({$ifdef i386}(len=8) or{$endif i386}(len=16) or (len=24) or (len=32) { or (len=40) or (len=48)}) then
          cm:=copy_avx
       else
 {$ifdef dummy}
@@ -2397,7 +2436,7 @@ unit cgx86;
 {$else x86_64}
         ((current_settings.fputype>=fpu_sse)
 {$endif x86_64}
-          or (CPUX86_HAS_SSEUNIT in cpu_capabilities[current_settings.cputype])) and
+          or (CPUX86_HAS_SSE2 in cpu_capabilities[current_settings.cputype])) and
          ((len=8) or (len=16) or (len=24) or (len=32) or (len=40) or (len=48)) then
          cm:=copy_mm
       else

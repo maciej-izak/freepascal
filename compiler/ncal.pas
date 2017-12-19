@@ -311,7 +311,7 @@ implementation
       systems,
       verbose,globals,fmodule,
       aasmbase,aasmdata,
-      symconst,defutil,defcmp,
+      symconst,defutil,defcmp,compinnr,
       htypechk,pass_1,
       ncnv,nflw,nld,ninl,nadd,ncon,nmem,nset,nobjc,
       pgenutil,
@@ -1032,13 +1032,9 @@ implementation
 
 
     procedure tcallparanode.get_paratype;
-      var
-        old_array_constructor : boolean;
       begin
          if assigned(right) then
           tcallparanode(right).get_paratype;
-         old_array_constructor:=allow_array_constructor;
-         allow_array_constructor:=true;
          if assigned(fparainit) then
           typecheckpass(fparainit);
          typecheckpass(left);
@@ -1046,7 +1042,6 @@ implementation
            typecheckpass(third);
          if assigned(fparacopyback) then
            typecheckpass(fparacopyback);
-         allow_array_constructor:=old_array_constructor;
          if codegenerror then
           resultdef:=generrordef
          else
@@ -1740,16 +1735,20 @@ implementation
         n : tcallnode;
         i : integer;
         hp,hpn : tparavarsym;
-        oldleft : tnode;
+        oldleft, oldright : tnode;
         para: tcallparanode;
       begin
         { Need to use a hack here to prevent the parameters from being copied.
           The parameters must be copied between callinitblock/callcleanupblock because
           they can reference methodpointer }
+        { same goes for right (= self/context for procvars) }
         oldleft:=left;
         left:=nil;
+        oldright:=right;
+        right:=nil;
         n:=tcallnode(inherited dogetcopy);
         left:=oldleft;
+        right:=oldright;
         n.symtableprocentry:=symtableprocentry;
         n.symtableproc:=symtableproc;
         n.procdefinition:=procdefinition;
@@ -1766,6 +1765,10 @@ implementation
           n.left:=left.dogetcopy
         else
           n.left:=nil;
+        if assigned(right) then
+          n.right:=right.dogetcopy
+        else
+          n.right:=nil;
         if assigned(methodpointer) then
           n.methodpointer:=methodpointer.dogetcopy
         else
@@ -3748,8 +3751,8 @@ implementation
                 begin
                   { convert types to those of the prototype, this is required by functions like ror, rol, sar
                     some use however a dummy type (Typedfile) so this would break them }
-                  if not(tprocdef(procdefinition).extnumber in [in_Reset_TypedFile,in_Rewrite_TypedFile,
-                                                                in_reset_typedfile_name,in_rewrite_typedfile_name]) then
+                  if not(tinlinenumber(tprocdef(procdefinition).extnumber) in
+                       [in_Reset_TypedFile,in_Rewrite_TypedFile,in_reset_typedfile_name,in_rewrite_typedfile_name]) then
                     begin
                       { bind parasyms to the callparanodes and insert hidden parameters }
                       bind_parasym;
@@ -3762,17 +3765,17 @@ implementation
                   { ptr and settextbuf need two args }
                   if assigned(tcallparanode(left).right) then
                    begin
-                     hpt:=geninlinenode(tprocdef(procdefinition).extnumber,is_const,left);
+                     hpt:=geninlinenode(tinlinenumber(tprocdef(procdefinition).extnumber),is_const,left);
                      left:=nil;
                    end
                   else
                    begin
-                     hpt:=geninlinenode(tprocdef(procdefinition).extnumber,is_const,tcallparanode(left).left);
+                     hpt:=geninlinenode(tinlinenumber(tprocdef(procdefinition).extnumber),is_const,tcallparanode(left).left);
                      tcallparanode(left).left:=nil;
                    end;
                 end
                else
-                hpt:=geninlinenode(tprocdef(procdefinition).extnumber,is_const,nil);
+                hpt:=geninlinenode(tinlinenumber(tprocdef(procdefinition).extnumber),is_const,nil);
                result:=hpt;
                exit;
              end;
@@ -3828,7 +3831,10 @@ implementation
                 method via its type is not possible (always must be called via
                 the actual instance) }
               if (methodpointer.nodetype=typen) and
-                 (is_interface(methodpointer.resultdef) or
+                 ((
+                   is_interface(methodpointer.resultdef) and not
+                   is_objectpascal_helper(tdef(procdefinition.owner.defowner))
+                  ) or
                   is_objc_protocol_or_category(methodpointer.resultdef)) then
                 CGMessage1(type_e_class_type_expected,methodpointer.resultdef.typename);
 
@@ -4706,7 +4712,8 @@ implementation
            { don't create a temp. for the often seen case that p^ is passed to a var parameter }
            ((paracomplexity>1) and
             not((realtarget.nodetype=derefn) and (para.parasym.varspez in [vs_var,vs_out,vs_constref])) and
-            not((realtarget.nodetype=loadn) and tloadnode(realtarget).is_addr_param_load)
+            not((realtarget.nodetype=loadn) and tloadnode(realtarget).is_addr_param_load) and
+            not(realtarget.nodetype=realconstn)
            )
           );
 

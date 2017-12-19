@@ -87,7 +87,7 @@ var
 implementation
 
 uses cutils, systems,
-     htypechk, defutil, defcmp, globtype, globals, cpubase,
+     htypechk, defutil, defcmp, globtype, globals, cpubase, compinnr,
      ncnv, ncon, ncal, ninl, nld, nmem,
      verbose, symconst,symdef, cgbase, procinfo;
 
@@ -337,6 +337,7 @@ begin
       include(sn.flags,nf_internal);
     end;
   arrp:=carrayconstructornode.create(sn,arrp);
+  arrp.allow_array_constructor:=true;
   if assigned(aktassignmentnode) and
      (aktassignmentnode.right=p) and
      (aktassignmentnode.left.resultdef=p.resultdef) and

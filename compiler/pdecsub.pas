@@ -79,7 +79,7 @@ interface
     procedure parse_record_proc_directives(pd:tabstractprocdef);
     function  parse_proc_head(astruct:tabstractrecorddef;potype:tproctypeoption;isgeneric:boolean;genericdef:tdef;generictypelist:tfphashobjectlist;out pd:tprocdef):boolean;
     function  parse_proc_dec(isclassmethod:boolean;astruct:tabstractrecorddef;isgeneric:boolean):tprocdef;
-    procedure parse_proc_dec_finish(pd:tprocdef;isclassmethod:boolean);
+    procedure parse_proc_dec_finish(pd:tprocdef;isclassmethod:boolean;astruct:tabstractrecorddef);
 
     { parse a record method declaration (not a (class) constructor/destructor) }
     function parse_record_method_dec(astruct: tabstractrecorddef; is_classdef: boolean;hadgeneric:boolean): tprocdef;
@@ -111,7 +111,7 @@ implementation
        { parameter handling }
        paramgr,cpupara,
        { pass 1 }
-       fmodule,node,htypechk,ncon,ppu,nld,
+       fmodule,node,htypechk,ncon,nld,
        objcutil,
        { parser }
        scanner,
@@ -1254,7 +1254,7 @@ implementation
       end;
 
 
-    procedure parse_proc_dec_finish(pd:tprocdef;isclassmethod:boolean);
+    procedure parse_proc_dec_finish(pd:tprocdef;isclassmethod:boolean;astruct:tabstractrecorddef);
       var
         locationstr: string;
         i: integer;
@@ -1494,12 +1494,15 @@ implementation
                          else
                            MessagePos(pd.fileinfo,type_e_type_id_expected);
                      end;
-                   if (optoken in [_ASSIGNMENT,_OP_EXPLICIT]) and
-                      equal_defs(pd.returndef,tparavarsym(pd.parast.SymList[0]).vardef) and
-                      (pd.returndef.typ<>undefineddef) and (tparavarsym(pd.parast.SymList[0]).vardef.typ<>undefineddef) then
-                     message(parser_e_no_such_assignment)
-                   else if not isoperatoracceptable(pd,optoken) then
-                     Message(parser_e_overload_impossible);
+                   if not assigned(pd.struct) or assigned(astruct) then
+                     begin
+                       if (optoken in [_ASSIGNMENT,_OP_EXPLICIT]) and
+                          equal_defs(pd.returndef,tparavarsym(pd.parast.SymList[0]).vardef) and
+                          (pd.returndef.typ<>undefineddef) and (tparavarsym(pd.parast.SymList[0]).vardef.typ<>undefineddef) then
+                         message(parser_e_no_such_assignment)
+                       else if not isoperatoracceptable(pd,optoken) then
+                         Message(parser_e_overload_impossible);
+                     end;
                  end;
             end;
           else
@@ -1556,7 +1559,7 @@ implementation
                 begin
                   { pd=nil when it is a interface mapping }
                   if assigned(pd) then
-                    parse_proc_dec_finish(pd,isclassmethod)
+                    parse_proc_dec_finish(pd,isclassmethod,astruct)
                   else
                     finish_intf_mapping;
                 end
@@ -1576,7 +1579,7 @@ implementation
                 begin
                   { pd=nil when it is an interface mapping }
                   if assigned(pd) then
-                    parse_proc_dec_finish(pd,isclassmethod)
+                    parse_proc_dec_finish(pd,isclassmethod,astruct)
                   else
                     finish_intf_mapping;
                 end
@@ -1592,7 +1595,7 @@ implementation
               else
                 recover:=not parse_proc_head(astruct,potype_constructor,false,nil,nil,pd);
               if not recover then
-                parse_proc_dec_finish(pd,isclassmethod);
+                parse_proc_dec_finish(pd,isclassmethod,astruct);
             end;
 
           _DESTRUCTOR :
@@ -1603,7 +1606,7 @@ implementation
               else
                 recover:=not parse_proc_head(astruct,potype_destructor,false,nil,nil,pd);
               if not recover then
-                parse_proc_dec_finish(pd,isclassmethod);
+                parse_proc_dec_finish(pd,isclassmethod,astruct);
             end;
         else
           if (token=_OPERATOR) or
@@ -1618,7 +1621,7 @@ implementation
               parse_proc_head(astruct,potype_operator,false,nil,nil,pd);
               block_type:=old_block_type;
               if assigned(pd) then
-                parse_proc_dec_finish(pd,isclassmethod)
+                parse_proc_dec_finish(pd,isclassmethod,astruct)
               else
                 begin
                   { recover }
@@ -2100,6 +2103,8 @@ procedure pd_syscall(pd:tabstractprocdef);
         syscall: psyscallinfo;
       begin
         case target_info.system of
+          system_arm_palmos,
+          system_m68k_palmos,
           system_m68k_atari,
           system_m68k_amiga,
           system_powerpc_amiga:
@@ -2175,6 +2180,24 @@ begin
   tprocdef(pd).forwarddef:=false;
 {$if defined(powerpc) or defined(m68k) or defined(i386) or defined(x86_64) or defined(arm)}
   include_po_syscall;
+
+  if target_info.system in [system_arm_palmos, system_m68k_palmos] then
+    begin
+      v:=get_intconst;
+      tprocdef(pd).extnumber:=longint(v.svalue);
+      if ((v<0) or (v>high(word))) then
+        message(parser_e_range_check_error);
+
+      if try_to_consume(_COMMA) then
+        begin
+          v:=get_intconst;
+          if ((v<0) or (v>high(word))) then
+            message(parser_e_range_check_error);
+          tprocdef(pd).import_nr:=longint(v.svalue);
+          include(pd.procoptions,po_syscall_has_importnr);
+        end;
+      exit;
+    end;
 
   if target_info.system = system_m68k_atari then
     begin
@@ -2680,7 +2703,7 @@ const
       pooption : [po_staticmethod];
       mutexclpocall : [pocall_internproc];
       mutexclpotype : [potype_constructor,potype_destructor,potype_class_constructor,potype_class_destructor];
-      mutexclpo     : [po_interrupt,po_exports]
+      mutexclpo     : [po_interrupt,po_exports,po_virtualmethod]
     ),(
       idtok:_STDCALL;
       pd_flags : [pd_interface,pd_implemen,pd_body,pd_procvar];
@@ -2710,7 +2733,7 @@ const
       pooption : [po_virtualmethod];
       mutexclpocall : [pocall_internproc];
       mutexclpotype : [potype_class_constructor,potype_class_destructor];
-      mutexclpo     : [po_interrupt,po_exports,po_overridingmethod,po_inline]
+      mutexclpo     : [po_interrupt,po_exports,po_overridingmethod,po_inline,po_staticmethod]
     ),(
       idtok:_CPPDECL;
       pd_flags : [pd_interface,pd_implemen,pd_body,pd_procvar];
@@ -3234,7 +3257,7 @@ const
                          { for objcclasses this is checked later, because the entire
                            class may be external.  }
                          is_objc_class_or_protocol(tprocdef(pd).struct)) and
-                     not(pd.proccalloption in (cdecl_pocalls + [pocall_mwpascal,pocall_stdcall])) then
+                     not(pd.proccalloption in (cdecl_pocalls + [pocall_stdcall])) then
                     Message(parser_e_varargs_need_cdecl_and_external);
                 end
                else
@@ -3242,7 +3265,7 @@ const
                   { both must be defined now }
                   if not((po_external in pd.procoptions) or
                          (pd.typ=procvardef)) or
-                     not(pd.proccalloption in (cdecl_pocalls + [pocall_mwpascal,pocall_stdcall])) then
+                     not(pd.proccalloption in (cdecl_pocalls + [pocall_stdcall])) then
                     Message(parser_e_varargs_need_cdecl_and_external);
                 end;
              end;

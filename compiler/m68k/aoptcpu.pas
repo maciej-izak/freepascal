@@ -226,6 +226,8 @@ unit aoptcpu;
                  op   ???, %reg0 }
               if MatchOperand(taicpu(p).oper[1]^,taicpu(next).oper[taicpu(next).ops-1]^) then
                 begin
+                  {
+                  Disabled, because it breaks some tests... :( (KB)
                   DebugMsg('Optimizer: '+opstr+' + OP + '+opstr+' to OP #1',next);
                   taicpu(next).loadOper(taicpu(next).ops-1,taicpu(p).oper[0]^);
                   asml.remove(p);
@@ -233,6 +235,7 @@ unit aoptcpu;
                   p.free;
                   next2.free;
                   result:=true;
+                  }
                 end;
             end;
         end;

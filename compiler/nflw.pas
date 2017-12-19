@@ -241,10 +241,10 @@ interface
 implementation
 
     uses
-      globtype,systems,constexp,
+      globtype,systems,constexp,compinnr,
       cutils,verbose,globals,
       symconst,symtable,paramgr,defcmp,defutil,htypechk,pass_1,
-      ncal,nadd,ncon,nmem,nld,ncnv,nbas,cgobj,nutils,ninl,nset,ngenutil,
+      ncal,nadd,ncon,nmem,nld,ncnv,nbas,nutils,ninl,nset,ngenutil,
       pdecsub,
     {$ifdef state_tracking}
       nstate,
@@ -872,6 +872,14 @@ implementation
                     hloopbody.free;
                   end;
               end
+            { "for x in [] do ..." always results in a never executed loop body }
+            else if (is_array_constructor(expr.resultdef) and
+                (tarraydef(expr.resultdef).elementdef=voidtype)) then
+              begin
+                if assigned(hloopbody) then
+                  MessagePos(hloopbody.fileinfo,cg_w_unreachable_code);
+                result:=cnothingnode.create;
+              end
             else
               begin
                 // search for operator first
@@ -917,6 +925,15 @@ implementation
                   end
                 else
                   begin
+                    { prefer set if loop var could be a set var and the loop
+                      expression can indeed be a set }
+                    if (expr.nodetype=arrayconstructorn) and
+                        (hloopvar.resultdef.typ in [enumdef,orddef]) and
+                        arrayconstructor_can_be_set(expr) then
+                      begin
+                        expr:=arrayconstructor_to_set(expr,false);
+                        typecheckpass(expr);
+                      end;
                     case expr.resultdef.typ of
                       stringdef: result:=create_string_for_in_loop(hloopvar, hloopbody, expr);
                       arraydef: result:=create_array_for_in_loop(hloopvar, hloopbody, expr);
@@ -1526,7 +1543,7 @@ implementation
 
     function tfornode.pass_1 : tnode;
       var
-        ifblock,whileblock,loopblock : tblocknode;
+        ifblock,loopblock : tblocknode;
         ifstatements,statements,loopstatements : tstatementnode;
         fromtemp,totemp : ttempcreatenode;
         do_loopvar_at_end : Boolean;
@@ -2033,10 +2050,18 @@ implementation
 
     destructor tlabelnode.destroy;
       begin
-        { Remove reference in labelsym, this is to prevent
-          goto's to this label }
-        if assigned(labsym) and (labsym.code=pointer(self)) then
-          labsym.code:=nil;
+        if assigned(labsym) then
+          begin
+            if not assigned(labsym.Owner) then
+              labsym.Free // Free labelsym if it has no owner
+            else
+              if labsym.code=pointer(self) then
+                begin
+                  { Remove reference in labelsym, this is to prevent
+                    goto's to this label }
+                  labsym.code:=nil;
+                end;
+          end;
         inherited destroy;
       end;
 

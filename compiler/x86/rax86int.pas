@@ -40,7 +40,7 @@ Unit Rax86int;
       AS_RPAREN,AS_COLON,AS_DOT,AS_PLUS,AS_MINUS,AS_STAR,
       AS_SEPARATOR,AS_ID,AS_REGISTER,AS_OPCODE,AS_SLASH,
        {------------------ Assembler directives --------------------}
-      AS_ALIGN,AS_DB,AS_DW,AS_DD,AS_DQ,AS_END,
+      AS_ALIGN,AS_DB,AS_DW,AS_DD,AS_DQ,AS_PUBLIC,AS_END,
        {------------------ Assembler Operators  --------------------}
       AS_BYTE,AS_WORD,AS_DWORD,AS_QWORD,AS_TBYTE,AS_DQWORD,AS_OWORD,AS_XMMWORD,AS_YWORD,AS_YMMWORD,AS_NEAR,AS_FAR,
       AS_HIGH,AS_LOW,AS_OFFSET,AS_SIZEOF,AS_VMTOFFSET,AS_SEG,AS_TYPE,AS_PTR,AS_MOD,AS_SHL,AS_SHR,AS_NOT,
@@ -48,6 +48,7 @@ Unit Rax86int;
 
     type
        tx86intreader = class(tasmreader)
+         actasmpattern_origcase : string;
          actasmtoken : tasmtoken;
          prevasmtoken : tasmtoken;
          ActOpsize : topsize;
@@ -62,8 +63,8 @@ Unit Rax86int;
          procedure GetToken;
          function consume(t : tasmtoken):boolean;
          procedure RecoverConsume(allowcomma:boolean);
-         procedure BuildRecordOffsetSize(const expr: string;var offset:aint;var size:aint; var mangledname: string; needvmtofs: boolean);
-         procedure BuildConstSymbolExpression(needofs,isref,startingminus:boolean;var value:aint;var asmsym:string;var asmsymtyp:TAsmsymtype;out isseg,is_farproc_entry:boolean);
+         procedure BuildRecordOffsetSize(const expr: string;var offset:tcgint;var size:tcgint; var mangledname: string; needvmtofs: boolean; out hastypecast: boolean);
+         procedure BuildConstSymbolExpression(needofs,isref,startingminus:boolean;var value:tcgint;var asmsym:string;var asmsymtyp:TAsmsymtype;out isseg,is_farproc_entry:boolean);
          function BuildConstExpression:aint;
          function BuildRefConstExpression(startingminus:boolean=false):aint;
          procedure BuildReference(oper : tx86operand);
@@ -81,17 +82,23 @@ Unit Rax86int;
        cutils,
        { global }
        globals,verbose,
-       systems,cpuinfo,
+       systems,
        { aasm }
-       aasmtai,aasmdata,aasmcpu,
+       aasmdata,aasmcpu,
+{$ifdef i8086}
+       aasmtai,
+{$endif i8086}
        { symtable }
-       symconst,symbase,symtype,symsym,symdef,symtable,symcpu,
+       symconst,symbase,symtype,symsym,symdef,
+{$ifdef i8086}
+       symcpu,
+{$endif i8086}
        { parser }
        scanner,pbase,
        { register allocator }
-       rabase,rautils,itx86int,
+       rautils,itx86int,
        { codegen }
-       cgbase,cgobj,procinfo
+       cgbase,procinfo,paramgr
        ;
 
     type
@@ -110,7 +117,7 @@ Unit Rax86int;
        _count_asmoperators  = longint(lastoperator)-longint(firstoperator);
 
        _asmdirectives : array[0.._count_asmdirectives] of tasmkeyword =
-       ('ALIGN','DB','DW','DD','DQ','END');
+       ('ALIGN','DB','DW','DD','DQ','PUBLIC','END');
 
        { problems with shl,shr,not,and,or and xor, they are }
        { context sensitive.                                 }
@@ -121,12 +128,12 @@ Unit Rax86int;
 
       token2str : array[tasmtoken] of string[10] = (
         '','Label','LLabel','String','Integer',
-        ',',',',',',',',',','[',']','(',
+        ',','[',']','(',
         ')',':','.','+','-','*',
         ';','identifier','register','opcode','/',
-        '','','','','','END',
-        '','','','','','','','','',
-        '','','sizeof','vmtoffset','','type','ptr','mod','shl','shr','not',
+        '','','','','','','END',
+        '','','','','','','','','','','','',
+        '','','','sizeof','vmtoffset','','type','ptr','mod','shl','shr','not',
         'and','or','xor','wrt','..gotpcrel'
       );
 
@@ -223,25 +230,12 @@ Unit Rax86int;
 
 
     function tx86intreader.is_register(const s:string):boolean;
-      var
-        entry: TSymEntry;
       begin
         is_register:=false;
         actasmregister:=masm_regnum_search(lower(s));
         { don't acceps "flags" as register name in an instruction }
-        if actasmregister=NR_FLAGS then
+        if (getsupreg(actasmregister)=RS_DEFAULTFLAGS) and (getregtype(actasmregister)=getregtype(NR_DEFAULTFLAGS)) then
           actasmregister:=NR_NO;
-        if (actasmregister=NR_NO) and
-           (current_procinfo.procdef.proccalloption=pocall_register) and
-           (po_assembler in current_procinfo.procdef.procoptions) then
-          begin
-            entry:=current_procinfo.procdef.parast.Find(s);
-            if assigned(entry) and
-               (entry.typ=paravarsym) and
-               assigned(tparavarsym(entry).paraloc[calleeside].Location) and
-               (tparavarsym(entry).paraloc[calleeside].Location^.Loc=LOC_REGISTER) then
-              actasmregister:=tparavarsym(entry).paraloc[calleeside].Location^.register;
-          end;
         if actasmregister<>NR_NO then
           begin
             is_register:=true;
@@ -291,6 +285,7 @@ Unit Rax86int;
               c:=current_scanner.asmgetchar;
             end;
            actasmpattern[0]:=chr(len);
+           actasmpattern_origcase:=actasmpattern;
            uppervar(actasmpattern);
            { allow spaces }
            while (c in [' ',#9]) do
@@ -338,6 +333,7 @@ Unit Rax86int;
                     actasmpattern:=actasmpattern + c;
                     c:=current_scanner.asmgetchar;
                   end;
+                 actasmpattern_origcase:=actasmpattern;
                  uppervar(actasmpattern);
                  actasmtoken:=AS_ID;
                  exit;
@@ -352,6 +348,7 @@ Unit Rax86int;
                     actasmpattern:=actasmpattern + c;
                     c:=current_scanner.asmgetchar;
                   end;
+                 actasmpattern_origcase:=actasmpattern;
                  uppervar(actasmpattern);
                  { after prefix (or segment override) we allow also a new opcode }
                  If (is_prefix(actopcode) or is_override(actopcode)) and is_asmopcode(actasmpattern) then
@@ -540,6 +537,7 @@ Unit Rax86int;
                     actasmpattern:=actasmpattern + c;
                     c:=current_scanner.asmgetchar;
                   end;
+                 actasmpattern_origcase:=actasmpattern;
                  uppervar(actasmpattern);
                  actasmtoken:=AS_ID;
                  exit;
@@ -663,6 +661,7 @@ Unit Rax86int;
                     c:=current_scanner.asmgetchar;
                   end;
                  { Get ending character }
+                 actasmpattern_origcase:=actasmpattern;
                  uppervar(actasmpattern);
                  c:=upcase(c);
                  { possibly a binary number. }
@@ -763,12 +762,13 @@ Unit Rax86int;
     { This routine builds up a record offset after a AS_DOT
       token is encountered.
       On entry actasmtoken should be equal to AS_DOT                     }
-    Procedure tx86intreader.BuildRecordOffsetSize(const expr: string;var offset:aint;var size:aint; var mangledname: string; needvmtofs: boolean);
+    Procedure tx86intreader.BuildRecordOffsetSize(const expr: string;var offset:tcgint;var size:tcgint; var mangledname: string; needvmtofs: boolean; out hastypecast: boolean);
       var
         s: string;
       Begin
         offset:=0;
         size:=0;
+        hastypecast:=false;
         s:=expr;
         while (actasmtoken=AS_DOT) do
          begin
@@ -785,16 +785,16 @@ Unit Rax86int;
               break;
             end;
          end;
-        if not GetRecordOffsetSize(s,offset,size,mangledname,needvmtofs) then
+        if not GetRecordOffsetSize(s,offset,size,mangledname,needvmtofs,hastypecast) then
           Message(asmr_e_building_record_offset);
       end;
 
 
-    Procedure tx86intreader.BuildConstSymbolExpression(needofs,isref,startingminus:boolean;var value:aint;var asmsym:string;var asmsymtyp:TAsmsymtype;out isseg,is_farproc_entry:boolean);
+    Procedure tx86intreader.BuildConstSymbolExpression(needofs,isref,startingminus:boolean;var value:tcgint;var asmsym:string;var asmsymtyp:TAsmsymtype;out isseg,is_farproc_entry:boolean);
       var
         tempstr,expr,hs,mangledname : string;
         parenlevel : longint;
-        l,k : aint;
+        l,k : tcgint;
         hasparen,
         errorflag,
         needvmtofs : boolean;
@@ -804,6 +804,7 @@ Unit Rax86int;
         def : tdef;
         sym : tsym;
         srsymtable : TSymtable;
+        hastypecast : boolean;
       Begin
         { reset }
         value:=0;
@@ -943,10 +944,12 @@ Unit Rax86int;
                    Consume(AS_ID);
                    if actasmtoken=AS_DOT then
                      begin
-                       BuildRecordOffsetSize(tempstr,k,l,mangledname,false);
+                       BuildRecordOffsetSize(tempstr,k,l,mangledname,false,hastypecast);
                        if mangledname<>'' then
                          { procsym }
                          Message(asmr_e_wrong_sym_type);
+                       if hastypecast then
+
                      end
                    else
                     begin
@@ -1114,7 +1117,7 @@ Unit Rax86int;
                        (sym.typ = fieldvarsym) and
                        not(sp_static in sym.symoptions)) then
                      begin
-                      BuildRecordOffsetSize(tempstr,l,k,hs,needvmtofs);
+                      BuildRecordOffsetSize(tempstr,l,k,hs,needvmtofs,hastypecast);
                       if hs <> '' then
                         hssymtyp:=AT_FUNCTION
                       else
@@ -1184,7 +1187,7 @@ Unit Rax86int;
 
     Function tx86intreader.BuildConstExpression:aint;
       var
-        l : aint;
+        l : tcgint;
         hs : string;
         hssymtyp : TAsmsymtype;
         isseg : boolean;
@@ -1199,7 +1202,7 @@ Unit Rax86int;
 
     Function tx86intreader.BuildRefConstExpression(startingminus:boolean):aint;
       var
-        l : aint;
+        l : tcgint;
         hs : string;
         hssymtyp : TAsmsymtype;
         isseg : boolean;
@@ -1215,7 +1218,7 @@ Unit Rax86int;
     procedure tx86intreader.BuildReference(oper : tx86operand);
       var
         scale : byte;
-        k,l : aint;
+        k,l : tcgint;
         tempstr,hs : string;
         tempsymtyp : tasmsymtype;
         code : integer;
@@ -1224,7 +1227,8 @@ Unit Rax86int;
         GotPlus,Negative : boolean;
         hl : tasmlabel;
         isseg: boolean;
-        is_farproc_entry : boolean;
+        is_farproc_entry,
+        hastypecast: boolean;
       Begin
         Consume(AS_LBRACKET);
         if not(oper.opr.typ in [OPR_LOCAL,OPR_REFERENCE]) then
@@ -1295,6 +1299,7 @@ Unit Rax86int;
                       begin
                         CreateLocalLabel(tempstr,hl,false);
                         oper.InitRef;
+                        oper.haslabelref:=true;
                         if not negative then
                           begin
                             oper.opr.ref.symbol:=hl;
@@ -1310,9 +1315,10 @@ Unit Rax86int;
                    else
                     if oper.SetupVar(tempstr,GotOffset) then
                      begin
-                       { force OPR_LOCAL to be a reference }
-                       if oper.opr.typ=OPR_LOCAL then
-                         oper.opr.localforceref:=true
+                       { convert OPR_LOCAL register para into a reference base }
+                       if (oper.opr.typ=OPR_LOCAL) and
+                          AsmRegisterPara(oper.opr.localsym) then
+                         oper.InitRefConvertLocal
                        else
                          begin
 {$ifdef x86_64}
@@ -1342,7 +1348,7 @@ Unit Rax86int;
                    { record.field ? }
                    if actasmtoken=AS_DOT then
                     begin
-                      BuildRecordOffsetSize(tempstr,l,k,hs,false);
+                      BuildRecordOffsetSize(tempstr,l,k,hs,false,hastypecast);
                       if (hs<>'') then
                         Message(asmr_e_invalid_symbol_ref);
                       case oper.opr.typ of
@@ -1351,6 +1357,8 @@ Unit Rax86int;
                         OPR_REFERENCE :
                           inc(oper.opr.ref.offset,l);
                       end;
+                      if hastypecast then
+                       oper.hastype:=true;
                       oper.SetSize(k,false);
                     end;
                    if GotOffset then
@@ -1406,6 +1414,7 @@ Unit Rax86int;
                 hs:='';
                 l:=0;
                 case actasmtoken of
+                  AS_ID,
                   AS_LPAREN :
                     l:=BuildConstExpression;
                   AS_INTNUM:
@@ -1628,7 +1637,7 @@ Unit Rax86int;
 
     Procedure tx86intreader.BuildConstantOperand(oper: tx86operand);
       var
-        l : aint;
+        l : tcgint;
         tempstr : string;
         tempsymtyp : tasmsymtype;
         isseg: boolean;
@@ -1685,6 +1694,7 @@ Unit Rax86int;
            begin
              oper.InitRef;
              oper.opr.ref.symbol:=hl;
+             oper.haslabelref:=true;
 {$ifdef i8086}
              if oper.opr.ref.segment=NR_NO then
                oper.opr.ref.segment:=NR_CS;
@@ -1696,10 +1706,11 @@ Unit Rax86int;
         expr,
         hs      : string;
         tempreg : tregister;
-        l       : aint;
+        l       : tcgint;
         hl      : tasmlabel;
         toffset,
-        tsize   : aint;
+        tsize   : tcgint;
+        hastypecast: boolean;
       begin
         expr:='';
         repeat
@@ -1707,11 +1718,13 @@ Unit Rax86int;
             begin
               if expr<>'' then
                 begin
-                  BuildRecordOffsetSize(expr,toffset,tsize,hs,false);
+                  BuildRecordOffsetSize(expr,toffset,tsize,hs,false,hastypecast);
                   if (oper.opr.typ<>OPR_NONE) and
                      (hs<>'') then
                     Message(asmr_e_wrong_sym_type);
                   oper.SetSize(tsize,true);
+                  if hastypecast then
+                    oper.hastype:=true;
                   { we have used the size of a field. Reset the typesize of the record }
                   oper.typesize:=0;
                   case oper.opr.typ of
@@ -1721,8 +1734,11 @@ Unit Rax86int;
                           will generate buggy code. Allow it only for explicit typecasting
                           and when the parameter is in a register (delphi compatible) }
                         if (not oper.hastype) and
-                           (oper.opr.localsym.owner.symtabletype=parasymtable) and
-                           (current_procinfo.procdef.proccalloption<>pocall_register) then
+                           (oper.opr.localsym.typ=paravarsym) and
+                           (not(po_assembler in current_procinfo.procdef.procoptions) or
+                            (tparavarsym(oper.opr.localsym).paraloc[calleeside].location^.loc<>LOC_REGISTER) or
+                            (not is_implicit_pointer_object_type(oper.opr.localsym.vardef) and
+                             not paramanager.push_addr_param(oper.opr.localsym.varspez,oper.opr.localsym.vardef,current_procinfo.procdef.proccalloption))) then
                           Message(asmr_e_cannot_access_field_directly_for_parameters);
 
                         oper.opr.localforceref:=true;
@@ -1841,7 +1857,10 @@ Unit Rax86int;
                       Message(asmr_e_syn_operand);
                   end;
                 Consume(AS_PTR);
-                oper.InitRef;
+                { in delphi mode, allow e.g. call dword ptr eax,
+                  see also webtbs/tw18225.pp }
+                if not(m_delphi in current_settings.modeswitches) then
+                  oper.InitRef;
                 { if the operand subscripts a record, the typesize will be
                   rest -> save it here and restore it afterwards }
                 l:=oper.typesize;
@@ -1858,6 +1877,7 @@ Unit Rax86int;
                     Begin
                       oper.SetupResult;
                       Consume(AS_ID);
+                      expr:='result';
                     end
                    else
                     if (actasmpattern = '@CODE') or (actasmpattern = '@DATA') then
@@ -1883,6 +1903,7 @@ Unit Rax86int;
                   begin
                     oper.SetUpResult;
                     Consume(AS_ID);
+                    expr:='result';
                   end
                 { probably a variable or normal expression }
                 { or a procedure (such as in CALL ID)      }
@@ -1957,10 +1978,15 @@ Unit Rax86int;
                             Begin
                               { not a variable, check special variables.. }
                               if expr = 'SELF' then
-                                oper.SetupSelf
+                                begin
+                                  oper.SetupSelf;
+                                  expr:='self';
+                                end
                               else
-                                Message1(sym_e_unknown_id,expr);
-                              expr:='';
+                                begin
+                                  Message1(sym_e_unknown_id,expr);
+                                  expr:='';
+                                end;
                             end;
                           { indexed access to variable? }
                           if actasmtoken=AS_LBRACKET then
@@ -2094,6 +2120,7 @@ Unit Rax86int;
         is_far_const:boolean;
         i:byte;
         tmp: toperand;
+        di_param, si_param: ShortInt;
 {$ifdef i8086}
         hsymbol: TAsmSymbol;
         hoffset: ASizeInt;
@@ -2269,6 +2296,34 @@ Unit Rax86int;
               if instr.operands[i].opr.typ=OPR_NONE then
                 Message(asmr_e_syntax_error);
           end;
+        { Check for invalid ES: overrides }
+        if is_x86_parameterized_string_op(instr.opcode) then
+          begin
+            si_param:=get_x86_string_op_si_param(instr.opcode);
+            if si_param<>-1 then
+              si_param:=x86_parameterized_string_op_param_count(instr.opcode)-si_param;
+            di_param:=get_x86_string_op_di_param(instr.opcode);
+            if di_param<>-1 then
+              begin
+                di_param:=x86_parameterized_string_op_param_count(instr.opcode)-di_param;
+                if di_param<=operandnum then
+                  with instr.operands[di_param] do
+                    if (opr.typ=OPR_REFERENCE) and
+                       (opr.ref.segment<>NR_NO) and
+                       (opr.ref.segment<>NR_ES) then
+                      Message(asmr_e_cannot_override_es_segment);
+              end;
+            { if two memory parameters, check whether their address sizes are equal }
+            if (si_param<>-1) and (di_param<>-1) and
+               (si_param<=operandnum) and (di_param<=operandnum) and
+               (instr.operands[si_param].opr.typ=OPR_REFERENCE) and
+               (instr.operands[di_param].opr.typ=OPR_REFERENCE) then
+              begin
+                if get_ref_address_size(instr.operands[si_param].opr.ref)<>
+                   get_ref_address_size(instr.operands[di_param].opr.ref) then
+                  Message(asmr_e_address_sizes_do_not_match);
+              end;
+          end;
         { e.g. for "push dword 1", "push word 6" }
         if (instr.ops=1) and
            (instr.operands[1].typesize<>0) then
@@ -2279,7 +2334,9 @@ Unit Rax86int;
             begin
               { convert 'call/jmp [proc/label]' to 'call/jmp proc/label'. Ugly,
                 but Turbo Pascal 7 compatible. }
-              if (instr.opcode in [A_CALL,A_JMP]) and (typ=OPR_REFERENCE) and
+              if (instr.opcode in [A_CALL,A_JMP]) and
+                 (instr.operands[i].haslabelref or instr.operands[i].hasproc)
+                 and (typ=OPR_REFERENCE) and
                  assigned(ref.symbol) and (ref.symbol.typ in [AT_FUNCTION,AT_LABEL,AT_ADDR]) and
                  (ref.base=NR_NO) and (ref.index=NR_NO) then
                 begin
@@ -2341,7 +2398,7 @@ Unit Rax86int;
         asmsymtyp : tasmsymtype;
         asmsym,
         expr: string;
-        value : aint;
+        value : tcgint;
         isseg: boolean;
         is_farproc_entry : boolean;
       Begin
@@ -2448,6 +2505,8 @@ Unit Rax86int;
     Var
       hl : tasmlabel;
       instr : Tx86Instruction;
+      tmpsym: tsym;
+      tmpsrsymtable: TSymtable;
     Begin
       Message1(asmr_d_start_reading,'intel');
       inexpression:=FALSE;
@@ -2479,7 +2538,11 @@ Unit Rax86int;
           AS_LABEL:
             Begin
               if SearchLabel(upper(actasmpattern),hl,true) then
-               ConcatLabel(curlist,hl)
+                begin
+                  if hl.is_public then
+                    ConcatPublic(curlist,actasmpattern_origcase);
+                  ConcatLabel(curlist,hl);
+                end
               else
                Message1(asmr_e_unknown_label_identifier,actasmpattern);
               Consume(AS_LABEL);
@@ -2518,6 +2581,37 @@ Unit Rax86int;
               inexpression:=false;
             end;
 {$endif cpu64bitaddr}
+
+          AS_PUBLIC:
+            Begin
+              Consume(AS_PUBLIC);
+              repeat
+                if actasmtoken=AS_ID then
+                  begin
+                    if (actasmpattern<>'') and (actasmpattern[1]='@') then
+                      Message1(asmr_e_local_label_cannot_be_declared_public,actasmpattern)
+                    else if SearchLabel(upper(actasmpattern),hl,false) then
+                      begin
+                        if not hl.is_public then
+                          begin
+                            hl.is_public:=true;
+                            asmsearchsym(upper(actasmpattern),tmpsym,tmpsrsymtable);
+                            if tlabelsym(tmpsym).defined then
+                              Message1(asmr_e_public_must_be_used_before_label_definition,actasmpattern);
+                          end;
+                      end
+                    else
+                      Message1(asmr_e_unknown_label_identifier,actasmpattern);
+                  end;
+                Consume(AS_ID);
+                if actasmtoken=AS_COMMA then
+                  begin
+                    Consume(AS_COMMA);
+                    if actasmtoken<>AS_ID then
+                      Consume(AS_ID);
+                  end;
+              until actasmtoken=AS_SEPARATOR;
+            end;
 
           AS_ALIGN:
             Begin

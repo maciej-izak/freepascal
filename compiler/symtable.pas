@@ -42,6 +42,8 @@ interface
           procedure _needs_init_final(sym:TObject;arg:pointer);
           procedure check_forward(sym:TObject;arg:pointer);
           procedure check_block_valid(def: TObject;arg:pointer);
+          procedure register_defs(def:tobject;arg:pointer);
+          procedure register_syms(sym:tobject;arg:pointer);
           procedure labeldefined(sym:TObject;arg:pointer);
           procedure varsymbolused(sym:TObject;arg:pointer);
           procedure TestPrivate(sym:TObject;arg:pointer);
@@ -70,6 +72,7 @@ interface
           procedure checklabels;
           function  needs_init_final : boolean;
           procedure testfordefaultproperty(sym:TObject;arg:pointer);
+          procedure register_children;
        end;
 
 {$ifdef llvm}
@@ -142,7 +145,7 @@ interface
           { for classes (like for Delphi .NET before) only for Delphi NEXTGEN  }
           managementoperators : tmanagementoperators;
           constructor create(const n:string;usealign,recordminalign,recordmaxCalign:shortint);
-          procedure insertunionst(unionst : trecordsymtable;offset : longint);
+          procedure insertunionst(unionst : trecordsymtable;offset : asizeint);
           procedure includemanagementoperator(mop:tmanagementoperator);
        end;
 
@@ -459,7 +462,9 @@ implementation
       { codegen }
       procinfo,
       { ppu }
-      entfile
+      entfile,
+      { parser }
+      scanner
       ;
 
 
@@ -870,6 +875,18 @@ implementation
       end;
 
 
+    procedure tstoredsymtable.register_syms(sym:tobject;arg:pointer);
+      begin
+        tsym(sym).register_sym;
+      end;
+
+
+    procedure tstoredsymtable.register_defs(def:tobject;arg:pointer);
+      begin
+        tdef(def).register_def;
+      end;
+
+
     procedure TStoredSymtable.labeldefined(sym:TObject;arg:pointer);
       begin
         if (tsym(sym).typ=labelsym) and
@@ -1006,6 +1023,13 @@ implementation
         if (tsym(sym).typ=propertysym) and
            (ppo_defaultproperty in tpropertysym(sym).propoptions) then
           ppointer(arg)^:=sym;
+     end;
+
+
+   procedure tstoredsymtable.register_children;
+     begin
+       SymList.ForEachCall(@register_syms,nil);
+       DefList.ForEachCall(@register_defs,nil);
      end;
 
 
@@ -1653,13 +1677,13 @@ implementation
     { the offset is the location of the start of the variant
       and datasize and dataalignment corresponds to
       the complete size (see code in pdecl unit) PM }
-    procedure trecordsymtable.insertunionst(unionst : trecordsymtable;offset : longint);
+    procedure trecordsymtable.insertunionst(unionst : trecordsymtable;offset : asizeint);
       var
         sym : tsym;
         def : tdef;
         i : integer;
         varalignrecord,varalign,
-        storesize,storealign : aint;
+        storesize,storealign : asizeint;
         bitsize: tcgint;
       begin
         storesize:=_datasize;
@@ -2795,6 +2819,12 @@ implementation
        var
          owner: tsymtable;
        begin
+         { for symbols used in preprocessor expressions, we don't want to
+           increase references count (for smaller final binaries) }
+         if not assigned(current_scanner) then
+           internalerror(2017050601);
+         if current_scanner.in_preproc_comp_expr then
+           exit;
          { symbol uses count }
          sym.IncRefCount;
          owner:=sym.owner;
@@ -2949,6 +2979,13 @@ implementation
                        (
                          isspezproc and
                          (current_procinfo.procdef.struct=current_structdef)
+                       ) or
+                       { specializations may access private symbols that their
+                         generics are allowed to access }
+                       (
+                         assigned(current_structdef) and
+                         (df_specialization in current_structdef.defoptions) and
+                         (symst.moduleid=current_structdef.genericdef.owner.moduleid)
                        )
                       );
             end;
@@ -3023,6 +3060,13 @@ implementation
                        (
                          isspezproc and
                          (current_procinfo.procdef.struct=current_structdef)
+                       ) or
+                       { specializations may access private symbols that their
+                         generics are allowed to access }
+                       (
+                         assigned(current_structdef) and
+                         (df_specialization in current_structdef.defoptions) and
+                         (symst.moduleid=current_structdef.genericdef.owner.moduleid)
                        )
                       );
             end;
@@ -3113,7 +3157,12 @@ implementation
                    (
                      not(srsym.typ in [unitsym,namespacesym]) or
                      srsymtable.iscurrentunit or
-                     (assigned(current_specializedef)and(current_specializedef.genericdef.owner.moduleid=srsymtable.moduleid))
+                     (assigned(current_specializedef)and(current_specializedef.genericdef.owner.moduleid=srsymtable.moduleid)) or
+                     (
+                       assigned(current_procinfo) and
+                       (df_specialization in current_procinfo.procdef.defoptions) and
+                       (current_procinfo.procdef.genericdef.owner.moduleid=srsymtable.moduleid)
+                     )
                    ) and
                    (not (ssf_search_option in flags) or (option in srsym.symoptions))then
                   begin
@@ -3451,7 +3500,7 @@ implementation
               begin
                 { search for a class helper method first if this is an Object
                   Pascal class and we haven't yet found a helper symbol }
-                if is_class(classh) and
+                if (classh.objecttype in objecttypes_with_helpers) and
                     (ssf_search_helper in flags) then
                   begin
                     result:=search_objectpascal_helper(classh,contextclassh,s,srsym,srsymtable);

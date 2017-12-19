@@ -27,6 +27,8 @@ unit System;
 
   interface
 
+{$define FPC_HAS_ANSI_TEXTFILEREC}
+
     {$I systemh.inc}
 
 {Platform specific information}
@@ -76,6 +78,8 @@ var
     {$if defined(FPUSOFT)}
 
     {$define fpc_softfpu_implementation}
+    {$define softfpu_compiler_mul32to64}
+    {$define softfpu_inline}
     {$i softfpu.pp}
     {$undef fpc_softfpu_implementation}
 

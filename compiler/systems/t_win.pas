@@ -29,9 +29,9 @@ interface
        cutils,cclasses,
        aasmbase,aasmtai,aasmdata,aasmcpu,fmodule,globtype,globals,systems,verbose,
        symconst,symdef,symsym,
-       script,gendef,
+       cscript,gendef,
        cpubase,
-       import,export,link,comprsrc,cgobj,i_win;
+       import,export,link,comprsrc,i_win;
 
 
     const
@@ -96,7 +96,7 @@ implementation
   uses
     SysUtils,
     cfileutl,
-    cpuinfo,cgutils,dbgbase,
+    cgutils,dbgbase,
     owar,ogbase
 {$ifdef SUPPORT_OMF}
     ,ogomf
@@ -383,7 +383,7 @@ implementation
 {$else}
               objdata.writereloc(0,sizeof(longint),idata5label,RELOC_ABSOLUTE32);
 {$endif x86_64}
-              objdata.writebytes(nopopcodes,align(objdata.CurrObjSec.size,sizeof(nopopcodes))-objdata.CurrObjSec.size);
+              objdata.writebytes(nopopcodes,align(objdata.CurrObjSec.size,qword(sizeof(nopopcodes)))-objdata.CurrObjSec.size);
             end;
           ObjOutput.exportsymbol(implabel);
           WriteObjData(objdata);

@@ -31,13 +31,11 @@ interface
        globtype,globals,tokens,constexp,
        { symtable }
        symconst,symbase,symtype,
-       { ppu }
-       ppu,
        { node }
        node,
        { aasm }
-       aasmbase,aasmtai,
-       cpubase,cpuinfo,
+       aasmtai,
+       cpuinfo,
        cgbase,
        parabase
        ;
@@ -406,6 +404,7 @@ interface
           { for Object Pascal helpers }
           extendeddef   : tdef;
           extendeddefderef: tderef;
+          helpertype : thelpertype;
           { for Objective-C: protocols and classes can have the same name there }
           objextname     : pshortstring;
           { to be able to have a variable vmt position }
@@ -1074,6 +1073,7 @@ interface
        methodpointertype,         { typecasting of methodpointers to extract self }
        nestedprocpointertype,     { typecasting of nestedprocpointers to extract parentfp }
        hresultdef,
+       typekindtype,              { def of TTypeKind for correct handling of GetTypeKind parameters }
        { we use only one variant def for every variant class }
        cvarianttype,
        colevarianttype,
@@ -1490,42 +1490,8 @@ implementation
               end
             else
               begin
-                if addgenerics and
-                    (sp_generic_dummy in sym.symoptions)
-                    then
-                  begin
-                    { did we already search for a generic with that name? }
-                    list:=tfpobjectlist(current_module.genericdummysyms.find(sym.name));
-                    if not assigned(list) then
-                      begin
-                        list:=tfpobjectlist.create(true);
-                        current_module.genericdummysyms.add(sym.name,list);
-                      end;
-                    { is the dummy sym still "dummy"? }
-                    if (sym.typ=typesym) and
-                        (
-                          { dummy sym defined in mode Delphi }
-                          (ttypesym(sym).typedef.typ=undefineddef) or
-                          { dummy sym defined in non-Delphi mode }
-                          (tstoreddef(ttypesym(sym).typedef).is_generic)
-                        ) then
-                      begin
-                        { do we have a non-generic type of the same name
-                          available? }
-                        if not searchsym_with_flags(sym.name,srsym,srsymtable,[ssf_no_addsymref]) then
-                          srsym:=nil;
-                      end
-                    else
-                      { dummy symbol is already not so dummy anymore }
-                      srsym:=nil;
-                    if assigned(srsym) then
-                      begin
-                        entry:=tgenericdummyentry.create;
-                        entry.resolvedsym:=srsym;
-                        entry.dummysym:=sym;
-                        list.add(entry);
-                      end;
-                  end;
+                if addgenerics then
+                  add_generic_dummysym(sym);
                 { add nested helpers as well }
                 if (def.typ in [recorddef,objectdef]) and
                     (sto_has_helper in tabstractrecorddef(def).symtable.tableoptions) then
@@ -2249,6 +2215,9 @@ implementation
 
 
    procedure tstoreddef.register_def;
+     var
+       gst : tgetsymtable;
+       st : tsymtable;
      begin
        if registered then
          exit;
@@ -2256,6 +2225,12 @@ implementation
        if assigned(current_module) then
          begin
            exclude(defoptions,df_not_registered_no_free);
+           for gst:=low(tgetsymtable) to high(tgetsymtable) do
+             begin
+               st:=getsymtable(gst);
+               if assigned(st) then
+                 tstoredsymtable(st).register_children;
+             end;
            if defid<defid_not_registered then
              defid:=deflist_index
            else
@@ -3866,6 +3841,7 @@ implementation
         if not(
                (ado_IsDynamicArray in arrayoptions) or
                (ado_IsConvertedPointer in arrayoptions) or
+               (ado_IsConstructor in arrayoptions) or
                (highrange<lowrange)
 	      ) and
            (size=-1) then
@@ -6587,6 +6563,7 @@ implementation
       begin
          inherited ppuload(objectdef,ppufile);
          objecttype:=tobjecttyp(ppufile.getbyte);
+         helpertype:=thelpertype(ppufile.getbyte);
          objextname:=ppufile.getpshortstring;
          { only used for external Objective-C classes/protocols }
          if (objextname^='') then
@@ -6791,6 +6768,7 @@ implementation
          ppufile.do_indirect_crc:=true;
          inherited ppuwrite(ppufile);
          ppufile.putbyte(byte(objecttype));
+         ppufile.putbyte(byte(helpertype));
          if assigned(objextname) then
            ppufile.putstring(objextname^)
          else

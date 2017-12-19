@@ -28,20 +28,24 @@ unit aoptcpu;
   Interface
 
     uses
-      cpubase, aoptobj, aoptcpub, aopt,
+      cpubase, aoptobj, aoptcpub, aopt, aoptx86,
       aasmtai;
 
     Type
-      TCpuAsmOptimizer = class(TAsmOptimizer)
+      TCpuAsmOptimizer = class(TX86AsmOptimizer)
         function PeepHoleOptPass1Cpu(var p : tai) : boolean; override;
+        function PostPeepHoleOptsCpu(var p : tai) : boolean; override;
+        procedure PostPeepHoleOpts; override;
       End;
 
   Implementation
 
     uses
+      globals,
       verbose,
-      aoptx86,
-      aasmcpu;
+      cpuinfo,
+      aasmcpu,
+      aoptutils;
 
     function TCpuAsmOptimizer.PeepHoleOptPass1Cpu(var p : tai) : boolean;
       var
@@ -56,21 +60,25 @@ unit aoptcpu;
                 A_MOV:
                   begin
                     if MatchInstruction(p,A_MOV,[S_W]) and
-                      MatchOpType(p,top_ref,top_reg) and
+                      MatchOpType(taicpu(p),top_ref,top_reg) and
 
                       GetNextInstruction(p, hp1) and
                       MatchInstruction(hp1,A_MOV,[S_W]) and
-                      MatchOpType(hp1,top_ref,top_reg) and
+                      MatchOpType(taicpu(hp1),top_ref,top_reg) and
 
                       GetNextInstruction(hp1, hp2) and
                       MatchInstruction(hp2,A_MOV,[S_W]) and
-                      MatchOpType(hp2,top_reg,top_reg) and
+                      MatchOpType(taicpu(hp2),top_reg,top_reg) and
 
                       not(OpsEqual(taicpu(p).oper[1]^,taicpu(hp1).oper[1]^)) and
 
                       OpsEqual(taicpu(hp1).oper[1]^,taicpu(hp2).oper[0]^) and
 
-                      (MatchOperand(taicpu(hp2).oper[1]^,NR_ES) or MatchOperand(taicpu(hp2).oper[1]^,NR_DS)) and
+                      (MatchOperand(taicpu(hp2).oper[1]^,NR_ES) or MatchOperand(taicpu(hp2).oper[1]^,NR_DS) or
+                       ((current_settings.cputype>=cpu_386) and
+                        (MatchOperand(taicpu(hp2).oper[1]^,NR_SS) or
+                         MatchOperand(taicpu(hp2).oper[1]^,NR_FS) or
+                         MatchOperand(taicpu(hp2).oper[1]^,NR_GS)))) and
 
                       (taicpu(p).oper[0]^.ref^.base=taicpu(hp1).oper[0]^.ref^.base) and
                       (taicpu(p).oper[0]^.ref^.index=taicpu(hp1).oper[0]^.ref^.index) and
@@ -85,6 +93,12 @@ unit aoptcpu;
                             taicpu(p).opcode:=A_LDS;
                           NR_ES:
                             taicpu(p).opcode:=A_LES;
+                          NR_SS:
+                            taicpu(p).opcode:=A_LSS;
+                          NR_FS:
+                            taicpu(p).opcode:=A_LFS;
+                          NR_GS:
+                            taicpu(p).opcode:=A_LGS;
                           else
                             internalerror(2015092601);
                         end;
@@ -95,9 +109,39 @@ unit aoptcpu;
                         result:=true;
                       end;
                   end;
-              end
+                A_SUB:
+                  result:=OptPass1Sub(p);
+              end;
             end
         end;
+      end;
+
+
+    function TCpuAsmOptimizer.PostPeepHoleOptsCpu(var p: tai): boolean;
+      begin
+        result := false;
+        case p.typ of
+          ait_instruction:
+            begin
+              case taicpu(p).opcode of
+                {A_MOV commented out, because it still breaks some i8086 code :( }
+                {A_MOV:
+                  Result:=PostPeepholeOptMov(p);}
+                A_CMP:
+                  Result:=PostPeepholeOptCmp(p);
+                A_OR,
+                A_TEST:
+                  Result:=PostPeepholeOptTestOr(p);
+              end;
+            end;
+        end;
+      end;
+
+
+    procedure TCpuAsmOptimizer.PostPeepHoleOpts;
+      begin
+        inherited;
+        OptReferences;
       end;
 
 begin

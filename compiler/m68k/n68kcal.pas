@@ -98,6 +98,23 @@ implementation
               else
                 internalerror(2005010403);
             end;
+          system_m68k_palmos:
+            begin
+              if po_syscall in tprocdef(procdefinition).procoptions then
+                begin
+                  if po_syscall_has_importnr in tprocdef(procdefinition).procoptions then
+                    begin
+                      cg.getcpuregister(current_asmdata.CurrAsmList,NR_D2);
+                      current_asmdata.CurrAsmList.concat(taicpu.op_const_reg(A_MOVE,S_L,tprocdef(procdefinition).import_nr,NR_D2));
+                    end;
+                  current_asmdata.CurrAsmList.concat(taicpu.op_const(A_TRAP,S_NO,15));
+                  current_asmdata.CurrAsmList.concat(tai_const.create_16bit(tprocdef(procdefinition).extnumber));
+                  if po_syscall_has_importnr in tprocdef(procdefinition).procoptions then
+                    cg.ungetcpuregister(current_asmdata.CurrAsmList,NR_D2);
+                end
+              else
+                internalerror(2017081201);
+            end;
           else
             internalerror(2004042901);
         end;

@@ -80,6 +80,7 @@ type
     function Insert(Index: Integer): Pointer;
     procedure Move(CurIndex, NewIndex: Integer);
     procedure Assign(Obj: TFPSList);
+    procedure AddList(Obj: TFPSList);
     function Remove(Item: Pointer): Integer;
     procedure Pack;
     procedure Sort(Compare: TFPSListCompareFunc);
@@ -143,6 +144,7 @@ type
     property Last: T read GetLast write SetLast;
 {$ifndef VER2_4}
     procedure Assign(Source: TFPGList);
+    procedure AddList(Source: TFPGList);
 {$endif VER2_4}
     function Remove(const Item: T): Integer; {$ifdef FGLINLINE} inline; {$endif}
     procedure Sort(Compare: TCompareFunc);
@@ -181,6 +183,7 @@ type
     procedure Insert(Index: Integer; const Item: T); {$ifdef FGLINLINE} inline; {$endif}
     property Last: T read GetLast write SetLast;
 {$ifndef VER2_4}
+    procedure AddList(Source: TFPGObjectList);
     procedure Assign(Source: TFPGObjectList);
 {$endif VER2_4}
     function Remove(const Item: T): Integer; {$ifdef FGLINLINE} inline; {$endif}
@@ -221,6 +224,7 @@ type
     property Last: T read GetLast write SetLast;
 {$ifndef VER2_4}
     procedure Assign(Source: TFPGInterfacedObjectList);
+    procedure AddList(Source: TFPGInterfacedObjectList);
 {$endif VER2_4}
     function Remove(const Item: T): Integer; {$ifdef FGLINLINE} inline; {$endif}
     procedure Sort(Compare: TCompareFunc);
@@ -798,15 +802,24 @@ begin
   QuickSort(0, FCount-1, Compare);
 end;
 
-procedure TFPSList.Assign(Obj: TFPSList);
+procedure TFPSList.AddList(Obj: TFPSList);
 var
   i: Integer;
 begin
   if Obj.ItemSize <> FItemSize then
     Error(SListItemSizeError, 0);
-  Clear;
   for I := 0 to Obj.Count - 1 do
     Add(Obj[i]);
+end;
+
+procedure TFPSList.Assign(Obj: TFPSList);
+
+begin
+  // We must do this check here, to avoid clearing the list.
+  if Obj.ItemSize <> FItemSize then
+    Error(SListItemSizeError, 0);
+  Clear;
+  AddList(Obj);
 end;
 
 {****************************************************************************}
@@ -927,13 +940,20 @@ begin
 end;
 
 {$ifndef VER2_4}
-procedure TFPGList.Assign(Source: TFPGList);
+procedure TFPGList.AddList(Source: TFPGList);
+
 var
   i: Integer;
+  
 begin
-  Clear;
   for I := 0 to Source.Count - 1 do
     Add(Source[i]);
+end;
+
+procedure TFPGList.Assign(Source: TFPGList);
+begin
+  Clear;
+  AddList(Source);
 end;
 {$endif VER2_4}
 
@@ -1043,13 +1063,18 @@ begin
 end;
 
 {$ifndef VER2_4}
-procedure TFPGObjectList.Assign(Source: TFPGObjectList);
+procedure TFPGObjectList.AddList(Source: TFPGObjectList);
 var
   i: Integer;
 begin
-  Clear;
   for I := 0 to Source.Count - 1 do
     Add(Source[i]);
+end;
+
+procedure TFPGObjectList.Assign(Source: TFPGObjectList);
+begin
+  Clear;
+  AddList(Source);
 end;
 {$endif VER2_4}
 
@@ -1163,10 +1188,16 @@ end;
 
 {$ifndef VER2_4}
 procedure TFPGInterfacedObjectList.Assign(Source: TFPGInterfacedObjectList);
+
+begin
+  Clear;
+  AddList(Source);
+end;
+
+procedure TFPGInterfacedObjectList.AddList(Source: TFPGInterfacedObjectList);
 var
   i: Integer;
 begin
-  Clear;
   for I := 0 to Source.Count - 1 do
     Add(Source[i]);
 end;
@@ -1317,6 +1348,9 @@ var
   I,L,R,Dir: Integer;
 begin
   Result := false;
+  Index := -1;
+  if not Sorted then
+    raise EListError.Create(SErrFindNeedsSortedList);
   // Use binary search.
   L := 0;
   R := FCount-1;
@@ -1550,7 +1584,8 @@ function TFPGMap.TryGetData(const AKey: TKey; out AData: TData): Boolean;
 var
   I: Integer;
 begin
-  Result := inherited Find(@AKey, I);
+  I := IndexOf(AKey);
+  Result := (I >= 0);
   if Result then
     AData := TData(inherited GetData(I)^)
   else
@@ -1735,7 +1770,8 @@ function TFPGMapObject.TryGetData(const AKey: TKey; out AData: TData): Boolean;
 var
   I: Integer;
 begin
-  Result := inherited Find(@AKey, I);
+  I := IndexOf(AKey);
+  Result := (I >= 0);
   if Result then
     AData := TData(inherited GetData(I)^)
   else
@@ -1916,7 +1952,8 @@ function TFPGMapInterfacedObjectData.TryGetData(const AKey: TKey; out AData: TDa
 var
   I: Integer;
 begin
-  Result := inherited Find(@AKey, I);
+  I := IndexOf(AKey);
+  Result := (I >= 0);
   if Result then
     AData := TData(inherited GetData(I)^)
   else

@@ -37,6 +37,9 @@ uses
 {$DEFINE HAS_GETTICKCOUNT64}
 {$DEFINE OS_FILESETDATEBYNAME}
 
+// this target has an fileflush implementation, don't include dummy
+{$DEFINE SYSUTILS_HAS_FILEFLUSH_IMPL}
+
 { used OS file system APIs use unicodestring }
 {$define SYSUTILS_HAS_UNICODESTR_FILEUTIL_IMPL}
 { OS has an ansistring/single byte environment variable API }
@@ -283,6 +286,11 @@ const
                FILE_SHARE_READ or FILE_SHARE_WRITE);
 
 
+function FileFlush(Handle: THandle): Boolean;
+begin
+  Result:= FlushFileBuffers(Handle);
+end;
+
 Function FileOpen (Const FileName : unicodestring; Mode : Integer) : THandle;
 begin
   result := CreateFileW(PWideChar(FileName), dword(AccessMode[Mode and 3]),
@@ -444,6 +452,14 @@ begin
   Result:=0;
 end;
 
+Procedure InternalFindClose (var Handle: THandle; var FindData: TFindData);
+begin
+   if Handle <> INVALID_HANDLE_VALUE then
+    begin
+    Windows.FindClose(Handle);
+    Handle:=INVALID_HANDLE_VALUE;
+    end;
+end;
 
 Function InternalFindFirst (Const Path : UnicodeString; Attr : Longint; out Rslt : TAbstractSearchRec; var Name : UnicodeString) : Longint;
 begin
@@ -460,6 +476,8 @@ begin
    end;
   { Find file with correct attribute }
   Result:=FindMatch(Rslt,Name);
+  if (Result<>0) then
+    InternalFindClose(Rslt.FindHandle,Rslt.FindData);
 end;
 
 Function InternalFindNext (Var Rslt : TAbstractSearchRec; var Name: UnicodeString) : Longint;
@@ -471,11 +489,6 @@ begin
 end;
 
 
-Procedure InternalFindClose (var Handle: THandle; var FindData: TFindData);
-begin
-   if Handle <> INVALID_HANDLE_VALUE then
-    Windows.FindClose(Handle);
-end;
 
 
 Function FileGetDate (Handle : THandle) : Longint;

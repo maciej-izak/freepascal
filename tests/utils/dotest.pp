@@ -1285,6 +1285,7 @@ var
   EndTicks,
   StartTicks : int64;
   FileList   : TStringList;
+  RelativeToConfigMarker : TObject;
 
   function BuildFileList: TStringList;
     var
@@ -1292,26 +1293,35 @@ var
       index  : longint;
     begin
       s:=Config.Files;
-      if length(s) = 0 then
+      if (length(s) = 0) and (Config.ConfigFileSrc='') then
         begin
           Result:=nil;
           exit;
         end;
       Result:=TStringList.Create;
-      repeat
-        index:=pos(' ',s);
-        if index=0 then
-          LocalFile:=s
-        else
-          LocalFile:=copy(s,1,index-1);
-        Result.Add(LocalFile);
-        if index=0 then
-          break;
-        s:=copy(s,index+1,length(s)-index);
-      until false;
+      if s<>'' then
+        repeat
+          index:=pos(' ',s);
+          if index=0 then
+            LocalFile:=s
+          else
+            LocalFile:=copy(s,1,index-1);
+          Result.Add(LocalFile);
+          if index=0 then
+            break;
+          s:=copy(s,index+1,length(s)-index);
+        until false;
+      if Config.ConfigFileSrc<>'' then
+        begin
+          if Config.ConfigFileSrc=Config.ConfigFileDst then
+            Result.AddObject(Config.ConfigFileSrc,RelativeToConfigMarker)
+          else
+            Result.AddObject(Config.ConfigFileSrc+'='+Config.ConfigFileDst,RelativeToConfigMarker);
+        end;
     end;
 
 begin
+  RelativeToConfigMarker:=TObject.Create;
   if RemoteAddr='' then
     begin
       FileList:=BuildFileList;
@@ -1322,11 +1332,25 @@ begin
             LocalPath:=LocalPath+'/';
           for i:=0 to FileList.count-1 do
             begin
-              LocalFile:=FileList[i];
-              CopyFile(LocalPath+LocalFile,TestOutputDir+'/'+LocalFile,false);
+              if FileList.Names[i]<>'' then
+                begin
+                  LocalFile:=FileList.Names[i];
+                  RemoteFile:=FileList.ValueFromIndex[i];
+                end
+              else
+                begin
+                  LocalFile:=FileList[i];
+                  RemoteFile:=LocalFile;
+                end;
+              if FileList.Objects[i]=RelativeToConfigMarker then
+                s:='config/'+LocalFile
+              else
+                s:=LocalPath+LocalFile;
+              CopyFile(s,TestOutputDir+'/'+RemoteFile,false);
             end;
           FileList.Free;
         end;
+      RelativeToConfigMarker.Free;
       exit(true);
     end;
   execres:=true;
@@ -1349,6 +1373,7 @@ begin
   if not execres then
   begin
     Verbose(V_normal, 'Could not copy executable '+FileToCopy);
+    RelativeToConfigMarker.Free;
     exit(execres);
   end;
   FileList:=BuildFileList;
@@ -1359,9 +1384,21 @@ begin
       LocalPath:=LocalPath+'/';
     for i:=0 to FileList.count-1 do
       begin
-        LocalFile:=FileList[i];
-        RemoteFile:=RemotePath+'/'+SplitFileName(LocalFile);
-        LocalFile:=LocalPath+LocalFile;
+        if FileList.Names[i]<>'' then
+          begin
+            LocalFile:=FileList.Names[i];
+            RemoteFile:=FileList.ValueFromIndex[i];
+          end
+        else
+          begin
+            LocalFile:=FileList[i];
+            RemoteFile:=LocalFile;
+          end;
+        RemoteFile:=RemotePath+'/'+SplitFileName(RemoteFile);
+        if FileList.Objects[i]=RelativeToConfigMarker then
+          LocalFile:='config/'+LocalFile
+        else
+          LocalFile:=LocalPath+LocalFile;
         if DoVerbose and (rcpprog='pscp') then
           pref:='-v '
         else
@@ -1372,12 +1409,14 @@ begin
         begin
           Verbose(V_normal, 'Could not copy required file '+LocalFile);
           FileList.Free;
+          RelativeToConfigMarker.Free;
           exit(false);
         end;
       end;
   end;
   FileList.Free;
   MaybeCopyFiles:=execres;
+  RelativeToConfigMarker.Free;
 end;
 
 function RunExecutable:boolean;
@@ -1844,7 +1883,7 @@ end;
 
 procedure RunTest;
 var
-  PPDir,LibraryName,LogSuffix : string;
+  PPDir,LibraryName,LogSuffix,PPPrefix : string;
   Res : boolean;
 begin
   Res:=GetConfig(PPFile[current],Config);
@@ -1875,6 +1914,12 @@ begin
       if PPDir<>'' then
         begin
 {$ifndef MACOS}
+          { handle paths that are parallel to the tests directory (let's hope
+            that noone uses ../../ -.- ) }
+          { ToDo: check relative paths on MACOS }
+          PPPrefix:=Copy(PPDir,1,3);
+          if (PPPrefix='../') or (PPPrefix='..\') then
+            PPDir:='root/'+Copy(PPDir,4);
           TestOutputDir:=OutputDir+'/'+PPDir;
           if UniqueSuffix<>'' then
             TestOutputDir:=TestOutputDir+'/'+UniqueSuffix;

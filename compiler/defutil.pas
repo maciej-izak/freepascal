@@ -62,11 +62,11 @@ interface
     function get_max_value(def : tdef) : TConstExprInt;
 
     {# Returns basetype of the specified integer range }
-    function range_to_basetype(l,h:TConstExprInt):tordtype;
+    function range_to_basetype(const l,h:TConstExprInt):tordtype;
 
-    procedure range_to_type(l,h:TConstExprInt;var def:tdef);
+    procedure range_to_type(const l,h:TConstExprInt;var def:tdef);
 
-    procedure int_to_type(v:TConstExprInt;var def:tdef);
+    procedure int_to_type(const v:TConstExprInt;var def:tdef);
 
     {# Returns true, if definition defines an integer type }
     function is_integer(def : tdef) : boolean;
@@ -259,6 +259,9 @@ interface
     {# Returns true, if def is a 64 bit type }
     function is_64bit(def : tdef) : boolean;
 
+    { true, if def1 and def2 are both integers of the same bit size and sign }
+    function are_equal_ints(def1, def2: tdef): boolean;
+
     { true, if def is an int type, larger than the processor's native int size }
     function is_oversizedint(def : tdef) : boolean;
 
@@ -338,6 +341,9 @@ interface
     { returns true if def is a C "block" }
     function is_block(def: tdef): boolean;
 
+    { returns the TTypeKind value of the def }
+    function get_typekind(def: tdef): byte;
+
 implementation
 
     uses
@@ -404,7 +410,7 @@ implementation
       end;
 
 
-    function range_to_basetype(l,h:TConstExprInt):tordtype;
+    function range_to_basetype(const l,h:TConstExprInt):tordtype;
       begin
         { prefer signed over unsigned }
         if (l>=int64(-128)) and (h<=127) then
@@ -426,7 +432,7 @@ implementation
       end;
 
 
-    procedure range_to_type(l,h:TConstExprInt;var def:tdef);
+    procedure range_to_type(const l,h:TConstExprInt;var def:tdef);
       begin
         { prefer signed over unsigned }
         if (l>=int64(-128)) and (h<=127) then
@@ -448,7 +454,7 @@ implementation
       end;
 
 
-    procedure int_to_type(v:TConstExprInt;var def:tdef);
+    procedure int_to_type(const v:TConstExprInt;var def:tdef);
       begin
         range_to_type(v,v,def);
       end;
@@ -925,6 +931,16 @@ implementation
       end;
 
 
+    { true, if def1 and def2 are both integers of the same bit size and sign }
+    function are_equal_ints(def1, def2: tdef): boolean;
+      begin
+        result:=(def1.typ=orddef) and (def2.typ=orddef) and
+          (torddef(def1).ordtype in [u8bit,u16bit,u32bit,u64bit,
+                                     s8bit,s16bit,s32bit,s64bit]) and
+          (torddef(def1).ordtype=torddef(def2).ordtype);
+      end;
+
+
     { true, if def is an int type, larger than the processor's native int size }
     function is_oversizedint(def : tdef) : boolean;
       begin
@@ -1057,6 +1073,11 @@ implementation
             begin
               l:=int64(tarraydef(def).lowrange);
               h:=int64(tarraydef(def).highrange);
+            end;
+          undefineddef:
+            begin
+              l:=torddef(sizesinttype).low;
+              h:=torddef(sizesinttype).high;
             end;
           else
             internalerror(200611054);
@@ -1437,6 +1458,106 @@ implementation
     function is_block(def: tdef): boolean;
       begin
         result:=(def.typ=procvardef) and (po_is_block in tprocvardef(def).procoptions)
+      end;
+
+
+    function get_typekind(def:tdef):byte;
+      begin
+        case def.typ of
+          arraydef:
+            if ado_IsDynamicArray in tarraydef(def).arrayoptions then
+              result:=tkDynArray
+            else
+              result:=tkArray;
+          recorddef:
+            result:=tkRecord;
+          pointerdef:
+            result:=tkPointer;
+          orddef:
+            case torddef(def).ordtype of
+              u8bit,
+              u16bit,
+              u32bit,
+              s8bit,
+              s16bit,
+              s32bit:
+                result:=tkInteger;
+              u64bit:
+                result:=tkQWord;
+              s64bit:
+                result:=tkInt64;
+              pasbool8,
+              pasbool16,
+              pasbool32,
+              pasbool64,
+              bool8bit,
+              bool16bit,
+              bool32bit,
+              bool64bit:
+                result:=tkBool;
+              uchar:
+                result:=tkChar;
+              uwidechar:
+                result:=tkWChar;
+              scurrency:
+                result:=tkFloat;
+              else
+                result:=tkUnknown;
+            end;
+          stringdef:
+            case tstringdef(def).stringtype of
+              st_shortstring:
+                result:=tkSString;
+              st_longstring:
+                result:=tkLString;
+              st_ansistring:
+                result:=tkAString;
+              st_widestring:
+                result:=tkWString;
+              st_unicodestring:
+                result:=tkUString;
+              else
+                result:=tkUnknown;
+            end;
+          enumdef:
+            result:=tkEnumeration;
+          objectdef:
+            case tobjectdef(def).objecttype of
+              odt_class,
+              odt_javaclass:
+                result:=tkClass;
+              odt_object:
+                result:=tkObject;
+              odt_interfacecom,
+              odt_dispinterface,
+              odt_interfacejava:
+                result:=tkInterface;
+              odt_interfacecorba:
+                result:=tkInterfaceCorba;
+              odt_helper:
+                result:=tkHelper;
+              else
+                result:=tkUnknown;
+            end;
+          { currently tkFile is not used }
+          {filedef:
+            result:=tkFile;}
+          setdef:
+            result:=tkSet;
+          procvardef:
+            if tprocvardef(def).is_methodpointer then
+              result:=tkMethod
+            else
+              result:=tkProcVar;
+          floatdef:
+            result:=tkFloat;
+          classrefdef:
+            result:=tkClassRef;
+          variantdef:
+            result:=tkVariant;
+          else
+            result:=tkUnknown;
+        end;
       end;
 
 end.

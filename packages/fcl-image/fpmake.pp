@@ -28,11 +28,10 @@ begin
     P.Email := '';
     P.Description := 'Image loading and conversion parts of Free Component Libraries (FCL), FPC''s OOP library.';
     P.NeedLibC:= false;
-    P.OSes := P.OSes - [embedded,nativent,msdos,win16];
+    P.OSes := P.OSes - [embedded,nativent,msdos,win16,macos,palmos];
 
     P.SourcePath.Add('src');
     P.IncludePath.Add('src');
-
     T:=P.Targets.AddUnit('bmpcomn.pp');
       with T.Dependencies do
         begin
@@ -265,10 +264,30 @@ begin
     T:=P.Targets.AddUnit('fpimggauss.pp');
     With T.Dependencies do
       AddUnit('fpimage');
+      
+    T:=P.Targets.AddUnit('fpbarcode.pp');
+    T:=P.Targets.AddUnit('fpimgbarcode.pp');
+    With T.Dependencies do
+      begin
+      AddUnit('fpimage');
+      AddUnit('fpcanvas');
+      Addunit('fpimgcmn');
+      AddUnit('fpbarcode');
+      end;
+    T:=P.Targets.AddUnit('fpqrcodegen.pp');
+    T:=P.Targets.AddUnit('fpimgqrcode.pp');
+    With T.Dependencies do
+      begin
+      AddUnit('fpimage');
+      AddUnit('fpcanvas');
+      Addunit('fpimgcmn');
+      AddUnit('fpqrcodegen');
+      end;
 
     P.ExamplePath.Add('examples');
     T:=P.Targets.AddExampleProgram('drawing.pp');
     T:=P.Targets.AddExampleProgram('imgconv.pp');
+    T:=P.Targets.AddExampleProgram('createbarcode.lpr');
 
 {$ifndef ALLPACKAGES}
     Run;

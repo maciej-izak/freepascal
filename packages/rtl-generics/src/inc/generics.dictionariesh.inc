@@ -267,6 +267,17 @@ type
       out AHash: UInt32): SizeInt; override;
   end;
 
+  TOpenAddressingQP<OPEN_ADDRESSING_CONSTRAINTS> = class(TOpenAddressingSH<OPEN_ADDRESSING_CONSTRAINTS>)
+  private
+    FPrimaryNumberAsSizeApproximation: SizeInt;
+  protected
+    procedure UpdateItemsThreshold(ASize: SizeInt); override;
+    function FindBucketIndex(constref AItems: TArray<TItem>;
+      constref AKey: TKey; out AHash: UInt32): SizeInt; override; overload;
+    function FindBucketIndexOrTombstone(constref AItems: TArray<TItem>;
+      constref AKey: TKey; out AHash: UInt32): SizeInt; override;
+  end;
+
   TOpenAddressingDH<OPEN_ADDRESSING_CONSTRAINTS> = class(TOpenAddressingTombstones<OPEN_ADDRESSING_CONSTRAINTS>)
   private type // for workaround Lazarus bug #25613
     _TItem = record
@@ -360,11 +371,11 @@ type
     // CUCKOO_MAX_ITEMS_LENGTH: <- to do : calc max length for items based on CUCKOO sign
     // maybe some CDM bloom filter?
 
-    procedure UpdateItemsThreshold(ASize: SizeInt); override;
     procedure Resize(ANewSize: SizeInt);
     procedure Rehash(ASizePow2: SizeInt);
     function PrepareAddingItem: SizeInt;
   protected
+    procedure UpdateItemsThreshold(ASize: SizeInt); override;
     function Lookup(constref AKey: TKey; var AHashListOrIndex: PUInt32): SizeInt; inline; overload;
     function Lookup(constref AItems: TItemsDArray; constref AKey: TKey; var AHashListOrIndex: PUInt32): SizeInt; virtual; overload;
   public
@@ -495,8 +506,8 @@ type
   TOpenAddressingLPT<TKey, TValue, THashFactory> = class(TOpenAddressingSH<TKey, TValue, THashFactory, TLinearProbing>);
   TOpenAddressingLPT<TKey, TValue> = class(TOpenAddressingSH<TKey, TValue, TDelphiHashFactory, TLinearProbing>);
 
-  TOpenAddressingQP<TKey, TValue, THashFactory> = class(TOpenAddressingSH<TKey, TValue, THashFactory, TQuadraticProbing>);
-  TOpenAddressingQP<TKey, TValue> = class(TOpenAddressingSH<TKey, TValue, TDelphiHashFactory, TQuadraticProbing>);
+  TOpenAddressingQP<TKey, TValue, THashFactory> = class(TOpenAddressingQP<TKey, TValue, THashFactory, TQuadraticProbing>);
+  TOpenAddressingQP<TKey, TValue> = class(TOpenAddressingQP<TKey, TValue, TDelphiHashFactory, TQuadraticProbing>);
 
   TOpenAddressingDH<TKey, TValue, THashFactory> = class(TOpenAddressingDH<TKey, TValue, THashFactory, TDoubleHashing>);
   TOpenAddressingDH<TKey, TValue> = class(TOpenAddressingDH<TKey, TValue, TDelphiDoubleHashFactory, TDoubleHashing>);

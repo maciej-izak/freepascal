@@ -26,17 +26,15 @@ interface
 
     uses
        { common }
-       cutils,
+       cutils,compinnr,
        { target }
        globtype,globals,widestr,constexp,
        { symtable }
        symconst,symbase,symtype,symdef,defcmp,
-       { ppu }
-       ppu,finput,
        cclasses,
        { aasm }
        aasmbase,
-       cpuinfo,cpubase,cgbase,cgutils,parabase
+       cpuinfo,cgbase,cgutils,parabase
        ;
 
     type
@@ -417,8 +415,8 @@ interface
        tenumsymclass = class of tenumsym;
 
        tsyssym = class(Tstoredsym)
-          number : longint;
-          constructor create(const n : string;l : longint);virtual;
+          number : tinlinenumber;
+          constructor create(const n : string;l : tinlinenumber);virtual;
           constructor ppuload(ppufile:tcompilerppufile);
           destructor  destroy;override;
           { do not override this routine in platform-specific subclasses,
@@ -495,7 +493,7 @@ implementation
        { tree }
        node,
        { aasm }
-       aasmtai,aasmdata,
+       aasmdata,
        { codegen }
        paramgr,
        procinfo,
@@ -1690,7 +1688,7 @@ implementation
     procedure tabstractvarsym.setvardef_and_regable(def:tdef);
       begin
         setvardef(def);
-         setregable;
+        setregable;
       end;
 
 
@@ -2233,7 +2231,7 @@ implementation
            toasm :
              asmname:=ppufile.getpshortstring;
            toaddr :
-             addroffset:=ppufile.getaword;
+             addroffset:=ppufile.getpuint;
          end;
          ppuload_platform(ppufile);
       end;
@@ -2249,7 +2247,7 @@ implementation
            toasm :
              ppufile.putstring(asmname^);
            toaddr :
-             ppufile.putaword(addroffset);
+             ppufile.putpuint(addroffset);
          end;
          writeentry(ppufile,ibabsolutevarsym);
       end;
@@ -2636,13 +2634,13 @@ implementation
       syssym_list : TFPHashObjectList;
 
 
-    constructor tsyssym.create(const n : string;l : longint);
+    constructor tsyssym.create(const n : string;l : tinlinenumber);
       var
         s : shortstring;
       begin
          inherited create(syssym,n,true);
          number:=l;
-         str(l,s);
+         str(longint(l),s);
          if assigned(syssym_list.find(s)) then
            internalerror(2016060303);
          syssym_list.add(s,self);
@@ -2653,9 +2651,9 @@ implementation
         s : shortstring;
       begin
          inherited ppuload(syssym,ppufile);
-         number:=ppufile.getlongint;
+         number:=tinlinenumber(ppufile.getlongint);
          ppuload_platform(ppufile);
-         str(number,s);
+         str(longint(number),s);
          if assigned(syssym_list.find(s)) then
            internalerror(2016060304);
          syssym_list.add(s,self);
@@ -2669,7 +2667,7 @@ implementation
     procedure tsyssym.ppuwrite(ppufile:tcompilerppufile);
       begin
          inherited ppuwrite(ppufile);
-         ppufile.putlongint(number);
+         ppufile.putlongint(longint(number));
          writeentry(ppufile,ibsyssym);
       end;
 

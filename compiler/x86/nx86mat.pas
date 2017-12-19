@@ -26,7 +26,7 @@ unit nx86mat;
 interface
 
     uses
-      node,nmat,ncgmat;
+      node,ncgmat;
 
     type
       tx86unaryminusnode = class(tcgunaryminusnode)
@@ -52,14 +52,14 @@ interface
 
     uses
       globtype,
-      systems,constexp,
+      constexp,
       cutils,verbose,globals,
       symconst,symdef,
       aasmbase,aasmtai,aasmdata,defutil,
       cgbase,pass_1,pass_2,
       ncon,
-      cpubase,procinfo,
-      cga,ncgutil,cgobj,hlcgobj,cgx86,cgutils;
+      cpubase,
+      cga,cgobj,hlcgobj,cgx86,cgutils;
 
 
 {*****************************************************************************
@@ -308,14 +308,14 @@ interface
                  if is_64bit(resultdef) then
                    begin
                      hlcg.location_force_reg(current_asmdata.CurrAsmList,left.location,left.resultdef,resultdef,false);
-                     emit_reg_reg(A_OR,S_W,GetNextReg(left.location.register64.reghi),left.location.register64.reghi);
-                     emit_reg_reg(A_OR,S_W,GetNextReg(left.location.register64.reglo),left.location.register64.reglo);
+                     emit_reg_reg(A_OR,S_W,cg.GetNextReg(left.location.register64.reghi),left.location.register64.reghi);
+                     emit_reg_reg(A_OR,S_W,cg.GetNextReg(left.location.register64.reglo),left.location.register64.reglo);
                      emit_reg_reg(A_OR,S_W,left.location.register64.reghi,left.location.register64.reglo);
                    end
                  else if is_32bit(resultdef) then
                    begin
                      hlcg.location_force_reg(current_asmdata.CurrAsmList,left.location,left.resultdef,resultdef,false);
-                     emit_reg_reg(A_OR,S_L,GetNextReg(left.location.register),left.location.register);
+                     emit_reg_reg(A_OR,S_L,cg.GetNextReg(left.location.register),left.location.register);
                    end
                  else
 {$endif}
@@ -385,7 +385,7 @@ interface
         opsize:topsize;
         e, sm: aint;
         d,m: aword;
-        m_add: boolean;
+        m_add, invertsign: boolean;
         s: byte;
       begin
         secondpass(left);
@@ -409,31 +409,42 @@ interface
 
         if (nodetype=divn) and (right.nodetype=ordconstn) then
           begin
-            if ispowerof2(int64(tordconstnode(right).value),power) then
+            if isabspowerof2(int64(tordconstnode(right).value),power) then
               begin
                 { for signed numbers, the numerator must be adjusted before the
                   shift instruction, but not wih unsigned numbers! Otherwise,
                   "Cardinal($ffffffff) div 16" overflows! (JM) }
                 if is_signed(left.resultdef) Then
                   begin
+                    invertsign:=tordconstnode(right).value<0;
                     { use a sequence without jumps, saw this in
                       comp.compilers (JM) }
                     { no jumps, but more operations }
                     hreg2:=cg.getintregister(current_asmdata.CurrAsmList,cgsize);
                     emit_reg_reg(A_MOV,opsize,hreg1,hreg2);
-                    {If the left value is signed, hreg2=$ffffffff, otherwise 0.}
-                    emit_const_reg(A_SAR,opsize,resultdef.size*8-1,hreg2);
-                    {If signed, hreg2=right value-1, otherwise 0.}
-                    { (don't use emit_const_reg, because if value>high(longint)
-                       then it must first be loaded into a register) }
-                    cg.a_op_const_reg(current_asmdata.CurrAsmList,OP_AND,cgsize,tordconstnode(right).value-1,hreg2);
+                    if power=1 then
+                      begin
+                        {If the left value is negative, hreg2=(1 shl power)-1=1, otherwise 0.}
+                        cg.a_op_const_reg(current_asmdata.CurrAsmList,OP_SHR,cgsize,resultdef.size*8-1,hreg2);
+                      end
+                    else
+                      begin
+                        {If the left value is negative, hreg2=$ffffffff, otherwise 0.}
+                        cg.a_op_const_reg(current_asmdata.CurrAsmList,OP_SAR,cgsize,resultdef.size*8-1,hreg2);
+                        {If negative, hreg2=(1 shl power)-1, otherwise 0.}
+                        { (don't use emit_const_reg, because if value>high(longint)
+                           then it must first be loaded into a register) }
+                        cg.a_op_const_reg(current_asmdata.CurrAsmList,OP_AND,cgsize,(aint(1) shl power)-1,hreg2);
+                      end;
                     { add to the left value }
                     emit_reg_reg(A_ADD,opsize,hreg2,hreg1);
                     { do the shift }
-                    emit_const_reg(A_SAR,opsize,power,hreg1);
+                    cg.a_op_const_reg(current_asmdata.CurrAsmList,OP_SAR,cgsize,power,hreg1);
+                    if invertsign then
+                      emit_reg(A_NEG,opsize,hreg1);
                   end
                 else
-                  emit_const_reg(A_SHR,opsize,power,hreg1);
+                  cg.a_op_const_reg(current_asmdata.CurrAsmList,OP_SHR,cgsize,power,hreg1);
                 location.register:=hreg1;
               end
             else
@@ -509,6 +520,14 @@ interface
                       end;
                   end;
               end;
+          end
+        { unsigned modulus by a (+/-)power-of-2 constant? }
+        else if (nodetype=modn) and (right.nodetype=ordconstn) and
+                isabspowerof2(tordconstnode(right).value,power) and
+                not(is_signed(left.resultdef)) then
+          begin
+            emit_const_reg(A_AND,opsize,(aint(1) shl power)-1,hreg1);
+            location.register:=hreg1;
           end
         else
           begin

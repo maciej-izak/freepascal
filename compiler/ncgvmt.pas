@@ -110,16 +110,15 @@ implementation
       cutils,cclasses,
       globtype,globals,verbose,constexp,
       systems,fmodule,
-      symsym,symtable,symcreat,defutil,
+      symsym,symtable,symcreat,
 {$ifdef cpuhighleveltarget}
       pparautl,
 {$endif cpuhighleveltarget}
       aasmtai,
       wpobase,
-      nobj,
       cgbase,parabase,paramgr,
 {$ifndef cpuhighleveltarget}
-      cgobj,cgcpu,hlcgobj,hlcgcpu,
+      hlcgobj,hlcgcpu,
 {$endif not cpuhighleveltarget}
       ncgrtti;
 
@@ -633,7 +632,7 @@ implementation
                 datatcb.queue_init(voidpointertype);
                 { reference to the vmt }
                 datatcb.queue_emit_asmsym(
-                  current_asmdata.RefAsmSymbol(classdef.vmt_mangledname,AT_DATA),
+                  current_asmdata.RefAsmSymbol(classdef.vmt_mangledname,AT_DATA,true),
                   tfieldvarsym(classdef.vmt_field).vardef);
               end;
             classtabledef:=datatcb.end_anonymous_record;
