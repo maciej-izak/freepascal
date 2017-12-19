@@ -225,6 +225,8 @@ begin
           inc(offset);
         end;
       end;
+{$ifdef FPC_HAS_FEATURE_WIDESTRINGS}
+  {$ifndef FPC_WIDESTRING_EQUAL_UNICODESTRING}
       if frgWString in Flags then
       with item^ do
       begin
@@ -235,6 +237,7 @@ begin
           inc(offset);
         end;
       end;
+  {$endif FPC_WIDESTRING_EQUAL_UNICODESTRING}
       if frgUString in Flags then
       with item^ do
       begin
@@ -245,6 +248,7 @@ begin
           inc(offset);
         end;
       end;
+{$endif FPC_HAS_FEATURE_WIDESTRINGS}
       if frgInterface in Flags then
       with item^ do
       begin
@@ -324,6 +328,8 @@ begin
           inc(offset);
         end;
       end;
+{$ifdef FPC_HAS_FEATURE_WIDESTRINGS}
+  {$ifndef FPC_WIDESTRING_EQUAL_UNICODESTRING}
       if frgWString in Flags then
       with item^ do
       begin
@@ -334,6 +340,7 @@ begin
           inc(offset);
         end;
       end;
+  {$endif FPC_WIDESTRING_EQUAL_UNICODESTRING}
       if frgUString in Flags then
       with item^ do
       begin
@@ -344,6 +351,7 @@ begin
           inc(offset);
         end;
       end;
+{$endif FPC_HAS_FEATURE_WIDESTRINGS}
       if frgInterface in Flags then
       with item^ do
       begin
@@ -439,6 +447,8 @@ begin
           inc(offset);
         end;
       end;
+{$ifdef FPC_HAS_FEATURE_WIDESTRINGS}
+  {$ifndef FPC_WIDESTRING_EQUAL_UNICODESTRING}
       if frgWString in Flags then
       with item^ do
       begin
@@ -449,6 +459,7 @@ begin
           inc(offset);
         end;
       end;
+  {$endif FPC_WIDESTRING_EQUAL_UNICODESTRING}
       if frgUString in Flags then
       with item^ do
       begin
@@ -459,6 +470,7 @@ begin
           inc(offset);
         end;
       end;
+{$endif FPC_HAS_FEATURE_WIDESTRINGS}
       if frgInterface in Flags then
       with item^ do
       begin
