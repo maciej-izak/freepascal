@@ -164,6 +164,7 @@ begin
           inc(offset);
         end;
       end;
+{$ifdef FPC_HAS_FEATURE_VARIANTS}
       if friVariant in Flags then
       with item^ do
       begin
@@ -174,6 +175,7 @@ begin
           inc(offset);
         end;
       end;
+{$endif FPC_HAS_FEATURE_VARIANTS}
       InitializeOpCall(Data, TypeInfo);
     end
   else
@@ -215,6 +217,7 @@ begin
     begin
       FinalizeOpCall(Data, TypeInfo);
       item:=aligntoqword(Pointer(GeneralRTTI)+1);
+{$ifdef FPC_HAS_FEATURE_ANSISTRINGS}
       if frgAString in Flags then
       with item^ do
       begin
@@ -225,6 +228,7 @@ begin
           inc(offset);
         end;
       end;
+{$endif FPC_HAS_FEATURE_ANSISTRINGS}
 {$ifdef FPC_HAS_FEATURE_WIDESTRINGS}
   {$ifndef FPC_WIDESTRING_EQUAL_UNICODESTRING}
       if frgWString in Flags then
@@ -259,6 +263,7 @@ begin
           inc(offset);
         end;
       end;
+{$ifdef FPC_HAS_FEATURE_VARIANTS}
       if frgVariant in Flags then
       with item^ do
       begin
@@ -269,6 +274,8 @@ begin
           inc(offset);
         end;
       end;
+{$endif FPC_HAS_FEATURE_VARIANTS}
+{$ifdef FPC_HAS_FEATURE_DYNARRAYS}
       if frgDynarray in Flags then
       with item^ do
       begin
@@ -279,6 +286,7 @@ begin
           inc(field);
         end;
       end;
+{$endif FPC_HAS_FEATURE_DYNARRAYS}
     end
   else
 {$endif VER3_0}
@@ -318,6 +326,7 @@ begin
     with PRecordInfoInit(typeInfo)^.FastRTTI^,PRecordInfoInit(typeInfo)^.FastRTTI^.GeneralRTTI^ do
     begin
       item:=aligntoqword(Pointer(GeneralRTTI)+1);
+{$ifdef FPC_HAS_FEATURE_ANSISTRINGS}
       if frgAString in Flags then
       with item^ do
       begin
@@ -328,6 +337,7 @@ begin
           inc(offset);
         end;
       end;
+{$endif FPC_HAS_FEATURE_ANSISTRINGS}
 {$ifdef FPC_HAS_FEATURE_WIDESTRINGS}
   {$ifndef FPC_WIDESTRING_EQUAL_UNICODESTRING}
       if frgWString in Flags then
@@ -362,6 +372,7 @@ begin
           inc(offset);
         end;
       end;
+{$ifdef FPC_HAS_FEATURE_VARIANTS}
       if frgVariant in Flags then
       with item^ do
       begin
@@ -372,6 +383,8 @@ begin
           inc(offset);
         end;
       end;
+{$endif FPC_HAS_FEATURE_VARIANTS}
+{$ifdef FPC_HAS_FEATURE_DYNARRAYS}
       if frgDynarray in Flags then
       with item^ do
       begin
@@ -382,6 +395,7 @@ begin
           inc(field);
         end;
       end;
+{$endif FPC_HAS_FEATURE_DYNARRAYS}
       AddRefOpCall(Data, TypeInfo);
     end
   else
@@ -437,6 +451,7 @@ begin
     with PRecordInfoInit(typeInfo)^.FastRTTI^,PRecordInfoInit(typeInfo)^.FastRTTI^.GeneralRTTI^ do
     begin
       item:=aligntoqword(Pointer(GeneralRTTI)+1);
+{$ifdef FPC_HAS_FEATURE_ANSISTRINGS}
       if frgAString in Flags then
       with item^ do
       begin
@@ -447,6 +462,7 @@ begin
           inc(offset);
         end;
       end;
+{$endif FPC_HAS_FEATURE_ANSISTRINGS}
 {$ifdef FPC_HAS_FEATURE_WIDESTRINGS}
   {$ifndef FPC_WIDESTRING_EQUAL_UNICODESTRING}
       if frgWString in Flags then
@@ -481,6 +497,7 @@ begin
           inc(offset);
         end;
       end;
+{$ifdef FPC_HAS_FEATURE_VARIANTS}
       if frgVariant in Flags then
       with item^ do
       begin
@@ -491,6 +508,8 @@ begin
           inc(offset);
         end;
       end;
+{$endif FPC_HAS_FEATURE_VARIANTS}
+{$ifdef FPC_HAS_FEATURE_DYNARRAYS}
       if frgDynarray in Flags then
       with item^ do
       begin
@@ -501,6 +520,7 @@ begin
           inc(field);
         end;
       end;
+{$endif FPC_HAS_FEATURE_DYNARRAYS}
       { holes / non managed data }
       if assigned(HolesRTTI) then
       with HolesRTTI^ do
