@@ -1914,7 +1914,7 @@ implementation
               { at last set the record size to that of the biggest variant }
               unionsymtable.datasize:=maxsize;
               unionsymtable.fieldalignment:=maxalignment;
-              unionsymtable.addalignmentpadding;
+              unionsymtable.finish_data;
 {$if defined(powerpc) or defined(powerpc64)}
               { parent inherits the alignment padding if the variant is the first "field" of the parent record/variant }
               if (target_info.system in [system_powerpc_darwin, system_powerpc_macos, system_powerpc64_darwin]) and

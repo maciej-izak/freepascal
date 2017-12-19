@@ -1584,7 +1584,7 @@ implementation
          end;
        { data (include zero terminator) }
        result.add_field_by_def('',carraydef.getreusable(streledef,len+1));
-       trecordsymtable(trecorddef(result).symtable).addalignmentpadding;
+       trecordsymtable(trecorddef(result).symtable).finish_data;
      end;
 
 
@@ -1820,7 +1820,7 @@ implementation
          emit_tai()) -- anonrecord may not be set in case we reused an earlier
          constructed def }
        if anonrecord then
-         trecordsymtable(result.symtable).addalignmentpadding;
+         trecordsymtable(result.symtable).finish_data;
        end_aggregate_internal(result,true);
        if anonrecord and
           assigned(curagginfo) and

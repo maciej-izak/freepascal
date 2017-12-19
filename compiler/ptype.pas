@@ -1023,7 +1023,7 @@ implementation
             end;
          { make the record size aligned (has to be done before inserting the
            parameters, because that may depend on the record's size) }
-         recst.addalignmentpadding;
+         recst.finish_data;
          { don't keep track of procdefs in a separate list, because the
            compiler may add additional procdefs (e.g. property wrappers for
            the jvm backend) }

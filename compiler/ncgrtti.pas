@@ -45,13 +45,15 @@ interface
 
         procedure fields_write_rtti(st:tsymtable;rt:trttitype);
         procedure params_write_rtti(def:tabstractprocdef;rt:trttitype;allow_hidden:boolean);
-        procedure fields_write_rtti_data(tcb: ttai_typedconstbuilder; def: tabstractrecorddef; rt: trttitype);
+        procedure fields_write_rtti_data(tcb:ttai_typedconstbuilder;def:tabstractrecorddef;rt:trttitype);
         procedure methods_write_rtti(st:tsymtable;rt:trttitype;visibilities:tvisibilities;allow_hidden:boolean);
         procedure write_rtti_extrasyms(def:Tdef;rt:Trttitype;mainrtti:Tasmsymbol);
         procedure published_write_rtti(st:tsymtable;rt:trttitype);
         function  published_properties_count(st:tsymtable):longint;
         procedure published_properties_write_rtti_data(tcb: ttai_typedconstbuilder; propnamelist: TFPHashObjectList; st: tsymtable);
         procedure collect_propnamelist(propnamelist:TFPHashObjectList;objdef:tobjectdef);
+        procedure managedatoms_write_rtti(tcb:ttai_typedconstbuilder;managedatoms:tmanagedatomscontainer);
+        procedure write_fastrtti(tcb:ttai_typedconstbuilder;def:tabstractrecorddef);
         { only use a direct reference if the referenced type can *only* reside
           in the same unit as the current one }
         function ref_rtti(def:tdef;rt:trttitype;indirect:boolean;suffix:tsymstr):tasmsymbol;
@@ -104,6 +106,17 @@ implementation
        TPropNameListItem = class(TFPHashObject)
          propindex : longint;
          propowner : TSymtable;
+       end;
+
+
+       TRTTILinkedRecord = class
+       private
+         rttilab : Tasmsymbol;
+       public
+         tcb : ttai_typedconstbuilder;
+         constructor create(writer:TRTTIWriter;parenttcb:ttai_typedconstbuilder;def:tdef;suffix:TSymStr);
+         destructor destroy; override;
+         procedure concat_asmdata;
        end;
 
 
@@ -167,6 +180,41 @@ implementation
                (ds_rtti_table_used in def.defstates) then
               RTTIWriter.write_rtti(def,fullrtti);
           end;
+      end;
+
+
+    constructor TRTTILinkedRecord.create(writer:TRTTIWriter;parenttcb:ttai_typedconstbuilder;def:tdef;suffix:TSymStr);
+      begin
+        parenttcb.emit_tai(Tai_const.Createname(
+          internaltypeprefixName[itp_init_record_operators]+def.rtti_mangledname(initrtti)+suffix,
+          AT_DATA_FORCEINDIRECT,0),voidpointertype);
+
+        rttilab:=current_asmdata.DefineAsmSymbol(
+            internaltypeprefixName[itp_init_record_operators]+def.rtti_mangledname(initrtti)+suffix,
+            AB_GLOBAL,AT_DATA,def);
+        tcb:=ctai_typedconstbuilder.create([tcalo_make_dead_strippable]);
+
+        tcb.begin_anonymous_record(
+          rttilab.Name,
+          writer.defaultpacking,writer.reqalign,
+          targetinfos[target_info.system]^.alignment.recordalignmin,
+          targetinfos[target_info.system]^.alignment.maxCrecordalign
+        );
+      end;
+
+    destructor TRTTILinkedRecord.destroy;
+      begin
+        tcb.free;
+      end;
+
+    procedure TRTTILinkedRecord.concat_asmdata;
+      var
+        rttidef : trecorddef;
+      begin
+        rttidef:=tcb.end_anonymous_record;
+        current_asmdata.AsmLists[al_rtti].concatList(
+          tcb.get_final_asmlist(rttilab,rttidef,sec_rodata,rttilab.name,
+          sizeof(pint)));
       end;
 
 
@@ -431,7 +479,7 @@ implementation
       end;
 
     { writes a 32-bit count followed by array of field infos for given symtable }
-    procedure TRTTIWriter.fields_write_rtti_data(tcb: ttai_typedconstbuilder; def: tabstractrecorddef; rt: trttitype);
+    procedure TRTTIWriter.fields_write_rtti_data(tcb:ttai_typedconstbuilder;def:tabstractrecorddef;rt:trttitype);
       var
         i   : longint;
         sym : tsym;
@@ -607,6 +655,261 @@ implementation
                   end;
              end;
           end;
+      end;
+
+
+    procedure TRTTIWriter.managedatoms_write_rtti(tcb:ttai_typedconstbuilder;managedatoms:tmanagedatomscontainer);
+      var
+        item : pmanagedatomitem;
+        linkedrecord : TRTTILinkedRecord;
+
+        procedure write_fields(tcb:ttai_typedconstbuilder;mak:tmanagedatomkinds;rttiref:boolean);
+          var
+            atoms : tfplist;
+            i : longint;
+            j : tmanagedatomkind;
+            totalcount : integer;
+            finalmak : tmanagedatomkinds;
+          begin
+            { calc total count and complete fields kinds to write (by finalmak) }
+            totalcount:=0;
+            finalmak:=[];
+            for j in mak do
+              begin
+                atoms:=managedatoms.atomslists[j];
+                if assigned(atoms) then
+                  begin
+                    if atoms.count=0 then
+                      internalerror(2017062803);
+                    inc(totalcount,atoms.count);
+                    include(finalmak,j);
+                  end;
+              end;
+            if totalcount=0 then
+              internalerror(2017053101);
+            tcb.emit_ord_const(totalcount,u32inttype);
+            { write info about managed atoms }
+            for j in finalmak do
+              begin
+                atoms:=managedatoms.atomslists[j];
+                for i:=0 to atoms.count-1 do
+                  begin
+                    item:=atoms[i];
+                    if rttiref then
+                      write_rtti_reference(tcb,item^.def,initrtti);
+                    tcb.emit_ord_const(item^.offset,ptruinttype);
+                  end;
+              end;
+          end;
+
+        procedure write_managementop_rtti(tcb:ttai_typedconstbuilder;mak:tmanagedatomkind);
+          const
+            ManagedFieldKindToManagementOperator : array[tmanagedatomkind] of tmanagementoperator = (
+              {mfk_none }
+               mop_none,
+              {mfk_astring mfk_wstring mfk_ustring mfk_interface mfk_variant mfk_dynarray,}
+               mop_none,   mop_none,   mop_none,   mop_none,     mop_none,   mop_none,
+              {mfk_initializeop mfk_finalizeop mfk_addrefop}
+               mop_initialize,  mop_finalize,  mop_addref
+            );
+
+            managedatomopsuffix : array[tmanagementoperator] of TSymStr = (
+              '',
+              '$mainitializeop',
+              '$mafinalizeop',
+              '$maaddrefop',
+              ''
+            );
+
+          var
+            linkedrecord : TRTTILinkedRecord;
+            mop : tmanagementoperator;
+            procdef : tprocdef;
+            atoms : tfplist;
+            i : integer;
+          begin
+            if not(mak in [mak_initializeop,mak_finalizeop,mak_addrefop]) then
+              Internalerror(2017052801);
+
+            atoms:=managedatoms.atomslists[mak];
+
+            if assigned(atoms) then
+              begin
+                if atoms.count=0 then
+                  internalerror(2017062804);
+
+                mop:=ManagedFieldKindToManagementOperator[mak];
+
+                if mop=mop_copy then
+                  internalerror(2017062601);
+
+                linkedrecord:=TRTTILinkedRecord.Create(self,tcb,managedatoms.recdef,managedatomopsuffix[mop]);
+                linkedrecord.tcb.emit_ord_const(atoms.count,u32inttype);
+
+                if mop=mop_none then
+                  Internalerror(2017052802);
+
+                for i:=0 to atoms.count-1 do
+                  begin
+                    item:=atoms[i];
+                    procdef:=search_management_operator(mop,item^.def);
+                    if procdef=nil then
+                      internalerror(2017052803);
+
+                    linkedrecord.tcb.emit_tai(Tai_const.Createname(procdef.mangledname,AT_FUNCTION,0),
+                      cprocvardef.getreusableprocaddr(procdef));
+                    linkedrecord.tcb.emit_ord_const(item^.offset,ptruinttype);
+                  end;
+
+                linkedrecord.concat_asmdata;
+                linkedrecord.free;
+              end
+             else
+              tcb.emit_tai(Tai_const.Create_nil_dataptr,voidpointertype);
+          end;
+
+        procedure write_initialization_rtti(tcb:ttai_typedconstbuilder);
+          var
+            linkedrecord : TRTTILinkedRecord;
+            imflags : tinitializationmanagedatomskinds;
+          begin
+            imflags:=managedatoms.initializationmanagedfieldsflags;
+            if imflags<>[] then
+              begin
+                linkedrecord:=TRTTILinkedRecord.Create(self,tcb,managedatoms.recdef,'$initializationrtti');
+
+                { write flags for available info }
+                linkedrecord.tcb.emit_ord_const(byte(imflags),u8inttype);
+
+                { for fields which can be filled by simple nil use only offset }
+                if imak_Pointer in imflags then
+                  write_fields(linkedrecord.tcb,[mak_astring,mak_wstring,mak_ustring,mak_interface,mak_dynarray],false);
+
+                if imak_Variant in imflags then
+                  write_fields(linkedrecord.tcb,[mak_variant],false);
+
+                linkedrecord.concat_asmdata;
+                linkedrecord.free;
+              end
+             else
+              tcb.emit_tai(Tai_const.Create_nil_dataptr,voidpointertype);
+          end;
+
+
+        procedure write_general_rtti(tcb:ttai_typedconstbuilder);
+          var
+            linkedrecord : TRTTILinkedRecord;
+            gmflags : tgeneralmanagedatomskinds;
+          begin
+            gmflags:=managedatoms.generalmanagedfieldsflags;
+            if gmflags<>[] then
+              begin
+                linkedrecord:=TRTTILinkedRecord.Create(self,tcb,managedatoms.recdef,'$generalrtti');
+
+                { write flags for available info }
+                linkedrecord.tcb.emit_ord_const(byte(gmflags),u8inttype);
+
+                { for fields which can be filled by simple nil use only offset }
+                if gmak_AString in gmflags then
+                  write_fields(linkedrecord.tcb,[mak_astring],false);
+                if gmak_WString in gmflags then
+                  write_fields(linkedrecord.tcb,[mak_wstring],false);
+                if gmak_UString in gmflags then
+                  write_fields(linkedrecord.tcb,[mak_ustring],false);
+                if gmak_Interface in gmflags then
+                  write_fields(linkedrecord.tcb,[mak_interface],false);
+                if gmak_Variant in gmflags then
+                  write_fields(linkedrecord.tcb,[mak_variant],false);
+                if gmak_Dynarray in gmflags then
+                  write_fields(linkedrecord.tcb,[mak_dynarray],true);
+                linkedrecord.concat_asmdata;
+                linkedrecord.free;
+              end
+             else
+              tcb.emit_tai(Tai_const.Create_nil_dataptr,voidpointertype);
+          end;
+
+
+        procedure write_holes_rtti(tcb:ttai_typedconstbuilder);
+          var
+            linkedrecord : TRTTILinkedRecord;
+            i,count : integer;
+            offset,size : asizeint;
+          begin
+            if managedatoms.holes.size<>0 then
+              begin
+                linkedrecord:=TRTTILinkedRecord.Create(self,tcb,managedatoms.recdef,'$holesrtti');
+
+                count:=(managedatoms.holes.size div sizeof(asizeint)) div 2;
+                linkedrecord.tcb.emit_ord_const(count,u32inttype);
+
+                managedatoms.holes.seek(0);
+                for i:=1 to count do
+                  begin
+                    managedatoms.holes.read(size,sizeof(asizeint));
+                    linkedrecord.tcb.emit_ord_const(size,ptruinttype);
+                    managedatoms.holes.read(offset,sizeof(asizeint));
+                    linkedrecord.tcb.emit_ord_const(offset,ptruinttype);
+                  end;
+
+                linkedrecord.concat_asmdata;
+                linkedrecord.free;
+              end
+             else
+              tcb.emit_tai(Tai_const.Create_nil_dataptr,voidpointertype);
+          end;
+
+      begin
+        { initialize operators list is stored in separate table which is needed for
+          classes (see TObject.InitInstance) }
+        write_managementop_rtti(tcb,mak_initializeop);
+        { new record "FastRTTI" }
+        if (current_settings.fastrtti<>frs_off) and
+            { fastrtti "auto" policy : include fastrtti for all atoms collections
+              where
+                1. legacyparentscount >= 1 or
+                2. managednesteddatacount >= 1 or
+                3. totalcount >= 3 }
+            ((current_settings.fastrtti<>frs_auto) or
+             (managedatoms.legalparentscount>=1) or
+             (managedatoms.managednesteddatacount>=1) or
+             (managedatoms.totalcount>=3))
+           then
+          begin
+            linkedrecord:=TRTTILinkedRecord.Create(self,tcb,managedatoms.recdef,'$fastrtti');
+
+            { management operators (except initialize which is needed in
+              up-level record and except copy which can't be called in group) }
+            write_managementop_rtti(linkedrecord.tcb,mak_finalizeop);
+            write_managementop_rtti(linkedrecord.tcb,mak_addrefop);
+
+            { for initialization purposes (can be more optimized because
+              typeinfo is not needed for all fields kinds) - "InitializationRTTI"}
+            write_initialization_rtti(linkedrecord.tcb);
+            { for general purposes (addref and finalize) - "GeneralRTTI" }
+            write_general_rtti(linkedrecord.tcb);
+            write_holes_rtti(linkedrecord.tcb);
+
+            linkedrecord.concat_asmdata;
+            linkedrecord.free;
+          end
+         else
+          tcb.emit_tai(Tai_const.Create_nil_dataptr,voidpointertype);
+      end;
+
+
+    procedure TRTTIWriter.write_fastrtti(tcb:ttai_typedconstbuilder;def:tabstractrecorddef);
+      var
+        managedatoms : tmanagedatomscontainer;
+      begin
+        managedatoms:=tabstractrecordsymtable(def.symtable).managedatoms;
+        if assigned(managedatoms) then
+          managedatoms_write_rtti(tcb,managedatoms)
+        else
+         begin
+           tcb.emit_tai(Tai_const.Create_nil_dataptr,voidpointertype);
+           tcb.emit_tai(Tai_const.Create_nil_dataptr,voidpointertype);
+         end;
       end;
 
 
@@ -1198,13 +1501,16 @@ implementation
 
            { store rtti management operators only for init table }
            if (rt=initrtti) then
-             if (trecordsymtable(def.symtable).managementoperators=[]) then
-               tcb.emit_tai(Tai_const.Create_nil_dataptr,voidpointertype)
-             else
-               tcb.emit_tai(Tai_const.Createname(
-                 internaltypeprefixName[itp_init_record_operators]+def.rtti_mangledname(rt),
-                 AT_DATA_FORCEINDIRECT,0),voidpointertype);
+             begin
+               if (trecordsymtable(def.symtable).managementoperators=[]) then
+                 tcb.emit_tai(Tai_const.Create_nil_dataptr,voidpointertype)
+               else
+                 tcb.emit_tai(Tai_const.Createname(
+                   internaltypeprefixName[itp_init_record_operators]+def.rtti_mangledname(rt),
+                   AT_DATA_FORCEINDIRECT,0),voidpointertype);
 
+               write_fastrtti(tcb, def);
+             end;
            fields_write_rtti_data(tcb,def,rt);
            tcb.end_anonymous_record;
 
@@ -1346,7 +1652,10 @@ implementation
             tcb.emit_ord_const(def.size, u32inttype);
             { pointer to management operators available only for initrtti }
             if (rt=initrtti) then
-              tcb.emit_tai(Tai_const.Create_nil_dataptr,voidpointertype);
+              begin
+                tcb.emit_tai(Tai_const.Create_nil_dataptr,voidpointertype);
+                write_fastrtti(tcb, def);
+              end;
             { enclosing record takes care of alignment }
             fields_write_rtti_data(tcb,def,rt);
           end;

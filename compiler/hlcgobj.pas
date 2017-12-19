@@ -3301,7 +3301,10 @@ implementation
         end
        else
         begin
-          pd:=search_system_proc('fpc_addref');
+          if t.typ in [recorddef,objectdef] then
+            pd:=search_system_proc('fpc_addref_record')
+           else
+            pd:=search_system_proc('fpc_addref');
           paramanager.getintparaloc(list,pd,1,cgpara1);
           paramanager.getintparaloc(list,pd,2,cgpara2);
           if is_open_array(t) then
@@ -3351,7 +3354,10 @@ implementation
          begin
             if is_open_array(t) then
               InternalError(201103052);
-            pd:=search_system_proc('fpc_initialize');
+            if t.typ in [recorddef,objectdef] then
+              pd:=search_system_proc('fpc_initialize_record')
+             else
+              pd:=search_system_proc('fpc_initialize');
             paramanager.getintparaloc(list,pd,1,cgpara1);
             paramanager.getintparaloc(list,pd,2,cgpara2);
             reference_reset_symbol(href,RTTIWriter.get_rtti_label(t,initrtti,def_needs_indirect(t)),0,sizeof(pint),[]);
@@ -3400,6 +3406,8 @@ implementation
             pointer var parameter }
           if is_dynamic_array(t) then
             pd:=search_system_proc('fpc_dynarray_clear')
+          else if t.typ in [recorddef,objectdef] then
+            pd:=search_system_proc('fpc_finalize_record')
           else
             pd:=search_system_proc('fpc_finalize');
           paramanager.getintparaloc(list,pd,1,cgpara1);

@@ -379,11 +379,6 @@
 
       class function TObject.InitInstance(instance : pointer) : tobject; {$ifdef SYSTEMINLINE} inline; {$ENDIF}
 
-{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
-        var
-           vmt  : PVmt;
-           temp : pointer;
-{$endif FPC_HAS_MANAGEMENT_OPERATORS}
         begin
            { the size is saved at offset 0 }
            fillchar(instance^, InstanceSize, 0);
@@ -395,16 +390,10 @@
 
 {$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
            { for management operators like initialize call int_initialize }
-           vmt := PVmt(self);
-           while vmt<>nil do
-             begin
-               Temp:= vmt^.vInitTable;
-               { The RTTI format matches one for records, except the type is tkClass.
-                 Since RecordRTTI does not check the type, calling it yields the desired result. }
-               if Assigned(Temp) then
-                 RecordRTTI(Instance,Temp,@int_initialize);
-               vmt:= vmt^.vParent;
-             end;
+           if assigned(self) then
+             with PVmt(self)^ do
+             if assigned(vInitTable) then
+               InitializeOpCall(instance, aligntoqword(vInitTable+2+PByte(vInitTable)[1]));
 {$endif FPC_HAS_MANAGEMENT_OPERATORS}
 
            InitInstance:=TObject(Instance);
@@ -736,15 +725,29 @@
            temp : pointer;
         begin
            vmt := PVmt(ClassType);
-           while vmt<>nil do
+           if vmt<>nil then
+           begin
+             {$ifndef VER3_0}
+             temp:=PRecordInfoInit(vmt^.vInitTable);
+             if assigned(temp) then
              begin
-               Temp:= vmt^.vInitTable;
-               { The RTTI format matches one for records, except the type is tkClass.
-                 Since RecordRTTI does not check the type, calling it yields the desired result. }
-               if Assigned(Temp) then
-                 RecordRTTI(Self,Temp,@int_finalize);
-               vmt:= vmt^.vParent;
+               temp:=aligntoqword(temp+2+PByte(temp)[1]);
+               if PRecordInfoInit(temp)^.FastRTTI<>nil then
+               begin
+                 int_FinalizeRecord(Self,vmt^.vInitTable);
+                 exit;
+               end;
              end;
+             {$endif}
+               repeat
+                 Temp:= vmt^.vInitTable;
+                 { The RTTI format matches one for records, except the type is tkClass.
+                   Since RecordRTTI does not check the type, calling it yields the desired result. }
+                 if Assigned(Temp) then
+                   int_FinalizeRecord(Self,Temp);
+                 vmt:= vmt^.vParent;
+               until vmt=nil;
+           end;
         end;
 
       procedure TObject.AfterConstruction;

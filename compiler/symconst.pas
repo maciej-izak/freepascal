@@ -600,6 +600,19 @@ type
   );
   tmanagementoperators=set of tmanagementoperator;
 
+  { managed atoms }
+  tmanagedatomkind=(mak_none,mak_astring,mak_wstring,mak_ustring,
+    mak_interface,mak_variant,mak_dynarray,mak_initializeop,
+    mak_finalizeop,mak_addrefop);
+  tmanagedatomkinds=set of tmanagedatomkind;
+  { flags for managed field kind RTTI stored data is different than set
+    of TManagedFieldKind }
+  {$packset 1}
+  tgeneralmanagedatomskinds=set of (gmak_astring,gmak_wstring,gmak_ustring,
+    gmak_interface,gmak_variant,gmak_dynarray);
+  tinitializationmanagedatomskinds=set of (imak_pointer, imak_variant);
+  {$packset default}
+
   { register variable }
   tvarregable=(vr_none,
     vr_intreg,
@@ -794,6 +807,9 @@ var
   cdecl_pocalls      : tproccalloptions;
 
 const
+   first_managedatomkind = mak_astring;
+   last_managedatomkind = high(tmanagedatomkind);
+
 {$ifndef jvm}
    inherited_objectoptions : tobjectoptions = [oo_has_virtual,oo_has_private,oo_has_protected,
                 oo_has_strictprotected,oo_has_strictprivate,oo_has_constructor,oo_has_destructor,

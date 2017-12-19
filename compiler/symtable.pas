@@ -89,6 +89,8 @@ interface
        tllvmshadowsymtable = class;
 {$endif llvm}
 
+       { tabstractrecordsymtable }
+
        tabstractrecordsymtable = class(tstoredsymtable)
 {$ifdef llvm}
        private
@@ -102,6 +104,7 @@ interface
           padalignment : shortint;   { size to a multiple of which the symtable has to be rounded up }
           recordalignmin,            { local equivalents of global settings, so that records can }
           maxCrecordalign: shortint; { be created with custom settings internally }
+          managedatoms : tmanagedatomscontainer;
           constructor create(const n:string;usealign,recordminalign,recordmaxCalign:shortint);
           destructor destroy;override;
           procedure ppuload(ppufile:tcompilerppufile);override;
@@ -113,11 +116,12 @@ interface
             of padding; internalerrors for variant records, assumes fields are
             ordered by increasing offset) }
           function findfieldbyoffset(offset:asizeint): tfieldvarsym;
-          procedure addalignmentpadding;
+          procedure finish_data;virtual;
           procedure insertdef(def:TDefEntry);override;
           function is_packed: boolean;
           function has_single_field(out def:tdef): boolean;
           function get_unit_symtable: tsymtable;
+          procedure appendmanagedatoms(amanagedatoms:tmanagedatomscontainer;aoffset:asizeint);
         protected
           { size in bytes including padding }
           _datasize      : asizeint;
@@ -126,6 +130,10 @@ interface
           databitsize    : asizeint;
           { size in bytes of padding }
           _paddingsize   : word;
+          procedure performmanagedatoms;inline;
+          procedure addatom(kind:tmanagedatomkind;item:pmanagedatomitem;first:boolean=false);
+          procedure addalignmentpadding;
+          procedure collectmanagedatoms(fielddef:tdef;offset:asizeint);
           procedure setdatasize(val: asizeint);
           function getfieldoffset(sym: tfieldvarsym; base: asizeint; var globalfieldalignment: shortint): asizeint;
         public
@@ -137,7 +145,11 @@ interface
 {$endif llvm}
        end;
 
+       { trecordsymtable }
+
        trecordsymtable = class(tabstractrecordsymtable)
+       protected
+         procedure addmanagementoptomanagedatoms;
        public
           { maybe someday is worth to move managementoperators to              }
           { tabstractrecordsymtable to perform management class operators for  }
@@ -147,6 +159,7 @@ interface
           constructor create(const n:string;usealign,recordminalign,recordmaxCalign:shortint);
           procedure insertunionst(unionst : trecordsymtable;offset : asizeint);
           procedure includemanagementoperator(mop:tmanagementoperator);
+          procedure finish_data;override;
        end;
 
        tObjectSymtable = class(tabstractrecordsymtable)
@@ -1143,11 +1156,64 @@ implementation
         if refcount=1 then
           fllvmst.free;
 {$endif llvm}
+        managedatoms.free;
         inherited destroy;
       end;
 
 
     procedure tabstractrecordsymtable.ppuload(ppufile:tcompilerppufile);
+
+      procedure readmanagedatoms;
+        var
+          i : tmanagedatomkind;
+          j,count : longint;
+          finalset : tmanagedatomkinds;
+          atoms : tfplist;
+          item : pmanagedatomitem;
+          offset, size : asizeint;
+          totalcount : longint;
+        begin
+          ppufile.getsmallset(finalset);
+
+          if finalset<>[] then
+            begin
+              totalcount:=0;
+              managedatoms:=tmanagedatomscontainer.create(tabstractrecorddef(defowner));
+              managedatoms.is_legal:=boolean(ppufile.getbyte);
+              managedatoms.legalparentscount:=ppufile.getlongint;
+              managedatoms.managednesteddatacount:=ppufile.getlongint;
+              managedatoms.totalcount:=ppufile.getlongint;
+
+              for i in finalset do
+                begin
+                  atoms:=tfplist.create;
+                  managedatoms.atomslists[i]:=atoms;
+                  atoms.count:=ppufile.getlongint;
+                  for j:=0 to atoms.count-1 do
+                    begin
+                      item:=new(pmanagedatomitem);
+                      item^.offset:=ppufile.getasizeint;
+                      ppufile.getderef(item^.deref);
+                      atoms[j]:=item;
+                    end;
+                  inc(totalcount,atoms.count);
+                end;
+              { additional check }
+              if totalcount<>managedatoms.totalcount then
+                internalerror(2017062801);
+
+              { holes between managed atoms }
+              count:=ppufile.getlongint;
+              for j:=1 to count do
+                begin
+                  size:=ppufile.getasizeint;
+                  managedatoms.holes.write(size,sizeof(asizeint));
+                  offset:=ppufile.getasizeint;
+                  managedatoms.holes.write(offset,sizeof(asizeint));
+                end;
+            end;
+        end;
+
       begin
         if ppufile.readentry<>ibrecsymtableoptions then
           Message(unit_f_ppu_read_error);
@@ -1156,11 +1222,74 @@ implementation
         recordalignmin:=shortint(ppufile.getbyte);
         if (usefieldalignment=C_alignment) then
           fieldalignment:=shortint(ppufile.getbyte);
+        readmanagedatoms;
         inherited ppuload(ppufile);
       end;
 
 
     procedure tabstractrecordsymtable.ppuwrite(ppufile:tcompilerppufile);
+
+      procedure writemanagedatoms;
+        var
+          i   : tmanagedatomkind;
+          j,count : integer;
+          finalset : tmanagedatomkinds;
+          atoms : tfplist;
+          item : pmanagedatomitem;
+          offset,size : asizeint;
+          totalcount : longint;
+        begin
+          finalset:=[];
+          if assigned(managedatoms) then
+            for i:=first_managedatomkind to last_managedatomkind do
+              begin
+                atoms:=managedatoms.atomslists[i];
+                if assigned(atoms) and (atoms.count>0) then
+                  include(finalset,i);
+              end;
+
+          ppufile.putsmallset(finalset);
+
+          if finalset<>[] then
+            begin
+              totalcount:=0;
+              ppufile.putbyte(byte(managedatoms.is_legal));
+              ppufile.putlongint(managedatoms.legalparentscount);
+              ppufile.putlongint(managedatoms.managednesteddatacount);
+              ppufile.putlongint(managedatoms.totalcount);
+
+              for i in finalset do
+                begin
+                  atoms:= managedatoms.atomslists[i];
+                  ppufile.putlongint(atoms.count);
+                  for j := 0 to atoms.count - 1 do
+                    begin
+                      item:=pmanagedatomitem(atoms[j]);
+                      ppufile.putasizeint(item^.offset);
+                      if (item^.deref.dataidx<0) or not item^.def.is_registered then
+                        internalerror(2017060201);
+                      ppufile.putderef(item^.deref);
+                    end;
+                  inc(totalcount,atoms.count);
+                end;
+              if totalcount<>managedatoms.totalcount then
+                internalerror(2017062802);
+
+                { holes between managed atoms }
+                count:=(managedatoms.holes.size div sizeof(asizeint)) div 2;
+                ppufile.putlongint(count);
+
+                managedatoms.holes.seek(0);
+                for j:=1 to count do
+                  begin
+                    managedatoms.holes.read(size,sizeof(asizeint));
+                    ppufile.putasizeint(size);
+                    managedatoms.holes.read(offset,sizeof(asizeint));
+                    ppufile.putasizeint(offset);
+                  end;
+            end;
+        end;
+
       var
         oldtyp : byte;
       begin
@@ -1173,6 +1302,7 @@ implementation
          ppufile.putbyte(byte(recordalignmin));
          if (usefieldalignment=C_alignment) then
            ppufile.putbyte(byte(fieldalignment));
+         writemanagedatoms;
          ppufile.writeentry(ibrecsymtableoptions);
 
          inherited ppuwrite(ppufile);
@@ -1222,9 +1352,129 @@ implementation
         recordalignment:=max(recordalignment,varalignrecord);
       end;
 
+
+    procedure tabstractrecordsymtable.addalignmentpadding;
+      var
+        padded_datasize,
+        holesize: asizeint;
+      begin
+        { make the record size aligned correctly so it can be
+          used as elements in an array. For C records we
+          use the fieldalignment, because that is updated with the
+          used alignment. }
+        if (padalignment = 1) then
+          case usefieldalignment of
+            C_alignment:
+              padalignment:=fieldalignment;
+            { bitpacked }
+            bit_alignment:
+              padalignment:=1;
+            { mac68k: always round to multiple of 2 }
+            mac68k_alignment:
+              padalignment:=2;
+            { default/no packrecords specified }
+            0:
+              padalignment:=recordalignment
+            { specific packrecords setting -> use as upper limit }
+            else
+              padalignment:=min(recordalignment,usefieldalignment);
+          end;
+        padded_datasize:=align(_datasize,padalignment);
+        _paddingsize:=padded_datasize-_datasize;
+        _datasize:=padded_datasize;
+
+        { add last hole if needed }
+        if assigned(managedatoms) then
+          if managedatoms.expectedmanagedoffset<>_datasize then
+            begin
+              { size }
+              holesize:=padded_datasize-managedatoms.expectedmanagedoffset;
+              managedatoms.holes.write(holesize,sizeof(asizeint));
+              { offset }
+              managedatoms.holes.write(managedatoms.expectedmanagedoffset,sizeof(asizeint));
+            end;
+      end;
+
+
+    procedure tabstractrecordsymtable.collectmanagedatoms(fielddef:tdef;offset:asizeint);
+      var
+        i : integer;
+        st : tabstractrecordsymtable;
+        item : pmanagedatomitem;
+        curdef : tarraydef;
+        finaldef : tdef;
+        totalcount : asizeuint;
+        managedatomkind : tmanagedatomkind;
+      begin
+        if not assigned(fielddef) then
+          internalerror(2017052101);
+
+        if is_objc_class_or_protocol(fielddef) then
+          exit;
+
+        { iterate across all fields in object/record }
+        if is_record(fielddef) or is_object(fielddef) then
+          begin
+            st:=tabstractrecordsymtable(tabstractrecorddef(fielddef).symtable);
+            if assigned(st.managedatoms) then
+              begin
+                appendmanagedatoms(st.managedatoms,offset);
+                inc(managedatoms.managednesteddatacount);
+              end;
+          end
+         else if (fielddef.typ=arraydef) and (tarraydef(fielddef).arrayoptions=[]) then
+          begin
+            { handle normal arrays (non dynamic) in records }
+            finaldef:=fielddef;
+            totalcount:=1;
+            repeat
+              curdef:=tarraydef(finaldef);
+              finaldef:=curdef.elementdef;
+              totalcount:=totalcount*curdef.elecount;
+            until (finaldef.typ<>arraydef) or
+                  (ado_IsDynamicArray in tarraydef(finaldef).arrayoptions);
+
+            if curdef.elementdef.needs_inittable then
+              begin
+                for i:=0 to totalcount-1 do
+                  collectmanagedatoms(curdef.elementdef,offset+curdef.elesize*i);
+                inc(managedatoms.managednesteddatacount);
+              end;
+          end
+         else
+          begin
+            { all possible managed atoms }
+            managedatomkind:=mak_none;
+            if is_ansistring(fielddef) then
+              managedatomkind:=mak_astring
+            else if is_widestring(fielddef) then
+              managedatomkind:=mak_wstring
+            else if is_unicodestring(fielddef) then
+              managedatomkind:=mak_ustring
+            else if is_interfacecom_or_dispinterface(fielddef) then
+              managedatomkind:=mak_interface
+            else if fielddef.typ=variantdef then
+              managedatomkind:=mak_variant
+            else if is_dynamic_array(fielddef) then
+              managedatomkind:=mak_dynarray;
+
+            { collect all managed entries }
+            if managedatomkind<>mak_none then
+              begin
+                item:=new(pmanagedatomitem);
+                item^.offset:=offset;
+                item^.def:=fielddef;
+                item^.deref.reset;
+                addatom(managedatomkind,item);
+              end;
+          end;
+      end;
+
+
     procedure tabstractrecordsymtable.addfield(sym:tfieldvarsym;vis:tvisibility);
       var
         l      : asizeint;
+        holesize : asizeint;
         varalign : shortint;
         vardef : tdef;
       begin
@@ -1290,6 +1540,25 @@ implementation
                 _datasize:=sym.fieldoffset+l;
               { Calc alignment needed for this record }
               alignrecord(sym.fieldoffset,varalign);
+
+              { collect managed fields }
+              if not (sp_static in sym.symoptions) then
+                collectmanagedatoms(sym.vardef,sym.fieldoffset);
+
+              if assigned(managedatoms) then
+                if sym.vardef.needs_inittable then
+                begin
+                  if sym.fieldoffset<>managedatoms.expectedmanagedoffset then
+                  begin
+                    { list of unmanaged holes }
+                    { size }
+                    holesize:=sym.fieldoffset-managedatoms.expectedmanagedoffset;
+                    managedatoms.holes.write(holesize,sizeof(asizeint));
+                    { offset }
+                    managedatoms.holes.write(managedatoms.expectedmanagedoffset,sizeof(asizeint));
+                  end;
+                  managedatoms.expectedmanagedoffset:=sym.fieldoffset+sym.vardef.size;
+                end;
             end;
         end;
       end;
@@ -1467,35 +1736,10 @@ implementation
       end;
 
 
-    procedure tabstractrecordsymtable.addalignmentpadding;
-      var
-        padded_datasize: asizeint;
-      begin
-        { make the record size aligned correctly so it can be
-          used as elements in an array. For C records we
-          use the fieldalignment, because that is updated with the
-          used alignment. }
-        if (padalignment = 1) then
-          case usefieldalignment of
-            C_alignment:
-              padalignment:=fieldalignment;
-            { bitpacked }
-            bit_alignment:
-              padalignment:=1;
-            { mac68k: always round to multiple of 2 }
-            mac68k_alignment:
-              padalignment:=2;
-            { default/no packrecords specified }
-            0:
-              padalignment:=recordalignment
-            { specific packrecords setting -> use as upper limit }
-            else
-              padalignment:=min(recordalignment,usefieldalignment);
-          end;
-        padded_datasize:=align(_datasize,padalignment);
-        _paddingsize:=padded_datasize-_datasize;
-        _datasize:=padded_datasize;
-      end;
+    procedure tabstractrecordsymtable.finish_data;
+    begin
+      addalignmentpadding;
+    end;
 
 
     procedure tabstractrecordsymtable.insertdef(def:TDefEntry);
@@ -1585,6 +1829,30 @@ implementation
           result:=result.defowner.owner;
       end;
 
+
+    procedure tabstractrecordsymtable.performmanagedatoms;
+    begin
+      if not assigned(managedatoms) then
+        managedatoms:=tmanagedatomscontainer.create(tabstractrecorddef(defowner));
+    end;
+
+
+    procedure tabstractrecordsymtable.addatom(kind:tmanagedatomkind;item:pmanagedatomitem;first:boolean);
+      begin
+        if (kind<first_managedatomkind) or (kind>last_managedatomkind) then
+          internalerror(2017062701);
+        performmanagedatoms;
+        managedatoms.addatom(kind,item,first);
+      end;
+
+
+    procedure tabstractrecordsymtable.appendmanagedatoms(amanagedatoms:tmanagedatomscontainer;aoffset:asizeint);
+    begin
+      performmanagedatoms;
+      managedatoms.append(amanagedatoms,aoffset);
+    end;
+
+
     procedure tabstractrecordsymtable.setdatasize(val: asizeint);
       begin
         _datasize:=val;
@@ -1664,6 +1932,47 @@ implementation
 {****************************************************************************
                               TRecordSymtable
 ****************************************************************************}
+
+    { add managed atoms (strictly: management operators) at the last step
+      of building record. thanks this the order for management op is correct,
+      see trecordsymtable.finish_data }
+    procedure trecordsymtable.addmanagementoptomanagedatoms;
+      const
+        ManagementOperatorToManagedAtomKind: array[tmanagementoperator] of tmanagedatomkind = (
+          mak_none, mak_initializeop, mak_finalizeop, mak_addrefop, mak_none
+        );
+      var
+        mak : tmanagedatomkind;
+        mop : tmanagementoperator;
+        item : pmanagedatomitem;
+      begin
+        for mop in managementoperators do
+          begin
+            { don't use copy operator for managed atoms }
+            if mop=mop_copy then
+              continue;
+
+            mak:=ManagementOperatorToManagedAtomKind[mop];
+            item:=new(pmanagedatomitem);
+            item^.offset:=0;
+            item^.def:=tdef(defowner);
+            item^.deref.reset;
+
+            case mop of
+              mop_initialize,
+              mop_addref:
+                { add as last position (normal add) }
+                addatom(mak,item);
+              mop_finalize:
+                { add as first position (insert at index 0) }
+                addatom(mak,item,true);
+            else
+              internalerror(201706211);
+            end;
+          end;
+
+      end;
+
 
     constructor trecordsymtable.create(const n:string;usealign,recordminalign,recordmaxCalign:shortint);
       begin
@@ -1788,6 +2097,13 @@ implementation
       end;
 
 
+    procedure trecordsymtable.finish_data;
+      begin
+        inherited finish_data;
+        addmanagementoptomanagedatoms;
+      end;
+
+
 {****************************************************************************
                               TObjectSymtable
 ****************************************************************************}
@@ -1796,6 +2112,7 @@ implementation
       begin
         inherited create(n,usealign,recordminalign,recordmaxCalign);
         symtabletype:=ObjectSymtable;
+
         defowner:=adefowner;
       end;
 

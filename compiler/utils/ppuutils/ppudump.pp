@@ -653,6 +653,132 @@ end;
                              Read Routines
 ****************************************************************************}
 
+procedure readderef(const derefspace: string; Ref: TPpuRef = nil);
+var
+  b : tdereftype;
+  first : boolean;
+  idx : longint;
+  i,n : byte;
+  pdata : pbyte;
+begin
+  if not assigned(derefdata) then
+    exit;
+  first:=true;
+  idx:=ppufile.getlongint;
+  if idx = -1 then
+    begin
+      writeln('Nil');
+      exit;
+    end;
+  if (idx>derefdatalen) then
+    begin
+      WriteError('!! Error: Deref idx '+IntToStr(idx)+' > '+IntToStr(derefdatalen));
+      exit;
+    end;
+  write([derefspace,'(',idx,') ']);
+  pdata:=@derefdata[idx];
+  i:=0;
+  n:=pdata[i];
+  inc(i);
+  if n<1 then
+    begin
+      WriteError('!! Error: Deref len < 1');
+      exit;
+    end;
+  while (i<=n) do
+   begin
+     if not first then
+      write(', ')
+     else
+      first:=false;
+     b:=tdereftype(pdata[i]);
+     inc(i);
+     case b of
+       deref_nil :
+         write('Nil');
+       deref_symid :
+         begin
+           idx:=pdata[i] shl 24 or pdata[i+1] shl 16 or pdata[i+2] shl 8 or pdata[i+3];
+           inc(i,4);
+           write(['SymId ',idx]);
+           if Ref <> nil then
+             Ref.Id:=idx;
+         end;
+       deref_defid :
+         begin
+           idx:=pdata[i] shl 24 or pdata[i+1] shl 16 or pdata[i+2] shl 8 or pdata[i+3];
+           inc(i,4);
+           write(['DefId ',idx]);
+           if Ref <> nil then
+             Ref.Id:=idx;
+         end;
+       deref_unit :
+         begin
+           idx:=pdata[i] shl 8 or pdata[i+1];
+           inc(i,2);
+           write(['Unit ',idx]);
+           if Ref <> nil then
+             Ref.UnitIndex:=idx;
+         end;
+       else
+         begin
+           WriteError('!! unsupported dereftyp: '+IntToStr(ord(b)));
+           break;
+         end;
+     end;
+   end;
+  writeln;
+end;
+
+procedure readmanagedatoms;
+const
+  managedatomopt:array[first_managedatomkind..last_managedatomkind] of string = (
+    'Managed atoms astring', 'Managed atoms wstring', 'Managed atoms ustring',
+    'Managed atoms interface', 'Managed atoms variant', 'Managed atoms dynarray',
+    'Managed atoms initializeop', 'Managed atoms finalizeop', 'Managed atoms addrefop'
+  );
+var
+  i : tmanagedatomkind;
+  j,count : longint;
+  finalset : tmanagedatomkinds;
+  offset, size : asizeint;
+begin
+  ppufile.getsmallset(finalset);
+
+  if finalset<>[] then
+    begin
+      writeln(space+' Managed atoms');
+      writeln([space+'   lagal: ',ppufile.getbyte]);
+      writeln([space+'   lagal parents count: ',ppufile.getlongint]);
+      writeln([space+'   managed nested data: ',ppufile.getlongint]);
+      writeln([space+'   total atoms count: ',ppufile.getlongint]);
+      for i in finalset do
+        begin
+          count:=ppufile.getlongint;
+          writeln([space+'   '+managedatomopt[i]+' count: ',count]);
+          for j:=0 to count-1 do
+            begin
+              writeln([space,'     **item ',j,'**']);
+              writeln([space,'         offset: ',ppufile.getasizeint]);
+              write(   space+'            def: ');
+              readderef('');
+            end;
+        end;
+      { holes between managed atoms }
+      count:=ppufile.getlongint;
+      if count > 0 then
+      begin
+        writeln([space,'   Unmanaged holes count: ',count]);
+        for j:=0 to count-1 do
+          begin
+            writeln([space,'     **item ',j,'**']);
+            writeln([space,'         size: ',ppufile.getasizeint]);
+            writeln([space,'         offset: ',ppufile.getasizeint]);
+          end;
+      end;
+    end;
+end;
+
 procedure readrecsymtableoptions;
 var
   usefieldalignment : shortint;
@@ -668,6 +794,7 @@ begin
   writeln([space,' recordalignmin: ',shortint(ppufile.getbyte)]);
   if (usefieldalignment=C_alignment) then
     writeln([space,' fieldalignment: ',shortint(ppufile.getbyte)]);
+  readmanagedatoms;
 end;
 
 procedure readsymtableoptions(const s: string);
@@ -1051,84 +1178,6 @@ begin
          Def.FilePos.Col:=column;
        end;
    end;
-end;
-
-
-procedure readderef(const derefspace: string; Ref: TPpuRef = nil);
-var
-  b : tdereftype;
-  first : boolean;
-  idx : longint;
-  i,n : byte;
-  pdata : pbyte;
-begin
-  if not assigned(derefdata) then
-    exit;
-  first:=true;
-  idx:=ppufile.getlongint;
-  if idx = -1 then
-    begin
-      writeln('Nil');
-      exit;
-    end;
-  if (idx>derefdatalen) then
-    begin
-      WriteError('!! Error: Deref idx '+IntToStr(idx)+' > '+IntToStr(derefdatalen));
-      exit;
-    end;
-  write([derefspace,'(',idx,') ']);
-  pdata:=@derefdata[idx];
-  i:=0;
-  n:=pdata[i];
-  inc(i);
-  if n<1 then
-    begin
-      WriteError('!! Error: Deref len < 1');
-      exit;
-    end;
-  while (i<=n) do
-   begin
-     if not first then
-      write(', ')
-     else
-      first:=false;
-     b:=tdereftype(pdata[i]);
-     inc(i);
-     case b of
-       deref_nil :
-         write('Nil');
-       deref_symid :
-         begin
-           idx:=pdata[i] shl 24 or pdata[i+1] shl 16 or pdata[i+2] shl 8 or pdata[i+3];
-           inc(i,4);
-           write(['SymId ',idx]);
-           if Ref <> nil then
-             Ref.Id:=idx;
-         end;
-       deref_defid :
-         begin
-           idx:=pdata[i] shl 24 or pdata[i+1] shl 16 or pdata[i+2] shl 8 or pdata[i+3];
-           inc(i,4);
-           write(['DefId ',idx]);
-           if Ref <> nil then
-             Ref.Id:=idx;
-         end;
-       deref_unit :
-         begin
-           idx:=pdata[i] shl 8 or pdata[i+1];
-           inc(i,2);
-           write(['Unit ',idx]);
-           if Ref <> nil then
-             Ref.UnitIndex:=idx;
-         end;
-       else
-         begin
-           WriteError('!! unsupported dereftyp: '+IntToStr(ord(b)));
-           break;
-         end;
-     end;
-   end;
-  writeln;
 end;
 
 

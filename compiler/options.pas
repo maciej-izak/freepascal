@@ -1936,6 +1936,18 @@ begin
                processorstr:=More;
              end;
 
+           'r' :
+             begin
+               if more='fon' then
+                 init_settings.fastrtti:=frs_on
+               else if more='foff' then
+                 init_settings.fastrtti:=frs_off
+               else if more='fauto' then
+                 init_settings.fastrtti:=frs_auto
+               else
+                 IllegalPara(opt);
+             end;
+
            'R' :
              begin
                if not SetAsmReadMode(More,init_settings.asmmode) then

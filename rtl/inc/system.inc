@@ -477,6 +477,14 @@ const
 {$endif FPC_HAS_FEATURE_DYNARRAYS}
 
 {*****************************************************************************
+                        Generic parts of RTTI
+*****************************************************************************}
+
+{$if defined(FPC_HAS_FEATURE_RTTI) or defined(FPC_HAS_FEATURE_CLASSES)}
+{$i genrtti.inc}
+{$endif defined(FPC_HAS_FEATURE_RTTI) or defined(FPC_HAS_FEATURE_CLASSES)}
+
+{*****************************************************************************
                         Object Pascal support
 *****************************************************************************}
 

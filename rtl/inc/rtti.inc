@@ -14,82 +14,7 @@
 
 { Run-Time type information routines }
 
-{$ifndef FPC_REQUIRES_PROPER_ALIGNMENT}
-  {$define USE_PACKED}
-{$endif}
-{$ifdef VER2_6}
-  {$define USE_PACKED}
-{$endif}
-
 type
-  PRecordElement=^TRecordElement;
-  TRecordElement=
-{$ifdef USE_PACKED}
-  packed
-{$endif USE_PACKED}
-  record
-    {$ifdef VER3_0}
-    TypeInfo: Pointer;
-    {$else}
-    TypeInfo: PPointer;
-    {$endif}
-    {$ifdef VER2_6}
-    Offset: Longint;
-    {$else}
-    Offset: SizeInt;
-    {$endif}
-  end;
-
-  PRecordInfoFull=^TRecordInfoFull;
-  TRecordInfoFull=
-{$ifdef USE_PACKED}
-  packed
-{$endif USE_PACKED}
-  record
-{$ifndef VER3_0}
-    InitTable: Pointer;
-{$endif VER3_0}
-    Size: Longint;
-    Count: Longint;
-    { Elements: array[count] of TRecordElement }
-  end;
-
-  PRecordInfoInit=^TRecordInfoInit;
-{$ifndef VER3_0}
-{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
-  TRTTIRecVarOp=procedure(ARec: Pointer);
-  TRTTIRecCopyOp=procedure(ASrc, ADest: Pointer);
-  TRTTIRecOpType=(rotAny, rotInitialize, rotFinalize, rotAddRef, rotCopy);
-  PRTTIRecordOpVMT=^TRTTIRecordOpVMT;
-  TRTTIRecordOpVMT=
-{$ifdef USE_PACKED}
-  packed
-{$endif USE_PACKED}
-  record
-    Initialize: TRTTIRecVarOp;
-    Finalize: TRTTIRecVarOp;
-    AddRef: TRTTIRecVarOp;
-    Copy: TRTTIRecCopyOp;
-  end;
-{$endif FPC_HAS_MANAGEMENT_OPERATORS}
-
-  TRecordInfoInit=
-{$ifdef USE_PACKED}
-  packed
-{$endif USE_PACKED}
-  record
-    Terminator: Pointer;
-    Size: Longint;
-{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
-    RecordOp: PRTTIRecordOpVMT;
-{$endif FPC_HAS_MANAGEMENT_OPERATORS}
-    Count: Longint;
-    { Elements: array[count] of TRecordElement }
-  end;
-{$else VER3_0}
-  TRecordInfoInit=TRecordInfoFull;
-{$endif VER3_0}
-
   PArrayInfo=^TArrayInfo;
   TArrayInfo=
 {$ifdef USE_PACKED}
@@ -148,7 +73,8 @@ begin
     result:=aligntoqword(initrtti+2+PByte(initrtti)[1]);
   end
 end;
-{$else FPC_HAS_MANAGEMENT_OPERATORS}
+{$endif FPC_HAS_MANAGEMENT_OPERATORS}
+
 function RTTIRecordRttiInfoToInitInfo(typeInfo: Pointer): Pointer; inline;
 begin
   result:=typeInfo;
@@ -162,7 +88,6 @@ begin
     result:=PRecordInfoFull(typeInfo)^.InitTable;
 {$endif VER3_0}
 end;
-{$endif FPC_HAS_MANAGEMENT_OPERATORS}
 
 {$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
 function RTTISizeAndOp(typeInfo: Pointer;
@@ -209,6 +134,403 @@ begin
 end;
 
 { if you modify this procedure, fpc_copy must be probably modified as well }
+
+procedure fpc_Initialize_Record(Data,TypeInfo:Pointer);[Public,Alias : 'FPC_INITIALIZE_RECORD'];  compilerproc;
+var
+  i: longint;
+{$ifndef VER3_0}
+  item : PFastRTTIItem;
+  offset: PSizeInt absolute item;
+{$endif}
+begin
+{$ifdef VER3_0}
+  typeInfo:=aligntoptr(typeInfo+2+PByte(typeInfo)[1]);
+{$else VER3_0}
+  typeInfo:=aligntoqword(typeInfo+2+PByte(typeInfo)[1]);
+{$endif VER3_0}
+{$ifndef VER3_0}
+  if Assigned(PRecordInfoInit(typeInfo)^.FastRTTI)and assigned(PRecordInfoInit(typeInfo)^.FastRTTI^.InitializationRTTI) then
+    with PRecordInfoInit(typeInfo)^.FastRTTI^,PRecordInfoInit(typeInfo)^.FastRTTI^.InitializationRTTI^ do
+    begin
+      item:=aligntoqword(Pointer(InitializationRTTI)+1);
+
+      if friPointer in Flags then
+      with item^ do
+      begin
+        inc(item);
+        for i := 1 to Count do
+        begin
+          PPchar(Data+offset^)^:=Nil;
+          inc(offset);
+        end;
+      end;
+      if friVariant in Flags then
+      with item^ do
+      begin
+        inc(item);
+        for i := 1 to Count do
+        begin
+          variant_init(PVarData(Data+offset^)^);
+          inc(offset);
+        end;
+      end;
+      InitializeOpCall(Data, TypeInfo);
+    end
+  else
+{$endif VER3_0}
+    with PRecordInfoInit(typeInfo)^ do
+    begin
+      Inc(PRecordInfoInit(typeInfo));
+      { Process elements }
+      for i:=1 to count Do
+        begin
+          fpc_Initialize(Data+PRecordElement(typeInfo)^.Offset,PRecordElement(typeInfo)^.TypeInfo{$ifndef VER3_0}^{$endif});
+          Inc(PRecordElement(typeInfo));
+        end;
+{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
+      if Assigned(recordop) and Assigned(recordop^.Initialize) then
+        recordop^.Initialize(data);
+{$endif}
+    end;
+end;
+
+
+procedure fpc_Finalize_Record(Data,TypeInfo:Pointer);[Public,Alias : 'FPC_FINALIZE_RECORD'];  compilerproc;
+var
+  i : longint;
+{$ifndef VER3_0}
+  item : PFastRTTIItem;
+  offset: PSizeInt absolute item;
+  field: PRecordElement absolute item;
+{$endif}
+begin
+{$ifdef VER3_0}
+  typeInfo:=aligntoptr(typeInfo+2+PByte(typeInfo)[1]);
+{$else VER3_0}
+  typeInfo:=aligntoqword(typeInfo+2+PByte(typeInfo)[1]);
+{$endif VER3_0}
+{$ifndef VER3_0}
+  if Assigned(PRecordInfoInit(typeInfo)^.FastRTTI) and assigned(PRecordInfoInit(typeInfo)^.FastRTTI^.GeneralRTTI) then
+    with PRecordInfoInit(typeInfo)^.FastRTTI^,PRecordInfoInit(typeInfo)^.FastRTTI^.GeneralRTTI^ do
+    begin
+      FinalizeOpCall(Data, TypeInfo);
+      item:=aligntoqword(Pointer(GeneralRTTI)+1);
+      if frgAString in Flags then
+      with item^ do
+      begin
+        inc(item);
+        for i := 1 to Count do
+        begin
+          fpc_AnsiStr_Decr_Ref(PPointer(Data+offset^)^);
+          inc(offset);
+        end;
+      end;
+      if frgWString in Flags then
+      with item^ do
+      begin
+        inc(item);
+        for i := 1 to Count do
+        begin
+          fpc_WideStr_Decr_Ref(PPointer(Data+offset^)^);
+          inc(offset);
+        end;
+      end;
+      if frgUString in Flags then
+      with item^ do
+      begin
+        inc(item);
+        for i := 1 to Count do
+        begin
+          fpc_UnicodeStr_Decr_Ref(PPointer(Data+offset^)^);
+          inc(offset);
+        end;
+      end;
+      if frgInterface in Flags then
+      with item^ do
+      begin
+        inc(item);
+        for i := 1 to Count do
+        begin
+          Intf_Decr_Ref(PPointer(Data+offset^)^);
+          inc(offset);
+        end;
+      end;
+      if frgVariant in Flags then
+      with item^ do
+      begin
+        inc(item);
+        for i := 1 to Count do
+        begin
+          variant_clear(PVarData(Data+offset^)^);
+          inc(offset);
+        end;
+      end;
+      if frgDynarray in Flags then
+      with item^ do
+      begin
+        inc(item);
+        for i := 1 to Count do
+        begin
+          fpc_dynarray_clear(PPointer(Data+field^.offset)^,field^.TypeInfo^);
+          inc(field);
+        end;
+      end;
+    end
+  else
+{$endif VER3_0}
+    with PRecordInfoInit(typeInfo)^ do
+    begin
+      {$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
+      if Assigned(recordop) and Assigned(recordop^.Finalize) then
+        recordop^.Finalize(data);
+      {$endif}
+      Inc(PRecordInfoInit(typeInfo));
+      { Process elements }
+      for i:=1 to Count Do
+        begin
+          fpc_Finalize(Data+PRecordElement(typeInfo)^.Offset,PRecordElement(typeInfo)^.TypeInfo{$ifndef VER3_0}^{$endif});
+          Inc(PRecordElement(typeInfo));
+        end;
+    end;
+end;
+
+
+procedure fpc_Addref_Record(Data,TypeInfo:Pointer);[Public,Alias : 'FPC_ADDREF_RECORD'];  compilerproc;
+var
+  i : longint;
+{$ifndef VER3_0}
+  item : PFastRTTIItem;
+  offset: PSizeInt absolute item;
+  field: PRecordElement absolute item;
+{$endif}
+begin
+{$ifdef VER3_0}
+  typeInfo:=aligntoptr(typeInfo+2+PByte(typeInfo)[1]);
+{$else VER3_0}
+  typeInfo:=aligntoqword(typeInfo+2+PByte(typeInfo)[1]);
+{$endif VER3_0}
+{$ifndef VER3_0}
+  if Assigned(PRecordInfoInit(typeInfo)^.FastRTTI) and assigned(PRecordInfoInit(typeInfo)^.FastRTTI^.GeneralRTTI) then
+    with PRecordInfoInit(typeInfo)^.FastRTTI^,PRecordInfoInit(typeInfo)^.FastRTTI^.GeneralRTTI^ do
+    begin
+      item:=aligntoqword(Pointer(GeneralRTTI)+1);
+      if frgAString in Flags then
+      with item^ do
+      begin
+        inc(item);
+        for i := 1 to Count do
+        begin
+          fpc_AnsiStr_Incr_Ref(PPointer(Data+offset^)^);
+          inc(offset);
+        end;
+      end;
+      if frgWString in Flags then
+      with item^ do
+      begin
+        inc(item);
+        for i := 1 to Count do
+        begin
+          fpc_WideStr_Incr_Ref(PPointer(Data+offset^)^);
+          inc(offset);
+        end;
+      end;
+      if frgUString in Flags then
+      with item^ do
+      begin
+        inc(item);
+        for i := 1 to Count do
+        begin
+          fpc_UnicodeStr_Incr_Ref(PPointer(Data+offset^)^);
+          inc(offset);
+        end;
+      end;
+      if frgInterface in Flags then
+      with item^ do
+      begin
+        inc(item);
+        for i := 1 to Count do
+        begin
+          Intf_Incr_Ref(PPointer(Data+offset^)^);
+          inc(offset);
+        end;
+      end;
+      if frgVariant in Flags then
+      with item^ do
+      begin
+        inc(item);
+        for i := 1 to Count do
+        begin
+          variant_addref(PVarData(Data+offset^)^);
+          inc(offset);
+        end;
+      end;
+      if frgDynarray in Flags then
+      with item^ do
+      begin
+        inc(item);
+        for i := 1 to Count do
+        begin
+          fpc_dynarray_incr_ref(PPointer(Data+field^.offset)^);
+          inc(field);
+        end;
+      end;
+      AddRefOpCall(Data, TypeInfo);
+    end
+  else
+{$endif VER3_0}
+    with PRecordInfoInit(typeInfo)^ do
+    begin
+      Inc(PRecordInfoInit(typeInfo));
+      { Process elements }
+      for i:=1 to Count Do
+        begin
+          fpc_Addref(Data+PRecordElement(typeInfo)^.Offset,PRecordElement(typeInfo)^.TypeInfo{$ifndef VER3_0}^{$endif});
+          Inc(PRecordElement(typeInfo));
+        end;
+      {$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
+      if Assigned(recordop) and Assigned(recordop^.AddRef) then
+        recordop^.AddRef(data);
+      {$endif}
+    end;
+end;
+
+{ define alias for internal use in the system unit }
+Function fpc_Copy_internal (Src, Dest, TypeInfo : Pointer) : SizeInt;[external name 'FPC_COPY'];
+
+
+function fpc_Copy_Record(Src,Dest,TypeInfo:Pointer): SizeInt;[Public,Alias : 'FPC_COPY_RECORD'];  compilerproc;
+var
+  i : longint;
+{$ifndef VER3_0}
+  item : PFastRTTIItem;
+  offset: PSizeInt absolute item;
+  field: PRecordElement absolute item;
+  hole: PRTTIHoleItem absolute item;
+{$endif}
+  temp: pbyte;
+  copiedsize,
+  expectedoffset,
+  fieldoffset: sizeint;
+  info: pointer;
+begin
+{$ifdef VER3_0}
+  typeInfo:=aligntoptr(typeInfo+2+PByte(typeInfo)[1]);
+{$else VER3_0}
+  typeInfo:=aligntoqword(typeInfo+2+PByte(typeInfo)[1]);
+{$endif VER3_0}
+  temp:=typeInfo;
+  Result:=PRecordInfoInit(typeInfo)^.Size;
+{$ifndef VER3_0}
+  if Assigned(PRecordInfoInit(typeInfo)^.FastRTTI) and assigned(PRecordInfoInit(typeInfo)^.FastRTTI^.GeneralRTTI) then
+    with PRecordInfoInit(typeInfo)^ do
+    if Assigned(recordop) and Assigned(recordop^.Copy) then
+      recordop^.Copy(Src,Dest)
+    else
+    with PRecordInfoInit(typeInfo)^.FastRTTI^,PRecordInfoInit(typeInfo)^.FastRTTI^.GeneralRTTI^ do
+    begin
+      item:=aligntoqword(Pointer(GeneralRTTI)+1);
+      if frgAString in Flags then
+      with item^ do
+      begin
+        inc(item);
+        for i := 1 to Count do
+        begin
+          fpc_AnsiStr_Assign(PPointer(Dest+offset^)^,PPointer(Src+offset^)^);
+          inc(offset);
+        end;
+      end;
+      if frgWString in Flags then
+      with item^ do
+      begin
+        inc(item);
+        for i := 1 to Count do
+        begin
+          fpc_WideStr_Assign(PPointer(Dest+offset^)^,PPointer(Src+offset^)^);
+          inc(offset);
+        end;
+      end;
+      if frgUString in Flags then
+      with item^ do
+      begin
+        inc(item);
+        for i := 1 to Count do
+        begin
+          fpc_UnicodeStr_Assign(PPointer(Dest+offset^)^,PPointer(Src+offset^)^);
+          inc(offset);
+        end;
+      end;
+      if frgInterface in Flags then
+      with item^ do
+      begin
+        inc(item);
+        for i := 1 to Count do
+        begin
+          fpc_intf_assign(PPointer(Dest+offset^)^,PPointer(Src+offset^)^);
+          inc(offset);
+        end;
+      end;
+      if frgVariant in Flags then
+      with item^ do
+      begin
+        inc(item);
+        for i := 1 to Count do
+        begin
+          VarCopyProc(PVarData(Dest+offset^)^,PVarData(Src+offset^)^);
+          inc(offset);
+        end;
+      end;
+      if frgDynarray in Flags then
+      with item^ do
+      begin
+        inc(item);
+        for i := 1 to Count do
+        begin
+          fpc_dynarray_assign(PPointer(Dest+field^.offset)^,PPointer(Src+field^.offset)^,field^.TypeInfo^);
+          inc(field);
+        end;
+      end;
+      { holes / non managed data }
+      if assigned(HolesRTTI) then
+      with HolesRTTI^ do
+      begin
+        hole:=Pointer(HolesRTTI);
+        inc(PFastHolesRTTI(hole));
+        for i := 1 to count do
+        begin
+          move((Src+hole^.offset)^,(Dest+hole^.offset)^,hole^.size);
+          inc(hole);
+        end;
+      end;
+    end
+  else
+{$endif VER3_0}
+    with PRecordInfoInit(typeInfo)^ do
+{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
+    if Assigned(recordop) and Assigned(recordop^.Copy) then
+      recordop^.Copy(Src,Dest)
+    else
+{$endif FPC_HAS_MANAGEMENT_OPERATORS}
+      begin
+        Inc(PRecordInfoInit(Temp));
+        expectedoffset:=0;
+        { Process elements with rtti }
+        for i:=1 to Count Do
+          begin
+            Info:=PRecordElement(Temp)^.TypeInfo{$ifndef VER3_0}^{$endif};
+            fieldOffset:=PRecordElement(Temp)^.Offset;
+            Inc(PRecordElement(Temp));
+            if fieldOffset>expectedoffset then
+              move((Src+expectedoffset)^,(Dest+expectedoffset)^,fieldOffset-expectedoffset);
+            copiedsize:=fpc_Copy_internal(Src+fieldOffset,Dest+fieldOffset,Info);
+            expectedoffset:=fieldOffset+copiedsize;
+          end;
+        { elements remaining? }
+        if result>expectedoffset then
+          move((Src+expectedoffset)^,(Dest+expectedoffset)^,Result-expectedoffset);
+      end;
+end;
+
+
 procedure RecordRTTI(Data,TypeInfo:Pointer;rttiproc:TRTTIProc);
 var
   count,
@@ -288,20 +610,7 @@ begin
     tkObject,
 {$endif FPC_HAS_FEATURE_OBJECTS}
     tkRecord:
-{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
-      { if possible try to use more optimal initrtti }
-      with RTTIRecordOp(typeinfo, typeinfo)^ do
-      begin
-        recordrtti(data,typeinfo,@int_initialize);
-        if Assigned(recordop) and Assigned(recordop^.Initialize) then
-          recordop^.Initialize(data);
-      end;
-{$else FPC_HAS_MANAGEMENT_OPERATORS}
-      begin
-        typeinfo:=RTTIRecordRttiInfoToInitInfo(typeinfo);
-        recordrtti(data,typeinfo,@int_initialize);
-      end;
-{$endif FPC_HAS_MANAGEMENT_OPERATORS}
+      int_InitializeRecord(data,RTTIRecordRttiInfoToInitInfo(typeinfo));
 {$ifdef FPC_HAS_FEATURE_VARIANTS}
     tkVariant:
       variant_init(PVarData(Data)^);
@@ -331,20 +640,7 @@ begin
     tkObject,
 {$endif FPC_HAS_FEATURE_OBJECTS}
     tkRecord:
-{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
-      { if possible try to use more optimal initrtti }
-      with RTTIRecordOp(typeinfo, typeinfo)^ do
-      begin
-        if Assigned(recordop) and Assigned(recordop^.Finalize) then
-          recordop^.Finalize(data);
-        recordrtti(data,typeinfo,@int_finalize);
-      end;
-{$else FPC_HAS_MANAGEMENT_OPERATORS}
-      begin
-        typeinfo:=RTTIRecordRttiInfoToInitInfo(typeinfo);
-        recordrtti(data,typeinfo,@int_finalize);
-      end;
-{$endif FPC_HAS_MANAGEMENT_OPERATORS}
+      int_FinalizeRecord(data,RTTIRecordRttiInfoToInitInfo(typeinfo));
     tkInterface:
       Intf_Decr_Ref(PPointer(Data)^);
 {$ifdef FPC_HAS_FEATURE_DYNARRAYS}
@@ -380,20 +676,7 @@ begin
     tkobject,
 {$endif FPC_HAS_FEATURE_OBJECTS}
     tkrecord :
-{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
-      { find init table }
-      with RTTIRecordOp(typeinfo, typeinfo)^ do
-      begin
-        recordrtti(data,typeinfo,@int_addref);
-        if Assigned(recordop) and Assigned(recordop^.AddRef) then
-          recordop^.AddRef(Data);
-      end;
-{$else FPC_HAS_MANAGEMENT_OPERATORS}
-      begin
-        typeinfo:=RTTIRecordRttiInfoToInitInfo(typeinfo);
-        recordrtti(data,typeinfo,@int_addref);
-      end;
-{$endif FPC_HAS_MANAGEMENT_OPERATORS}
+      int_AddRefRecord(data,RTTIRecordRttiInfoToInitInfo(typeinfo));
 {$ifdef FPC_HAS_FEATURE_DYNARRAYS}
     tkDynArray:
       fpc_dynarray_incr_ref(PPointer(Data)^);
@@ -407,9 +690,6 @@ begin
   end;
 end;
 
-
-{ define alias for internal use in the system unit }
-Function fpc_Copy_internal (Src, Dest, TypeInfo : Pointer) : SizeInt;[external name 'FPC_COPY'];
 
 Function fpc_Copy (Src, Dest, TypeInfo : Pointer) : SizeInt;[Public,alias : 'FPC_COPY']; compilerproc;
 var
@@ -468,50 +748,7 @@ begin
     tkobject,
 {$endif FPC_HAS_FEATURE_OBJECTS}
     tkrecord:
-{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
-      { find init table }
-      with RTTIRecordOp(typeinfo, typeinfo)^ do
-{$endif FPC_HAS_MANAGEMENT_OPERATORS}
-      begin
-{$ifndef FPC_HAS_MANAGEMENT_OPERATORS}
-        typeInfo:=RTTIRecordRttiInfoToInitInfo(typeInfo);
-{$endif FPC_HAS_MANAGEMENT_OPERATORS}
-{$ifdef VER3_0}
-        Temp:=aligntoptr(typeInfo+2+PByte(typeInfo)[1]);
-{$else VER3_0}
-        Temp:=aligntoqword(typeInfo+2+PByte(typeInfo)[1]);
-{$endif VER3_0}
-{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
-        if Assigned(recordop) and Assigned(recordop^.Copy) then
-          recordop^.Copy(Src,Dest)
-        else
-          begin
-            Result:=Size;
-            Inc(PRecordInfoInit(Temp));
-{$else FPC_HAS_MANAGEMENT_OPERATORS}
-            Result:=PRecordInfoFull(Temp)^.Size;
-            Count:=PRecordInfoFull(Temp)^.Count;
-            Inc(PRecordInfoFull(Temp));
-{$endif FPC_HAS_MANAGEMENT_OPERATORS}
-            expectedoffset:=0;
-            { Process elements with rtti }
-            for i:=1 to Count Do
-              begin
-                Info:=PRecordElement(Temp)^.TypeInfo{$ifndef VER3_0}^{$endif};
-                Offset:=PRecordElement(Temp)^.Offset;
-                Inc(PRecordElement(Temp));
-                if Offset>expectedoffset then
-                  move((Src+expectedoffset)^,(Dest+expectedoffset)^,Offset-expectedoffset);
-                copiedsize:=fpc_Copy_internal(Src+Offset,Dest+Offset,Info);
-                expectedoffset:=Offset+copiedsize;
-              end;
-            { elements remaining? }
-            if result>expectedoffset then
-              move((Src+expectedoffset)^,(Dest+expectedoffset)^,Result-expectedoffset);
-{$ifdef FPC_HAS_MANAGEMENT_OPERATORS}
-          end;
-{$endif FPC_HAS_MANAGEMENT_OPERATORS}
-      end;
+      result:=int_CopyRecord(Src,Dest,RTTIRecordRttiInfoToInitInfo(typeInfo));
 {$ifdef FPC_HAS_FEATURE_DYNARRAYS}
     tkDynArray:
       fpc_dynarray_assign(PPointer(Dest)^,PPointer(Src)^,typeinfo);
@@ -537,6 +774,10 @@ begin
   fpc_copy_internal(src,dest,typeinfo);
 end;
 
+procedure fpc_CopyRecord_proc (Src, Dest, TypeInfo : Pointer);compilerproc; inline;
+begin
+  int_CopyRecord(src,dest,typeinfo);
+end;
 
 procedure fpc_initialize_array(data,typeinfo : pointer;count : SizeInt); [public,alias:'FPC_INITIALIZE_ARRAY']; compilerproc;
   var

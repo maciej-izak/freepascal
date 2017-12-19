@@ -838,7 +838,10 @@ implementation
                ccallparanode.create(ctypeconvnode.create_internal(
                  caddrnode.create_internal(right),voidpointertype),
                nil)));
-           result:=ccallnode.createintern('fpc_copy_proc',hp);
+           if (left.resultdef.typ in [recorddef,objectdef]) then
+             result:=ccallnode.createintern('fpc_copyrecord_proc',hp)
+           else
+             result:=ccallnode.createintern('fpc_copy_proc',hp);
            firstpass(result);
            left:=nil;
            right:=nil;

@@ -459,6 +459,13 @@ interface
          it_interfacejava
        );
 
+       { fast rtti switches }
+       tfastrttiswitch = (
+         frs_off,   { strip all fast rtti }
+         frs_auto,  { lets compiler to determinate when to generate fast rtti }
+         frs_on     { full fast rtti for all possible types (structures) }
+       );
+
        { currently parsed block type }
        tblock_type = (
          bt_none,        { not assigned                              }

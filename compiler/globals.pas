@@ -156,6 +156,7 @@ interface
          fputype         : tfputype;
          asmmode         : tasmmode;
          interfacetype   : tinterfacetypes;
+         fastrtti        : tfastrttiswitch;
          defproccall     : tproccalloption;
          sourcecodepage  : tstringencoding;
 
@@ -517,6 +518,7 @@ interface
 {$else jvm}
         interfacetype : it_interfacejava;
 {$endif jvm}
+        fastrtti : frs_auto;
         defproccall : pocall_default;
         sourcecodepage : 28591;
         minfpconstprec : s32real;

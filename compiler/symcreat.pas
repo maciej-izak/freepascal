@@ -1374,7 +1374,7 @@ implementation
 
   procedure finish_parentfpstruct(pd: tprocdef);
     begin
-      trecordsymtable(trecorddef(tlocalvarsym(pd.parentfpstruct).vardef).symtable).addalignmentpadding;
+      trecordsymtable(trecorddef(tlocalvarsym(pd.parentfpstruct).vardef).symtable).finish_data;
     end;
 
 

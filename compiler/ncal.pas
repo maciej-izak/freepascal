@@ -552,7 +552,7 @@ implementation
           end;
 
         { finalize the parameter record }
-        trecordsymtable(vardispatchparadef.symtable).addalignmentpadding;
+        trecordsymtable(vardispatchparadef.symtable).finish_data;
 
         { Set final size for parameter block }
         params.size:=paramssize;

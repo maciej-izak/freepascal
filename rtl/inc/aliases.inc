@@ -26,6 +26,10 @@
 { export for internal usage }
 Procedure int_Finalize (Data,TypeInfo: Pointer); [external name 'FPC_FINALIZE'];
 Procedure int_Addref (Data,TypeInfo : Pointer); [external name 'FPC_ADDREF'];
+Procedure int_InitializeRecord (Data,TypeInfo: Pointer); [external name 'FPC_INITIALIZE_RECORD'];
+Procedure int_FinalizeRecord (Data,TypeInfo: Pointer); [external name 'FPC_FINALIZE_RECORD'];
+Procedure int_AddrefRecord (Data,TypeInfo: Pointer); [external name 'FPC_ADDREF_RECORD'];
+Function int_CopyRecord (Src,Dest,TypeInfo: Pointer): SizeInt; [external name 'FPC_COPY_RECORD'];
 Procedure int_Initialize (Data,TypeInfo: Pointer); [external name 'FPC_INITIALIZE'];
 procedure int_InitializeArray(data,typeinfo : pointer;count : SizeInt); [external name 'FPC_INITIALIZE_ARRAY'];
 procedure int_FinalizeArray(data,typeinfo : pointer;count : SizeInt); [external name 'FPC_FINALIZE_ARRAY'];

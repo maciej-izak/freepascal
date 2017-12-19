@@ -521,6 +521,24 @@ unit scandir;
         do_localswitch(cs_force_far_calls);
       end;
 
+    procedure dir_fastrtti;
+      var
+        hs : string;
+      begin
+        current_scanner.skipspace;
+        hs:=current_scanner.readid;
+        if (hs='ON') then
+          current_settings.fastrtti:=frs_on
+        else if (hs='OFF') then
+          current_settings.fastrtti:=frs_off
+        else if (hs='AUTO') then
+          current_settings.fastrtti:=frs_auto
+        else if (hs='DEFAULT') then
+          current_settings.fastrtti:=init_settings.fastrtti
+        else
+          Comment(V_Error, 'Wrong switch toggle, use ON/OFF/AUTO/DEFAULT');
+      end;
+
     procedure dir_fatal;
       begin
         do_message(scan_f_user_defined);
@@ -1894,6 +1912,7 @@ unit scandir;
         AddDirective('EXTENDEDSYNTAX',directive_all, @dir_extendedsyntax);
         AddDirective('EXTERNALSYM',directive_all, @dir_externalsym);
         AddDirective('F',directive_all, @dir_forcefarcalls);
+        AddDirective('FASTRTTI',directive_all, @dir_fastrtti);
         AddDirective('FATAL',directive_all, @dir_fatal);
         AddDirective('FPUTYPE',directive_all, @dir_fputype);
         AddDirective('FRAMEWORKPATH',directive_all, @dir_frameworkpath);

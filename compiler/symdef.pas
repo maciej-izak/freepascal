@@ -294,6 +294,8 @@ interface
           function GetSymtable(t:tGetSymtable):TSymtable;override;
           function is_packed:boolean;
           function RttiName: string;
+          procedure buildderef;override;
+          procedure deref;override;
           { enumerator support }
           function search_enumerator_get: tprocdef; virtual;
           function search_enumerator_move: tprocdef; virtual;
@@ -974,6 +976,34 @@ interface
        end;
 
 
+       pmanagedatomitem=^tmanagedatomitem;
+       tmanagedatomitem=record
+         offset : asizeint;
+         def : tdef;
+         deref : tderef;
+       end;
+
+       tmanagedatomscontainer=class
+       public
+         is_legal : boolean;
+         atomslists : array[first_managedatomkind..last_managedatomkind] of tfplist;
+         recdef : tabstractrecorddef;
+         holes  : tdynamicarray;
+         expectedmanagedoffset : asizeint;
+         legalparentscount : longint;
+         managednesteddatacount : longint;
+         totalcount : longint;
+
+         constructor create(def:tabstractrecorddef);
+         destructor destroy; override;
+         { all basic managed fields flags (strings+interfaces+variants+dynamic arrays) }
+         function generalmanagedfieldsflags:tgeneralmanagedatomskinds;
+         function initializationmanagedfieldsflags:tinitializationmanagedatomskinds;
+         procedure append(managedatoms:tmanagedatomscontainer;offset:asizeint);
+         procedure addatom(kind:tmanagedatomkind;item:pmanagedatomitem;first:boolean=false);
+       end;
+
+
     var
        current_structdef: tabstractrecorddef; { used for private functions check !! }
        current_genericdef: tstoreddef;        { used to reject declaration of generic class inside generic class }
@@ -1221,6 +1251,7 @@ implementation
       fpccrc,
       entfile
       ;
+
 
 {****************************************************************************
                                   Helpers
@@ -1601,6 +1632,166 @@ implementation
             ) then
           { nested helpers will be removed as well }
           remove_helpers_and_generics(st);
+      end;
+
+
+{****************************************************************************
+      TMANAGEDATOMSCONTAINER (collection of most simple managed types)
+****************************************************************************}
+
+    constructor tmanagedatomscontainer.create(def:tabstractrecorddef);
+      var
+        parent : tobjectdef;
+        parentatoms : tmanagedatomscontainer;
+      begin
+        if assigned(def) and not is_record(def) and not is_class_or_object(def) and
+           not is_objectpascal_helper(def) then
+          internalerror(2017052001);
+        recdef:=def;
+
+        if is_class_or_object(def) then
+          begin
+            parent:=tobjectdef(def).childof;
+            while assigned(parent) do
+              begin
+                { very important for calculating non managed holes. First record
+                  with atom fields need to perform big block across all parents }
+                parentatoms:=tabstractrecordsymtable(parent.symtable).managedatoms;
+                if assigned(parentatoms) then
+                  begin
+                    inc(expectedmanagedoffset,tobjectsymtable(parent.symtable).datasize);
+                    legalparentscount:=parentatoms.legalparentscount;
+                    if parentatoms.is_legal then
+                      inc(legalparentscount);
+                    break;
+                  end;
+                parent:=parent.childof;
+              end;
+          end;
+        holes:=tdynamicarray.create(32);
+      end;
+
+
+    destructor tmanagedatomscontainer.destroy;
+      var
+        i : tmanagedatomkind;
+        j : integer;
+        item : pmanagedatomitem;
+        atoms : tfplist;
+      begin
+        holes.free;
+        for i:=first_managedatomkind to last_managedatomkind do
+          begin
+            atoms:=atomslists[i];
+            if assigned(atoms) then
+            begin
+              for j:=0 to atoms.count-1 do
+                begin
+                  item:=atoms.Items[j];
+                  dispose(item);
+                end;
+              atoms.free;
+            end;
+          end;
+      end;
+
+
+    function tmanagedatomscontainer.generalmanagedfieldsflags:tgeneralmanagedatomskinds;
+      begin
+        result:=[];
+        if assigned(atomslists[mak_astring]) then
+          include(result,gmak_astring);
+        if assigned(atomslists[mak_wstring]) then
+          include(result,gmak_wstring);
+        if assigned(atomslists[mak_ustring]) then
+          include(result,gmak_ustring);
+        if assigned(atomslists[mak_interface]) then
+          include(result,gmak_interface);
+        if assigned(atomslists[mak_variant]) then
+          include(result,gmak_variant);
+        if assigned(atomslists[mak_dynarray]) then
+          include(result,gmak_dynarray);
+      end;
+
+
+    function tmanagedatomscontainer.initializationmanagedfieldsflags:tinitializationmanagedatomskinds;
+      begin
+        result:=[];
+        if assigned(atomslists[mak_astring]) then
+          Include(result,imak_pointer);
+        if assigned(atomslists[mak_wstring]) then
+          Include(result,imak_pointer);
+        if assigned(atomslists[mak_ustring]) then
+          Include(result,imak_pointer);
+        if assigned(atomslists[mak_interface]) then
+          Include(result,imak_pointer);
+        if assigned(atomslists[mak_variant]) then
+          Include(result,imak_variant);
+        if assigned(atomslists[mak_dynarray]) then
+          Include(result,imak_pointer);
+      end;
+
+
+    procedure tmanagedatomscontainer.append(managedatoms:tmanagedatomscontainer;offset:asizeint);
+      var
+        i : tmanagedatomkind;
+        j : integer;
+        item,newitem : pmanagedatomitem;
+        atoms : tfplist;
+        fieldoffset,
+        size : asizeint;
+      begin
+        if not assigned(managedatoms) then
+          Exit;
+        for i:=first_managedatomkind to last_managedatomkind do
+          begin
+            atoms:=managedatoms.atomslists[i];
+            if assigned(atoms) then
+              begin
+                { always should be bigger than 0, otherwise should be nil }
+                if atoms.count=0 then
+                  internalerror(2017062702);
+                { don't use in loop below addatom (small optimization) }
+                if not assigned(atomslists[i]) then
+                  begin
+                    atomslists[i]:=tfplist.create;
+                    atomslists[i].capacity:=atoms.count;
+                  end;
+                for j:=0 to atoms.count-1 do
+                  begin
+                    item:=atoms.items[j];
+                    newitem:=new(pmanagedatomitem);
+                    newitem^:=item^;
+                    newitem^.deref.reset;
+                    inc(newitem^.offset,offset);
+                    atomslists[i].add(newitem);
+                  end;
+                inc(totalcount,atoms.count);
+              end;
+          end;
+        { copy holes }
+        managedatoms.holes.seek(0);
+        for j:=1 to ((managedatoms.holes.size div sizeof(asizeint)) div 2) do
+          begin
+            managedatoms.holes.read(size,sizeof(asizeint));
+            managedatoms.holes.read(fieldoffset,sizeof(asizeint));
+            holes.write(size,sizeof(asizeint));
+            inc(fieldoffset,offset);
+            holes.write(fieldoffset,sizeof(asizeint));
+          end;
+      end;
+
+
+    procedure tmanagedatomscontainer.addatom(kind:tmanagedatomkind;item:pmanagedatomitem;first:boolean);
+      begin
+        is_legal:=true;
+        inc(totalcount);
+        if not assigned(atomslists[kind]) then
+          atomslists[kind]:=tfplist.create;
+        if first then
+          atomslists[kind].insert(0,item)
+        else
+          atomslists[kind].add(item);
       end;
 
 
@@ -4128,6 +4319,63 @@ implementation
                 rttistring:=OwnerHierarchyName+objrealname^;
           end;
         result:=rttistring;
+      end;
+
+    procedure tabstractrecorddef.buildderef;
+      var
+        i : tmanagedatomkind;
+        j : integer;
+        item : pmanagedatomitem;
+        atoms : tfplist;
+        managedatoms : tmanagedatomscontainer;
+      begin
+        inherited buildderef;
+
+        if assigned(symtable) and assigned(tabstractrecordsymtable(symtable).managedatoms) then
+          begin
+            managedatoms:=tabstractrecordsymtable(symtable).managedatoms;
+            for i:=first_managedatomkind to last_managedatomkind do
+              begin
+                atoms:=managedatoms.atomslists[i];
+                if assigned(atoms) then
+                  for j:=0 to atoms.count-1 do
+                    begin
+                      item:=atoms[j];
+                      if item^.deref.dataidx<0 then
+                        begin
+                          if item^.def=nil then
+                            internalerror(2017060202);
+                          item^.deref.build(item^.def);
+                        end;
+                    end;
+              end;
+          end;
+      end;
+
+    procedure tabstractrecorddef.deref;
+      var
+        i : tmanagedatomkind;
+        j : integer;
+        item : pmanagedatomitem;
+        atoms : tfplist;
+        managedatoms : tmanagedatomscontainer;
+      begin
+        inherited deref;
+
+        if assigned(symtable) and assigned(tabstractrecordsymtable(symtable).managedatoms) then
+          begin
+            managedatoms:=tabstractrecordsymtable(symtable).managedatoms;
+            for i:=first_managedatomkind to last_managedatomkind do
+              begin
+                atoms:=managedatoms.atomslists[i];
+                if assigned(atoms) then
+                  for j:=0 to atoms.count-1 do
+                    begin
+                      item:=atoms[j];
+                      item^.def:=tdef(item^.deref.resolve);
+                    end;
+              end;
+          end;
       end;
 
     function tabstractrecorddef.search_enumerator_get: tprocdef;
@@ -7036,6 +7284,9 @@ implementation
                 include(objectoptions,oo_has_vmt);
               end;
           end;
+        { copy managed atoms from parent }
+        if (objecttype in [odt_object,odt_class]) and assigned(tobjectsymtable(c.symtable).managedatoms) then
+          tObjectSymtable(symtable).appendmanagedatoms(tobjectsymtable(c.symtable).managedatoms,0);
       end;
 
 

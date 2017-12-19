@@ -730,6 +730,10 @@ procedure fpc_check_object_ext(vmt,expvmt:pointer);compilerproc;
 
 
 {$ifdef FPC_HAS_FEATURE_RTTI}
+Procedure fpc_initialize_record (Data,TypeInfo : pointer); compilerproc;
+Procedure fpc_finalize_record (Data,TypeInfo : pointer); compilerproc;
+Procedure fpc_addref_record (Data,TypeInfo : pointer); compilerproc;
+Function fpc_copy_record (Src,Dest,TypeInfo : pointer):SizeInt; compilerproc;
 Procedure fpc_Initialize (Data,TypeInfo : pointer); compilerproc;
 Procedure fpc_finalize (Data,TypeInfo: Pointer); compilerproc;
 Procedure fpc_Addref (Data,TypeInfo : Pointer); compilerproc;
@@ -740,6 +744,7 @@ procedure fpc_addref_array(data,typeinfo: pointer; count: SizeInt); compilerproc
 procedure fpc_decref_array(data,typeinfo: pointer; count: sizeint); compilerproc;
 Function fpc_Copy (Src, Dest, TypeInfo : Pointer) : SizeInt; compilerproc;
 Procedure fpc_Copy_proc (Src, Dest, TypeInfo : Pointer); compilerproc; inline;
+Procedure fpc_CopyRecord_proc (Src, Dest, TypeInfo : Pointer); compilerproc; inline;
 {$endif FPC_HAS_FEATURE_RTTI}
 
 

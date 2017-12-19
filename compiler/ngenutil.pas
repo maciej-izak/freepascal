@@ -252,6 +252,17 @@ implementation
                   ctypeconvnode.create_internal(p,search_system_type('TVARDATA').typedef),
                 nil));
             end
+          else if (p.resultdef.typ in [recorddef,objectdef]) then
+            begin
+              result:=ccallnode.createintern('fpc_initialize_record',
+                    ccallparanode.create(
+                        caddrnode.create_internal(
+                            crttinode.create(
+                                tstoreddef(p.resultdef),initrtti,rdt_normal)),
+                    ccallparanode.create(
+                        caddrnode.create_internal(p),
+                    nil)));
+            end
           else
             begin
               result:=ccallnode.createintern('fpc_initialize',
@@ -307,6 +318,17 @@ implementation
                 ccallparanode.create(
                   ctypeconvnode.create_internal(p,search_system_type('TVARDATA').typedef),
                 nil));
+            end
+          else if p.resultdef.typ in [recorddef,objectdef] then
+            begin
+              result:=ccallnode.createintern('fpc_finalize_record',
+                    ccallparanode.create(
+                        caddrnode.create_internal(
+                            crttinode.create(
+                                tstoreddef(p.resultdef),initrtti,rdt_normal)),
+                    ccallparanode.create(
+                        caddrnode.create_internal(p),
+                    nil)));
             end
           else
             result:=ccallnode.createintern('fpc_finalize',
