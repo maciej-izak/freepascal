@@ -5247,7 +5247,7 @@ procedure TPasResolver.ResolveImplForLoop(Loop: TPasImplForLoop);
 var
   VarResolved, StartResolved, EndResolved,
     OrigStartResolved: TPasResolverResult;
-  EnumeratorFound: Boolean;
+  EnumeratorFound, HasInValues: Boolean;
   InRange, VarRange: TResEvalValue;
   InRangeInt, VarRangeInt: TResEvalRangeInt;
   bt: TResolverBaseType;
@@ -5294,14 +5294,35 @@ begin
     try
       OrigStartResolved:=StartResolved;
       if StartResolved.IdentEl is TPasType then
+        begin
         // e.g. for e in TEnum do
-        InRange:=EvalTypeRange(StartResolved.TypeEl,[])
+        TypeEl:=ResolveAliasType(StartResolved.TypeEl);
+        if TypeEl is TPasArrayType then
+          begin
+          if length(TPasArrayType(TypeEl).Ranges)=1 then
+            InRange:=Eval(TPasArrayType(TypeEl).Ranges[0],[refConst]);
+          end;
+        if InRange=nil then
+          InRange:=EvalTypeRange(TypeEl,[]);
+        {$IFDEF VerbosePasResolver}
+        if InRange<>nil then
+          writeln('TPasResolver.ResolveImplForLoop in type: InRange=',InRange.AsDebugString)
+        else
+          writeln('TPasResolver.ResolveImplForLoop in type: InRange=nil');
+        {$ENDIF}
+        end
       else if rrfReadable in StartResolved.Flags then
         begin
         // value  (variable or expression)
         bt:=StartResolved.BaseType;
         if bt=btSet then
-          InRange:=EvalTypeRange(StartResolved.TypeEl,[])
+          begin
+            writeln('AAA1 TPasResolver.ResolveImplForLoop ',GetObjName(StartResolved.ExprEl),' ',GetObjName(Loop.StartExpr));
+          if (StartResolved.IdentEl=nil) and (StartResolved.ExprEl<>nil) then
+            InRange:=Eval(StartResolved.ExprEl,[refAutoConst])
+          else
+            InRange:=EvalTypeRange(StartResolved.TypeEl,[]);
+          end
         else if bt=btContext then
           begin
           TypeEl:=ResolveAliasType(StartResolved.TypeEl);
@@ -5327,17 +5348,18 @@ begin
         end;
       if (not EnumeratorFound) and (InRange<>nil) then
         begin
-        // in parameter is a constant
+        // for v in <constant> do
         // -> check if same type
         //writeln('TPasResolver.ResolveImplForLoop ForIn InRange=',InRange.AsDebugString,' ElType=',GetResolverResultDbg(StartResolved));
         case InRange.Kind of
-        revkRangeInt:
+        revkRangeInt,revkSetOfInt:
           begin
           InRangeInt:=TResEvalRangeInt(InRange);
           case VarRange.Kind of
           revkRangeInt:
             begin
             VarRangeInt:=TResEvalRangeInt(VarRange);
+            HasInValues:=(InRange.Kind<>revkSetOfInt) or (length(TResEvalSet(InRange).Ranges)>0);
             case InRangeInt.ElKind of
               revskEnum:
                 if (VarRangeInt.ElKind<>revskEnum)
@@ -5357,18 +5379,32 @@ begin
                   RaiseXExpectedButYFound(20171109200754,'boolean',
                     GetResolverResultDescription(VarResolved,true),loop.VariableName);
             else
-              RaiseNotYetImplemented(20171109200954,Loop.StartExpr);
+              if HasInValues then
+                RaiseNotYetImplemented(20171109200954,Loop.StartExpr);
             end;
-            if (VarRangeInt.RangeStart>InRangeInt.RangeStart) then
-              fExprEvaluator.EmitRangeCheckConst(20171109201428,
-                InRangeInt.ElementAsString(InRangeInt.RangeStart),
-                VarRangeInt.ElementAsString(VarRangeInt.RangeStart),
-                VarRangeInt.ElementAsString(VarRangeInt.RangeEnd),Loop.VariableName,mtError);
-            if (VarRangeInt.RangeEnd<InRangeInt.RangeEnd) then
-              fExprEvaluator.EmitRangeCheckConst(20171109201429,
-                InRangeInt.ElementAsString(InRangeInt.RangeEnd),
-                VarRangeInt.ElementAsString(VarRangeInt.RangeStart),
-                VarRangeInt.ElementAsString(VarRangeInt.RangeEnd),Loop.VariableName,mtError);
+            if HasInValues then
+              begin
+              if (VarRangeInt.RangeStart>InRangeInt.RangeStart) then
+                begin
+                {$IFDEF VerbosePasResolver}
+                writeln('TPasResolver.ResolveImplForLoop VarRange=',VarRangeInt.AsDebugString,' ',InRangeInt.AsDebugString);
+                {$ENDIF}
+                fExprEvaluator.EmitRangeCheckConst(20171109201428,
+                  InRangeInt.ElementAsString(InRangeInt.RangeStart),
+                  VarRangeInt.ElementAsString(VarRangeInt.RangeStart),
+                  VarRangeInt.ElementAsString(VarRangeInt.RangeEnd),Loop.VariableName,mtError);
+                end;
+              if (VarRangeInt.RangeEnd<InRangeInt.RangeEnd) then
+                begin
+                {$IFDEF VerbosePasResolver}
+                writeln('TPasResolver.ResolveImplForLoop VarRange=',VarRangeInt.AsDebugString,' ',InRangeInt.AsDebugString);
+                {$ENDIF}
+                fExprEvaluator.EmitRangeCheckConst(20171109201429,
+                  InRangeInt.ElementAsString(InRangeInt.RangeEnd),
+                  VarRangeInt.ElementAsString(VarRangeInt.RangeStart),
+                  VarRangeInt.ElementAsString(VarRangeInt.RangeEnd),Loop.VariableName,mtError);
+                end;
+              end;
             EnumeratorFound:=true;
             end;
           else
@@ -5379,7 +5415,7 @@ begin
           end;
         else
           {$IFDEF VerbosePasResolver}
-          writeln('TPasResolver.ResolveImplForLoop ForIn RangeValue=',InRange.AsDebugString);
+          writeln('TPasResolver.ResolveImplForLoop ForIn InRange=',InRange.AsDebugString);
           {$ENDIF}
         end;
         end;
@@ -7777,8 +7813,7 @@ begin
       end;
 
     FirstResolved.IdentEl:=nil;
-    if FirstResolved.ExprEl=nil then
-      FirstResolved.ExprEl:=Params;
+    FirstResolved.ExprEl:=Params;
     FirstResolved.SubType:=FirstResolved.BaseType;
     FirstResolved.BaseType:=btSet;
     FirstResolved.Flags:=[rrfReadable];
