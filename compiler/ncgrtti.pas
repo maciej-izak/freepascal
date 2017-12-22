@@ -697,7 +697,7 @@ implementation
                     item:=atoms[i];
                     if rttiref then
                       write_rtti_reference(tcb,item^.def,initrtti);
-                    tcb.emit_ord_const(item^.offset,sizeuinttype);
+                    tcb.emit_ord_const(item^.offset,sizesinttype);
                   end;
               end;
           end;
@@ -758,7 +758,7 @@ implementation
 
                     linkedrecord.tcb.emit_tai(Tai_const.Createname(procdef.mangledname,AT_FUNCTION,0),
                       cprocvardef.getreusableprocaddr(procdef));
-                    linkedrecord.tcb.emit_ord_const(item^.offset,ptruinttype);
+                    linkedrecord.tcb.emit_ord_const(item^.offset,sizesinttype);
                   end;
 
                 linkedrecord.concat_asmdata;
@@ -847,9 +847,9 @@ implementation
                 for i:=1 to count do
                   begin
                     managedatoms.holes.read(size,sizeof(asizeint));
-                    linkedrecord.tcb.emit_ord_const(size,sizeuinttype);
+                    linkedrecord.tcb.emit_ord_const(size,sizesinttype);
                     managedatoms.holes.read(offset,sizeof(asizeint));
-                    linkedrecord.tcb.emit_ord_const(offset,sizeuinttype);
+                    linkedrecord.tcb.emit_ord_const(offset,sizesinttype);
                   end;
 
                 linkedrecord.concat_asmdata;
