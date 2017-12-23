@@ -518,7 +518,7 @@ interface
 {$else jvm}
         interfacetype : it_interfacejava;
 {$endif jvm}
-        fastrtti : frs_auto;
+        fastrtti : frs_on;
         defproccall : pocall_default;
         sourcecodepage : 28591;
         minfpconstprec : s32real;
