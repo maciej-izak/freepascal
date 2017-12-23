@@ -1170,8 +1170,8 @@ implementation
           finalset : tmanagedatomkinds;
           atoms : tfplist;
           item : pmanagedatomitem;
-          offset, size : asizeint;
           totalcount : longint;
+          hole : pmanagedhole;
         begin
           ppufile.getsmallset(finalset);
 
@@ -1204,12 +1204,12 @@ implementation
 
               { holes between managed atoms }
               count:=ppufile.getlongint;
-              for j:=1 to count do
+              for j:=0 to count-1 do
                 begin
-                  size:=ppufile.getasizeint;
-                  managedatoms.holes.write(size,sizeof(asizeint));
-                  offset:=ppufile.getasizeint;
-                  managedatoms.holes.write(offset,sizeof(asizeint));
+                  hole:=new(pmanagedhole);
+                  hole^.size:=ppufile.getasizeint;
+                  hole^.offset:=ppufile.getasizeint;
+                  managedatoms.holes.add(hole);
                 end;
             end;
         end;
@@ -1236,8 +1236,8 @@ implementation
           finalset : tmanagedatomkinds;
           atoms : tfplist;
           item : pmanagedatomitem;
-          offset,size : asizeint;
           totalcount : longint;
+          hole : pmanagedhole;
         begin
           finalset:=[];
           if assigned(managedatoms) then
@@ -1276,16 +1276,14 @@ implementation
                 internalerror(2017062802);
 
                 { holes between managed atoms }
-                count:=(managedatoms.holes.size div sizeof(asizeint)) div 2;
+                count:=managedatoms.holes.count;
                 ppufile.putlongint(count);
 
-                managedatoms.holes.seek(0);
-                for j:=1 to count do
+                for j:=0 to count-1 do
                   begin
-                    managedatoms.holes.read(size,sizeof(asizeint));
-                    ppufile.putasizeint(size);
-                    managedatoms.holes.read(offset,sizeof(asizeint));
-                    ppufile.putasizeint(offset);
+                    hole:=managedatoms.holes[j];
+                    ppufile.putasizeint(hole^.size);
+                    ppufile.putasizeint(hole^.offset);
                   end;
             end;
         end;
@@ -1356,7 +1354,8 @@ implementation
     procedure tabstractrecordsymtable.addalignmentpadding;
       var
         padded_datasize,
-        holesize: asizeint;
+        holesize : asizeint;
+        hole : pmanagedhole;
       begin
         { make the record size aligned correctly so it can be
           used as elements in an array. For C records we
@@ -1387,11 +1386,13 @@ implementation
         if assigned(managedatoms) then
           if managedatoms.expectedmanagedoffset<>_datasize then
             begin
+              hole:=new(pmanagedhole);
               { size }
               holesize:=padded_datasize-managedatoms.expectedmanagedoffset;
-              managedatoms.holes.write(holesize,sizeof(asizeint));
+              hole^.size:=holesize;
               { offset }
-              managedatoms.holes.write(managedatoms.expectedmanagedoffset,sizeof(asizeint));
+              hole^.offset:=managedatoms.expectedmanagedoffset;
+              managedatoms.holes.add(hole);
             end;
       end;
 
@@ -1477,6 +1478,7 @@ implementation
         holesize : asizeint;
         varalign : shortint;
         vardef : tdef;
+        hole : pmanagedhole;
       begin
         if (sym.owner<>self) then
           internalerror(200602031);
@@ -1551,11 +1553,13 @@ implementation
                   if sym.fieldoffset<>managedatoms.expectedmanagedoffset then
                   begin
                     { list of unmanaged holes }
+                    hole:=new(pmanagedhole);
                     { size }
                     holesize:=sym.fieldoffset-managedatoms.expectedmanagedoffset;
-                    managedatoms.holes.write(holesize,sizeof(asizeint));
+                    hole^.size:=holesize;
                     { offset }
-                    managedatoms.holes.write(managedatoms.expectedmanagedoffset,sizeof(asizeint));
+                    hole^.offset:=managedatoms.expectedmanagedoffset;
+                    managedatoms.holes.add(hole);
                   end;
                   managedatoms.expectedmanagedoffset:=sym.fieldoffset+sym.vardef.size;
                 end;

@@ -983,12 +983,18 @@ interface
          deref : tderef;
        end;
 
+       pmanagedhole=^tmanagedhole;
+       tmanagedhole=record
+         size: asizeint;
+         offset: asizeint;
+       end;
+
        tmanagedatomscontainer=class
        public
          is_legal : boolean;
          atomslists : array[first_managedatomkind..last_managedatomkind] of tfplist;
          recdef : tabstractrecorddef;
-         holes  : tdynamicarray;
+         holes  : tfplist;
          expectedmanagedoffset : asizeint;
          legalparentscount : longint;
          managednesteddatacount : longint;
@@ -1668,7 +1674,7 @@ implementation
                 parent:=parent.childof;
               end;
           end;
-        holes:=tdynamicarray.create(32);
+        holes:=tfplist.create;
       end;
 
 
@@ -1677,8 +1683,14 @@ implementation
         i : tmanagedatomkind;
         j : integer;
         item : pmanagedatomitem;
+        hole : pmanagedhole;
         atoms : tfplist;
       begin
+        for j:=0 to holes.count-1 do
+          begin
+            hole:=holes[j];
+            dispose(hole);
+          end;
         holes.free;
         for i:=first_managedatomkind to last_managedatomkind do
           begin
@@ -1738,8 +1750,7 @@ implementation
         j : integer;
         item,newitem : pmanagedatomitem;
         atoms : tfplist;
-        fieldoffset,
-        size : asizeint;
+        hole,newhole : pmanagedhole;
       begin
         if not assigned(managedatoms) then
           Exit;
@@ -1770,14 +1781,13 @@ implementation
               end;
           end;
         { copy holes }
-        managedatoms.holes.seek(0);
-        for j:=1 to ((managedatoms.holes.size div sizeof(asizeint)) div 2) do
+        for j:=0 to managedatoms.holes.count-1 do
           begin
-            managedatoms.holes.read(size,sizeof(asizeint));
-            managedatoms.holes.read(fieldoffset,sizeof(asizeint));
-            holes.write(size,sizeof(asizeint));
-            inc(fieldoffset,offset);
-            holes.write(fieldoffset,sizeof(asizeint));
+            hole:=managedatoms.holes[j];
+            newhole:=new(pmanagedhole);
+            newhole^:=hole^;
+            inc(newhole^.offset,offset);
+            holes.add(newhole);
           end;
       end;
 

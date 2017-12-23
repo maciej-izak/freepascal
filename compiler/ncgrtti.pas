@@ -187,7 +187,7 @@ implementation
       begin
         parenttcb.emit_tai(Tai_const.Createname(
           internaltypeprefixName[itp_init_record_operators]+def.rtti_mangledname(initrtti)+suffix,
-          AT_DATA_FORCEINDIRECT,0),voidpointertype);
+          AT_DATA,0),voidpointertype);
 
         rttilab:=current_asmdata.DefineAsmSymbol(
             internaltypeprefixName[itp_init_record_operators]+def.rtti_mangledname(initrtti)+suffix,
@@ -834,22 +834,20 @@ implementation
           var
             linkedrecord : TRTTILinkedRecord;
             i,count : integer;
-            offset,size : asizeint;
+            hole : pmanagedhole;
           begin
-            if managedatoms.holes.size<>0 then
+            if managedatoms.holes.count<>0 then
               begin
                 linkedrecord:=TRTTILinkedRecord.Create(self,tcb,managedatoms.recdef,'$holesrtti');
 
-                count:=(managedatoms.holes.size div sizeof(asizeint)) div 2;
+                count:=managedatoms.holes.count;
                 linkedrecord.tcb.emit_ord_const(count,u32inttype);
 
-                managedatoms.holes.seek(0);
-                for i:=1 to count do
+                for i:=0 to count-1 do
                   begin
-                    managedatoms.holes.read(size,sizeof(asizeint));
-                    linkedrecord.tcb.emit_ord_const(size,sizesinttype);
-                    managedatoms.holes.read(offset,sizeof(asizeint));
-                    linkedrecord.tcb.emit_ord_const(offset,sizesinttype);
+                    hole:=managedatoms.holes[i];
+                    linkedrecord.tcb.emit_ord_const(hole^.size,sizesinttype);
+                    linkedrecord.tcb.emit_ord_const(hole^.offset,sizesinttype);
                   end;
 
                 linkedrecord.concat_asmdata;
