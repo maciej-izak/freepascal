@@ -50,6 +50,9 @@ unit cpupara;
           function get_volatile_registers_int(calloption:tproccalloption):tcpuregisterset;override;
           function get_volatile_registers_address(calloption:tproccalloption):tcpuregisterset;override;
           function get_volatile_registers_fpu(calloption:tproccalloption):tcpuregisterset;override;
+          function get_saved_registers_int(calloption:tproccalloption):tcpuregisterarray;override;
+          function get_saved_registers_address(calloption:tproccalloption):tcpuregisterarray;override;
+          function get_saved_registers_fpu(calloption:tproccalloption):tcpuregisterarray;override;
           function get_para_align(calloption : tproccalloption):byte;override;
          private
           function parse_loc_string_to_register(var locreg: tregister; const s : string): boolean;
@@ -80,6 +83,8 @@ unit cpupara;
       begin
         { d0 and d1 are considered volatile }
         Result:=VOLATILE_INTREGISTERS;
+        if target_info.system in [system_m68k_palmos] then
+          include(result,RS_D2);
       end;
 
 
@@ -87,12 +92,35 @@ unit cpupara;
       begin
         { a0 and a1 are considered volatile }
         Result:=VOLATILE_ADDRESSREGISTERS;
+        if target_info.system in [system_m68k_palmos] then
+          include(result,RS_A2);
       end;
 
     function tcpuparamanager.get_volatile_registers_fpu(calloption:tproccalloption):tcpuregisterset;
       begin
         { fp0 and fp1 are considered volatile }
         Result:=VOLATILE_FPUREGISTERS;
+      end;
+
+    function tcpuparamanager.get_saved_registers_int(calloption:tproccalloption):tcpuregisterarray;
+      const
+        saved_regs: array[0..5] of tsuperregister = (RS_D2,RS_D3,RS_D4,RS_D5,RS_D6,RS_D7);
+      begin
+        result:=saved_regs;
+      end;
+
+    function tcpuparamanager.get_saved_registers_address(calloption:tproccalloption):tcpuregisterarray;
+      const
+        saved_addr_regs: array[0..4] of tsuperregister = (RS_A2,RS_A3,RS_A4,RS_A5,RS_A6);
+      begin
+        result:=saved_addr_regs;
+      end;
+
+    function tcpuparamanager.get_saved_registers_fpu(calloption:tproccalloption):tcpuregisterarray;
+      const
+        saved_fpu_regs: array[0..5] of tsuperregister = (RS_FP2,RS_FP3,RS_FP4,RS_FP5,RS_FP6,RS_FP7);
+      begin
+        result:=saved_fpu_regs;
       end;
 
     function tcpuparamanager.get_para_align(calloption : tproccalloption):byte;
@@ -240,8 +268,8 @@ unit cpupara;
                  We also have to figure out a better switch for this, because this is
                  now compiler and platform specific... (KB) }
 
-               if (tprocdef(p).proccalloption in [pocall_cdecl,pocall_cppdecl]) and
-                  (target_info.system in [system_m68k_linux]) and
+               if (tprocdef(p).proccalloption in [pocall_syscall,pocall_cdecl,pocall_cppdecl]) and
+                  (target_info.system in [system_m68k_palmos,system_m68k_linux]) and
                   assigned(result.def) and
                   (result.def.typ in [stringdef,pointerdef,classrefdef,objectdef,
                                       procvardef,procdef,arraydef,formaldef]) then

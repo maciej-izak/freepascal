@@ -318,6 +318,11 @@ unit agarmgas;
                   if srF in o.specialflags then getopstr:=getopstr+'f';
                   if srS in o.specialflags then getopstr:=getopstr+'s';
                 end;
+            end;
+          top_realconst:
+            begin
+              str(o.val_real,Result);
+              Result:='#'+Result;
             end
           else
             internalerror(2002070604);
@@ -402,7 +407,7 @@ unit agarmgas;
             idtxt  : 'AS';
             asmbin : 'as';
             asmcmd : '-o $OBJ $EXTRAOPT $ASM';
-            supported_targets : [system_arm_linux,system_arm_wince,system_arm_gba,system_arm_palmos,system_arm_nds,
+            supported_targets : [system_arm_linux,system_arm_netbsd,system_arm_wince,system_arm_gba,system_arm_palmos,system_arm_nds,
                                  system_arm_embedded,system_arm_symbian,system_arm_android,system_arm_aros];
             flags : [af_needar,af_smartlink_sections];
             labelprefix : '.L';

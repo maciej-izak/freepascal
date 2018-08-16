@@ -100,8 +100,7 @@ type
     ssLeft, ssRight, ssMiddle, ssDouble,
     // Extra additions
     ssMeta, ssSuper, ssHyper, ssAltGr, ssCaps, ssNum,
-    ssScroll,ssTriple,ssQuad,ssExtra1,ssExtra2,
-    ssScrollH);
+    ssScroll,ssTriple,ssQuad,ssExtra1,ssExtra2);
 
 {$packset 1}
   TShiftState = set of TShiftStateEnum;
@@ -668,6 +667,8 @@ type
     function AddObject(const S: string; AObject: TObject): Integer; virtual; overload;
     function Add(const Fmt : string; const Args : Array of const): Integer; overload;
     function AddObject(const Fmt: string; Args : Array of const; AObject: TObject): Integer; overload;
+    function AddPair(const AName, AValue: string): TStrings; overload; {$IFDEF CLASSESINLINE}inline;{$ENDIF}
+    function AddPair(const AName, AValue: string; AObject: TObject): TStrings; overload;
     procedure Append(const S: string);
     procedure AddStrings(TheStrings: TStrings); overload; virtual;
     procedure AddStrings(TheStrings: TStrings; ClearFirst : Boolean); overload;
@@ -691,8 +692,10 @@ type
     procedure InsertObject(Index: Integer; const S: string;
       AObject: TObject);
     procedure LoadFromFile(const FileName: string); overload; virtual;
+    procedure LoadFromFile(const FileName: string; IgnoreEncoding : Boolean);
     procedure LoadFromFile(const FileName: string; AEncoding: TEncoding); overload; virtual;
     procedure LoadFromStream(Stream: TStream); overload; virtual;
+    procedure LoadFromStream(Stream: TStream; IgnoreEncoding : Boolean); overload;
     procedure LoadFromStream(Stream: TStream; AEncoding: TEncoding); overload; virtual;
     procedure Move(CurIndex, NewIndex: Integer); virtual;
     procedure SaveToFile(const FileName: string); overload; virtual;
@@ -1036,6 +1039,7 @@ type
     constructor Create(const AString: UnicodeString); overload;
     constructor Create(const AString: UnicodeString; AEncoding: TEncoding; AOwnsEncoding: Boolean = True); overload;
     constructor Create(const AString: UnicodeString; ACodePage: Integer); overload;
+    Destructor Destroy; override;
     function ReadUnicodeString(Count: Longint): UnicodeString;
     procedure WriteUnicodeString(const AString: UnicodeString);
     function ReadAnsiString(Count: Longint): AnsiString;
@@ -1131,6 +1135,7 @@ type
     procedure DefineBinaryProperty(const Name: string;
       ReadData, WriteData: TStreamProc;
       HasData: Boolean); virtual; abstract;
+    Procedure FlushBuffer; virtual; abstract;
     property Root: TComponent read FRoot write SetRoot;
     property LookupRoot: TComponent read FLookupRoot;
     property Ancestor: TPersistent read FAncestor write FAncestor;
@@ -1145,8 +1150,11 @@ type
 
 { TReader }
 
+  { TAbstractObjectReader }
+
   TAbstractObjectReader = class
   public
+    Procedure FlushBuffer; virtual;
     function NextValue: TValueType; virtual; abstract;
     function ReadValue: TValueType; virtual; abstract;
     procedure BeginRootComponent; virtual; abstract;
@@ -1200,7 +1208,6 @@ type
   public
     constructor Create(Stream: TStream; BufSize: Integer);
     destructor Destroy; override;
-
     function NextValue: TValueType; override;
     function ReadValue: TValueType; override;
     procedure BeginRootComponent; override;
@@ -1294,6 +1301,7 @@ type
   public
     constructor Create(Stream: TStream; BufSize: Integer);
     destructor Destroy; override;
+    Procedure FlushBuffer; override;
     procedure BeginReferences;
     procedure CheckValue(Value: TValueType);
     procedure DefineProperty(const Name: string;
@@ -1356,6 +1364,8 @@ type
 
 { TWriter }
 
+  { TAbstractObjectWriter }
+
   TAbstractObjectWriter = class
   public
     { Begin/End markers. Those ones who don't have an end indicator, use
@@ -1370,6 +1380,7 @@ type
     procedure EndList; virtual; abstract;
     procedure BeginProperty(const PropName: String); virtual; abstract;
     procedure EndProperty; virtual; abstract;
+    Procedure FlushBuffer; virtual;
     //Please don't use write, better use WriteBinary whenever possible
     procedure Write(const Buffer; Count: Longint); virtual;abstract;
 
@@ -1408,13 +1419,12 @@ type
 {$ifndef FPUNONE}
     procedure WriteExtended(e : extended); {$ifdef CLASSESINLINE}inline;{$endif CLASSESINLINE}
 {$endif}
-    procedure FlushBuffer;
     procedure WriteValue(Value: TValueType);
   public
     constructor Create(Stream: TStream; BufSize: Integer);
     destructor Destroy; override;
     procedure WriteSignature; override;
-
+    procedure FlushBuffer; override;
     procedure BeginCollection; override;
     procedure BeginComponent(Component: TComponent; Flags: TFilerFlags;
       ChildPos: Integer); override;
@@ -1483,6 +1493,7 @@ type
     constructor Create(ADriver: TAbstractObjectWriter);
     constructor Create(Stream: TStream; BufSize: Integer);
     destructor Destroy; override;
+    Procedure FlushBuffer; override;
     procedure DefineProperty(const Name: string;
       ReadData: TReaderProc; AWriteData: TWriterProc;
       HasData: Boolean); override;

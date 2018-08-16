@@ -796,12 +796,16 @@ begin
     else
      DynLinKStr:=DynLinkStr+' -dynamic'; // one dash!
    end;
-   
+
 { Use -nopie on OpenBSD }
   if (target_info.system in systems_openbsd) and
      (target_info.system <> system_x86_64_openbsd) then
     Info.ExtraOptions:=Info.ExtraOptions+' -nopie';
-    
+
+{ -N seems to be needed on NetBSD/earm }
+  if (target_info.system in [system_arm_netbsd]) then
+    Info.ExtraOptions:=Info.ExtraOptions+' -N';
+
 { Write used files and libraries }
   WriteResponseFile(false);
 
@@ -1101,6 +1105,10 @@ initialization
   RegisterImport(system_arm_darwin,timportlibdarwin);
   RegisterExport(system_arm_darwin,texportlibdarwin);
   RegisterTarget(system_arm_darwin_info);
+
+  RegisterImport(system_arm_netbsd,timportlibbsd);
+  RegisterExport(system_arm_netbsd,texportlibbsd);
+  RegisterTarget(system_arm_netbsd_info);
 {$endif arm}
 {$ifdef aarch64}
   RegisterImport(system_aarch64_darwin,timportlibdarwin);

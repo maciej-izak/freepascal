@@ -82,11 +82,14 @@ interface
          function  alignment:shortint;virtual;abstract;
          { alignment when this type appears in a record/class/... }
          function  structalignment:shortint;virtual;
+         function  aggregatealignment:shortint;virtual;
          function  getvardef:longint;virtual;abstract;
          function  getparentdef:tdef;virtual;
          function  getsymtable(t:tgetsymtable):TSymtable;virtual;
          function  is_publishable:boolean;virtual;abstract;
          function  needs_inittable:boolean;virtual;abstract;
+         { contains a (managed) child that is not initialized to 0/Nil }
+         function  has_non_trivial_init_child(check_parent:boolean):boolean;virtual;abstract;
          function  needs_separate_initrtti:boolean;virtual;abstract;
          procedure ChangeOwner(st:TSymtable);
          function getreusablesymtab: tsymtable;
@@ -377,6 +380,14 @@ implementation
     function tdef.structalignment: shortint;
       begin
         result:=alignment;
+      end;
+
+    function tdef.aggregatealignment: shortint;
+      begin
+        if Assigned(Owner) and Assigned(Owner.defowner) and (Owner.defowner is TDef) and (Owner.defowner <> Self) then
+          Result := max(structalignment, TDef(Owner.defowner).aggregatealignment)
+        else
+          Result := structalignment;
       end;
 
 
@@ -890,7 +901,7 @@ implementation
 
     begin
       getexprint.overflow:=false;
-      getexprint.signed:=boolean(getbyte);
+      getexprint.signed:=getboolean;
       getexprint.svalue:=getint64;
     end;
 
@@ -1081,7 +1092,7 @@ implementation
     begin
       if v.overflow then
         internalerror(200706102);
-      putbyte(byte(v.signed));
+      putboolean(v.signed);
       putint64(v.svalue);
     end;
 

@@ -135,9 +135,11 @@ type
     procedure TestStringsReplace;
   end;
 
+
 implementation
 
 uses sqldbtoolsunit,toolsunit, variants, sqldb, bufdataset, strutils, dbconst, FmtBCD;
+
 
 Type HackedDataset = class(TDataset);
 
@@ -438,7 +440,7 @@ var
 
 begin
   CreateTableWithFieldType(ftString,'VARCHAR(10)');
-  TestFieldDeclaration(ftString,11);
+  TestFieldDeclaration(ftString,10*DBConnector.CharSize+1);
 
   for i := 0 to testValuesCount-1 do
     TSQLDBConnector(DBConnector).Connection.ExecuteDirect('insert into FPDEV2 (FT) values (''' + testValues[i] + ''')');
@@ -934,8 +936,9 @@ var
   i             : integer;
 
 begin
+  // Firebird has limit 32765 bytes, so this is 8191 characters when using UNICODE character set
   CreateTableWithFieldType(ftString,'VARCHAR(9000)');
-  TestFieldDeclaration(ftString,9001);
+  TestFieldDeclaration(ftString,9000*DBConnector.CharSize+1);
 
   setlength(s,9000);
   for i := 1 to 9000 do
@@ -1006,7 +1009,7 @@ begin
   with TSQLDBConnector(DBConnector).Query do
     begin
     sql.clear;
-    sql.append('insert into FPDEV2 (plant,sampling_type,batch,sampling_datetime,status,batch_commentary) values (''ZUBNE PASTE'',''OTISCI POVR￿INA'',''000037756'',''2005-07-01'',''NE ODGOVARA'',''Ovdje se upisuje komentar o kontrolnom broju..............'')');
+    sql.append('insert into FPDEV2 (plant,sampling_type,batch,sampling_datetime,status,batch_commentary) values (''ZUBNE PASTE'',''OTISCI POVRŠINA'',''000037756'',''2005-07-01'',''NE ODGOVARA'',''Ovdje se upisuje komentar o kontrolnom broju..............'')');
     ExecSQL;
 
     sql.clear;
@@ -1618,15 +1621,15 @@ begin
                       Params.ParamByName('field1').AsDate := StrToDate(testDateValues[i],'yyyy/mm/dd','-');
         ftDateTime: Params.ParamByName('field1').AsDateTime := StrToDateTime(testValues[ADataType,i], DBConnector.FormatSettings);
         ftFMTBcd  : Params.ParamByName('field1').AsFMTBCD := StrToBCD(ParamValues[i], DBConnector.FormatSettings);
-        ftBlob    : Params.ParamByName('field1').AsBlob := testBlobValues[i];
+        ftBlob    : Params.ParamByName('field1').AsBlob := BytesOf(testBlobValues[i]);
         ftBytes   : if cross then
                       Params.ParamByName('field1').Value := StringToByteArray(testBytesValues[i])
                     else
-                      Params.ParamByName('field1').AsBytes := StringToBytes(testBytesValues[i]);
+                      Params.ParamByName('field1').AsBytes := BytesOf(testBytesValues[i]);
         ftVarBytes: if cross then
                       Params.ParamByName('field1').AsString := testBytesValues[i]
                     else
-                      Params.ParamByName('field1').AsBytes := StringToBytes(testBytesValues[i]);
+                      Params.ParamByName('field1').AsBytes := BytesOf(testBytesValues[i]);
       else
         AssertTrue('no test for paramtype available',False);
       end;
@@ -1689,7 +1692,7 @@ begin
       begin
       case asWhat of
         0: Params.ParamByName('blobParam').AsMemo   := TestBlobValues[i];
-        1: Params.ParamByName('blobParam').AsBlob   := TestBlobValues[i];
+        1: Params.ParamByName('blobParam').AsBlob   := BytesOf(TestBlobValues[i]);
         2: Params.ParamByName('blobParam').AsString := TestBlobValues[i];
       end;
       ExecSQL;

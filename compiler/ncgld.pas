@@ -180,11 +180,11 @@ implementation
            { still used later on in initialisation/finalisation code }
            is_managed_type(n.resultdef) or
            { source and destination are temps (= not global variables) }
-           not tg.istemp(n.location.reference) or
-           not tg.istemp(newref) or
            { and both point to the start of a temp, and the source is a }
            { non-persistent temp (otherwise we need some kind of copy-  }
            { on-write support in case later on both are still used)     }
+           not tg.isstartoftemp(newref) or
+           not tg.isstartoftemp(n.location.reference) or
            (tg.gettypeoftemp(newref) <> tt_normal) or
            not (tg.gettypeoftemp(n.location.reference) in [tt_normal,tt_persistent]) or
            { and both have the same size }
@@ -244,7 +244,7 @@ implementation
           internalerror(200309286);
         if lvs.localloc.loc<>LOC_REFERENCE then
           internalerror(200409241);
-        hlcg.reference_reset_base(location.reference,left.resultdef,left.location.register,lvs.localloc.reference.offset,lvs.localloc.reference.alignment,lvs.localloc.reference.volatility);
+        hlcg.reference_reset_base(location.reference,left.resultdef,left.location.register,lvs.localloc.reference.offset,ctempposinvalid,lvs.localloc.reference.alignment,lvs.localloc.reference.volatility);
       end;
 
 
@@ -345,7 +345,7 @@ implementation
                tv_rec,
                tfieldvarsym(tv_index_field),href);
              if size_opt then
-               hlcg.reference_reset_base(href,tfieldvarsym(tv_index_field).vardef,hreg_tv_rec,href.offset,href.alignment,[]);
+               hlcg.reference_reset_base(href,tfieldvarsym(tv_index_field).vardef,hreg_tv_rec,href.offset,href.temppos,href.alignment,[]);
              hlcg.a_load_ref_cgpara(current_asmdata.CurrAsmList,tfieldvarsym(tv_index_field).vardef,href,paraloc1);
              { Dealloc the threadvar record register before calling the helper function to allow  }
              { the register allocator to assign non-mandatory real registers for hreg_tv_rec. }
@@ -378,11 +378,11 @@ implementation
              { load in the same "hregister" as above, so after this sequence
                the address of the threadvar is always in hregister }
              if size_opt then
-               hlcg.reference_reset_base(href,fieldptrdef,hreg_tv_rec,href.offset,href.alignment,[]);
+               hlcg.reference_reset_base(href,fieldptrdef,hreg_tv_rec,href.offset,href.temppos,href.alignment,[]);
              hlcg.a_loadaddr_ref_reg(current_asmdata.CurrAsmList,resultdef,fieldptrdef,href,hregister);
              hlcg.a_label(current_asmdata.CurrAsmList,endrelocatelab);
 
-             hlcg.reference_reset_base(location.reference,fieldptrdef,hregister,0,location.reference.alignment,[]);
+             hlcg.reference_reset_base(location.reference,fieldptrdef,hregister,0,ctempposinvalid,resultdef.alignment,[]);
            end;
        end;
 
@@ -474,7 +474,7 @@ implementation
                    else
                      location.reference.symbol:=current_asmdata.WeakRefAsmSymbol(tstaticvarsym(symtableentry).mangledname,AT_DATA);
                    cg.a_load_ref_reg(current_asmdata.CurrAsmList,OS_ADDR,OS_ADDR,location.reference,hregister);
-                   reference_reset_base(location.reference,hregister,0,location.reference.alignment,[]);
+                   reference_reset_base(location.reference,hregister,0,ctempposinvalid,location.reference.alignment,[]);
                  end
                { Thread variable }
                else if (vo_is_thread_var in gvs.varoptions) then
@@ -530,7 +530,7 @@ implementation
                       location_reset_ref(location,LOC_REFERENCE,newsize,resultdef.alignment,[])
                     else
                       location_reset_ref(location,LOC_REFERENCE,newsize,1,[]);
-                    hlcg.reference_reset_base(location.reference,voidpointertype,hregister,0,location.reference.alignment,[]);
+                    hlcg.reference_reset_base(location.reference,voidpointertype,hregister,0,ctempposinvalid,location.reference.alignment,[]);
                   end;
 
                 { make const a LOC_CREFERENCE }
@@ -607,7 +607,7 @@ implementation
                             assigned(tobjectdef(left.resultdef).vmt_field) then
                            begin
                              { vmt pointer is a pointer to the vmt record }
-                             hlcg.reference_reset_base(href,vd,location.registerhi,0,vd.alignment,[]);
+                             hlcg.reference_reset_base(href,vd,location.registerhi,0,ctempposinvalid,vd.alignment,[]);
                              vmtdef:=cpointerdef.getreusable(tobjectdef(left.resultdef).vmt_def);
                              hlcg.g_set_addr_nonbitpacked_field_ref(current_asmdata.CurrAsmList,tobjectdef(left.resultdef),tfieldvarsym(tobjectdef(left.resultdef).vmt_field),href);
                              hregister:=hlcg.getaddressregister(current_asmdata.CurrAsmList,vmtdef);
@@ -623,7 +623,7 @@ implementation
                          else if is_any_interface_kind(left.resultdef) then
                            begin
                              { an interface is a pointer to a pointer to a vmt }
-                             hlcg.reference_reset_base(href,vd,location.registerhi,0,vd.alignment,[]);
+                             hlcg.reference_reset_base(href,vd,location.registerhi,0,ctempposinvalid,vd.alignment,[]);
                              vmtdef:=cpointerdef.getreusable(tobjectdef(left.resultdef).vmt_def);
                              hregister:=hlcg.getaddressregister(current_asmdata.CurrAsmList,vmtdef);
                              hlcg.a_load_ref_reg(current_asmdata.CurrAsmList,vmtdef,vmtdef,href,hregister);
@@ -633,7 +633,7 @@ implementation
                          { load method address }
                          vmtentry:=tabstractrecordsymtable(trecorddef(vmtdef.pointeddef).symtable).findfieldbyoffset(
                            tobjectdef(procdef.struct).vmtmethodoffset(procdef.extnumber));
-                         hlcg.reference_reset_base(href,vmtdef,hregister,0,vmtdef.alignment,[]);
+                         hlcg.reference_reset_base(href,vmtdef,hregister,0,ctempposinvalid,vmtdef.alignment,[]);
                          location.register:=hlcg.getaddressregister(current_asmdata.CurrAsmList,vmtentry.vardef);
                          hlcg.g_set_addr_nonbitpacked_field_ref(current_asmdata.CurrAsmList,tabstractrecorddef(vmtdef.pointeddef),vmtentry,href);
                          hlcg.a_load_ref_reg(current_asmdata.CurrAsmList,vmtentry.vardef,vmtentry.vardef,href,location.register);
@@ -682,6 +682,7 @@ implementation
 
     procedure tcgassignmentnode.pass_generate_code;
       var
+         shuffle : pmmshuffle;
          hlabel : tasmlabel;
          href : treference;
          releaseright : boolean;
@@ -968,22 +969,21 @@ implementation
               LOC_MMREGISTER,
               LOC_CMMREGISTER:
                 begin
-                  if left.resultdef.typ=arraydef then
-                    begin
-                    end
+                  if (is_vector(left.resultdef)) then
+                    shuffle := nil
                   else
-                    begin
-                      case left.location.loc of
-                        LOC_CMMREGISTER,
-                        LOC_MMREGISTER:
-                          hlcg.a_loadmm_reg_reg(current_asmdata.CurrAsmList,right.resultdef,left.resultdef,right.location.register,left.location.register,mms_movescalar);
-                        LOC_REFERENCE,
-                        LOC_CREFERENCE:
-                          hlcg.a_loadmm_reg_ref(current_asmdata.CurrAsmList,right.resultdef,left.resultdef,right.location.register,left.location.reference,mms_movescalar);
-                        else
-                          internalerror(2009112601);
-                      end;
-                    end;
+                    shuffle := mms_movescalar;
+
+                  case left.location.loc of
+                    LOC_CMMREGISTER,
+                    LOC_MMREGISTER:
+                      hlcg.a_loadmm_reg_reg(current_asmdata.CurrAsmList,right.resultdef,left.resultdef,right.location.register,left.location.register, shuffle);
+                    LOC_REFERENCE,
+                    LOC_CREFERENCE:
+                      hlcg.a_loadmm_reg_ref(current_asmdata.CurrAsmList,right.resultdef,left.resultdef,right.location.register,left.location.reference, shuffle);
+                    else
+                      internalerror(2009112601);
+                  end;
                 end;
               LOC_REGISTER,
               LOC_CREGISTER :

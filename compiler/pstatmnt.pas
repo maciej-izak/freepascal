@@ -683,7 +683,7 @@ implementation
                 if not hasimplicitderef then
                   begin
                     valuenode:=caddrnode.create_internal_nomark(valuenode);
-                    include(valuenode.flags,nf_typedaddr);
+                    include(taddrnode(valuenode).addrnodeflags,anf_typedaddr);
                     refnode:=cderefnode.create(refnode);
                     fillchar(refnode.fileinfo,sizeof(tfileposinfo),0);
                   end;
@@ -948,7 +948,7 @@ implementation
                                  with "e: Exception" the e is not necessary }
 
                                { support unit.identifier }
-                               unit_found:=try_consume_unitsym_no_specialize(srsym,srsymtable,t,false);
+                               unit_found:=try_consume_unitsym_no_specialize(srsym,srsymtable,t,false,objname);
                                if srsym=nil then
                                  begin
                                    identifier_not_found(orgpattern);

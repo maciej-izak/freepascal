@@ -51,7 +51,7 @@ type
     case typ:TOprType of
       OPR_NONE      : ();
 {$if defined(AVR)}
-      OPR_CONSTANT  : (val:word);
+      OPR_CONSTANT  : (val:longint);
 {$elseif defined(i8086)}
       OPR_CONSTANT  : (val:longint);
 {$else}
@@ -59,7 +59,7 @@ type
 {$endif}
       OPR_SYMBOL    : (symbol:tasmsymbol;symofs:aint;symseg:boolean;sym_farproc_entry:boolean);
       OPR_REFERENCE : (varsize:asizeint; constoffset: asizeint;ref_farproc_entry:boolean;ref:treference);
-      OPR_LOCAL     : (localvarsize, localconstoffset: asizeint;localsym:tabstractnormalvarsym;localsymofs:aint;localindexreg:tregister;localscale:byte;localgetoffset,localforceref:boolean);
+      OPR_LOCAL     : (localvarsize, localconstoffset: asizeint;localsym:tabstractnormalvarsym;localsymofs:aint;localsegment,localindexreg:tregister;localscale:byte;localgetoffset,localforceref:boolean);
       OPR_REGISTER  : (reg:tregister);
 {$ifdef m68k}
       OPR_REGSET    : (regsetdata,regsetaddr,regsetfpu : tcpuregisterset);
@@ -149,6 +149,7 @@ type
   {  '%' : modulo division                                              }
   {  nnn: longint numbers                                               }
   {  ( and ) parenthesis                                                }
+  {  [ and ] another kind of parenthesis                                }
   {**********************************************************************}
 
   TExprParse = class
@@ -185,9 +186,9 @@ Function EscapeToPascal(const s:string): string;
                      Symbol helper routines
 ---------------------------------------------------------------------}
 
-procedure AsmSearchSym(const s:string;var srsym:tsym;var srsymtable:TSymtable);
-Function GetRecordOffsetSize(s:string;Var Offset: tcgint;var Size:tcgint; var mangledname: string; needvmtofs: boolean; out hastypecast: boolean):boolean;
-Function SearchType(const hs:string;var size:tcgint): Boolean;
+procedure AsmSearchSym(const s:string;out srsym:tsym;out srsymtable:TSymtable);
+Function GetRecordOffsetSize(s:string;out Offset: tcgint;out Size:tcgint; out mangledname: string; needvmtofs: boolean; out hastypecast: boolean):boolean;
+Function SearchType(const hs:string;out size:tcgint): Boolean;
 Function SearchRecordType(const s:string): boolean;
 Function SearchIConstant(const s:string; var l:tcgint): boolean;
 Function AsmRegisterPara(sym: tabstractnormalvarsym): boolean;
@@ -198,7 +199,7 @@ Function AsmRegisterPara(sym: tabstractnormalvarsym): boolean;
 
   Procedure ConcatLabel(p: TAsmList;var l : tasmlabel);
   Procedure ConcatConstant(p : TAsmList;value: tcgint; constsize:byte);
-  Procedure ConcatConstSymbol(p : TAsmList;const sym:string;symtyp:tasmsymtype;l:tcgint);
+  Procedure ConcatConstSymbol(p : TAsmList;const sym:string;symtyp:tasmsymtype;l:tcgint;constsize:byte;isofs:boolean);
   Procedure ConcatRealConstant(p : TAsmList;value: bestreal; real_typ : tfloattype);
   Procedure ConcatString(p : TAsmList;s:string);
   procedure ConcatAlign(p:TAsmList;l:tcgint);
@@ -377,7 +378,7 @@ Function TExprParse.Priority(_Operator : Char) : aint;
 begin
   Priority:=0;
   Case _Operator OF
-    '(' :
+    '(','[' :
       Priority:=0;
     '|','^','~' :             // the lowest priority: OR, XOR, NOT
       Priority:=0;
@@ -416,7 +417,7 @@ begin
          RPNCalc(Token,false);
       end
      else
-      if Expr[I] in ['+', '-', '*', '/', '(', ')','^','&','|','%','~','<','>'] then
+      if Expr[I] in ['+', '-', '*', '/', '(', ')','[',']','^','&','|','%','~','<','>'] then
        begin
          if Token <> '' then
           begin        { Send last built number to calc. }
@@ -425,6 +426,15 @@ begin
           end;
 
          Case Expr[I] OF
+          '[' : OpPush('[',false);
+          ']' : begin
+                  While (OpTop>0) and (OpStack[OpTop].ch <> '[') DO
+                   Begin
+                     OpPop(opr);
+                     RPNCalc(opr.ch,opr.is_prefix);
+                   end;
+                  OpPop(opr);                          { Pop off and ignore the '[' }
+                end;
           '(' : OpPush('(',false);
           ')' : begin
                   While (OpTop>0) and (OpStack[OpTop].ch <> '(') DO
@@ -684,6 +694,7 @@ begin
       begin
         if (m_tp7 in current_settings.modeswitches) and
           not (df_generic in defoptions) and
+          (po_assembler in procoptions) and
           (not paramanager.ret_in_param(returndef,current_procinfo.procdef)) then
           begin
             message(asmr_e_cannot_use_RESULT_here);
@@ -809,6 +820,9 @@ Function TOperand.SetupVar(const s:string;GetOffset : boolean): Boolean;
 var
   sym : tsym;
   srsymtable : TSymtable;
+{$ifdef x86}
+  segreg,
+{$endif x86}
   indexreg : tregister;
   plist : ppropaccesslistitem;
   size_set_from_absolute : boolean = false;
@@ -816,6 +830,7 @@ var
     (e.g. var tralala: word absolute moo[5]; ) }
   absoffset: asizeint=0;
   harrdef: tarraydef;
+  tmpprocinfo: tprocinfo;
 Begin
   SetupVar:=false;
   asmsearchsym(s,sym,srsymtable);
@@ -928,8 +943,22 @@ Begin
           paravarsym,
           localvarsym :
             begin
+              tmpprocinfo:=current_procinfo;
+              while assigned(tmpprocinfo) do
+                begin
+                  if (sym.owner=tmpprocinfo.procdef.localst) or
+                     (sym.owner=tmpprocinfo.procdef.parast) then
+                    begin
+                      tmpprocinfo.procdef.init_paraloc_info(calleeside);
+                      break;
+                    end;
+                  tmpprocinfo:=tmpprocinfo.parent;
+                end;
               if opr.typ=OPR_REFERENCE then
                 begin
+{$ifdef x86}
+                  segreg:=opr.ref.segment;
+{$endif x86}
                   indexreg:=opr.ref.base;
                   if opr.ref.index<>NR_NO then
                     begin
@@ -940,7 +969,12 @@ Begin
                     end;
                 end
               else
-                indexreg:=NR_NO;
+                begin
+{$ifdef x86}
+                  segreg:=NR_NO;
+{$endif x86}
+                  indexreg:=NR_NO;
+                end;
               opr.typ:=OPR_LOCAL;
               if assigned(current_procinfo.parent) and
                  not(po_inline in current_procinfo.procdef.procoptions) and
@@ -951,6 +985,9 @@ Begin
                 message1(asmr_e_local_para_unreachable,s);
               opr.localsym:=tabstractnormalvarsym(sym);
               opr.localsymofs:=absoffset;
+{$ifdef x86}
+              opr.localsegment:=segreg;
+{$endif x86}
               opr.localindexreg:=indexreg;
               opr.localscale:=0;
               opr.localgetoffset:=GetOffset;
@@ -1115,6 +1152,9 @@ var
   localvarsize,localconstoffset: asizeint;
   localsym:tabstractnormalvarsym;
   localsymofs:aint;
+{$ifdef x86}
+  localsegment,
+{$endif x86}
   localindexreg:tregister;
   localscale:byte;
 begin
@@ -1127,6 +1167,9 @@ begin
           localconstoffset:=opr.localconstoffset;
           localsym:=opr.localsym;
           localsymofs:=opr.localsymofs;
+{$ifdef x86}
+          localsegment:=opr.localsegment;
+{$endif x86}
           localindexreg:=opr.localindexreg;
           localscale:=opr.localscale;;
           opr.typ:=OPR_REFERENCE;
@@ -1137,6 +1180,9 @@ begin
           opr.ref_farproc_entry:=false;
           opr.ref.base:=tparavarsym(localsym).paraloc[calleeside].Location^.register;
           opr.ref.offset:=localsymofs;
+{$ifdef x86}
+          opr.ref.segment:=localsegment;
+{$endif x86}
           opr.ref.index:=localindexreg;
           opr.ref.scalefactor:=localscale;
         end
@@ -1220,8 +1266,13 @@ end;
               OPR_SYMBOL:
                 ai.loadsymbol(i-1,symbol,symofs);
               OPR_LOCAL :
-                ai.loadlocal(i-1,localsym,localsymofs,localindexreg,
-                             localscale,localgetoffset,localforceref);
+                begin
+                  ai.loadlocal(i-1,localsym,localsymofs,localindexreg,
+                               localscale,localgetoffset,localforceref);
+{$ifdef x86}
+                  ai.oper[i-1]^.localoper^.localsegment:=localsegment;
+{$endif x86}
+                end;
               OPR_REFERENCE:
                 ai.loadref(i-1,ref);
 {$ifdef m68k}
@@ -1265,7 +1316,7 @@ end;
                       Symbol table helper routines
 ****************************************************************************}
 
-procedure AsmSearchSym(const s:string;var srsym:tsym;var srsymtable:TSymtable);
+procedure AsmSearchSym(const s:string;out srsym:tsym;out srsymtable:TSymtable);
 var
   i : integer;
 begin
@@ -1289,10 +1340,46 @@ begin
     end
   else
     searchsym(s,srsym,srsymtable);
+  { in asm routines, the function result variable, that matches the function
+    name should be avoided, because:
+    1) there's already a @Result directive (even in TP7) that can be used, if
+       you want to access the function result
+    2) there's no other way to disambiguate between the function result variable
+       and the function's address (using asm syntax only)
+
+    This fixes code, such as:
+
+    function test1: word;
+    begin
+      asm
+        mov ax, offset test1
+      end;
+    end;
+
+    and makes it work in a consistent manner as this code:
+
+    procedure test2;
+    begin
+      asm
+        mov ax, offset test2
+      end;
+    end; }
+  if assigned(srsym) and
+     assigned(srsymtable) and
+     (srsym.typ=absolutevarsym) and
+     (vo_is_funcret in tabsolutevarsym(srsym).varoptions) and
+     (srsymtable.symtabletype=localsymtable) and
+     assigned(srsymtable.defowner) and
+     (srsymtable.defowner.typ=procdef) and
+     (tprocdef(srsymtable.defowner).procsym.name=tabsolutevarsym(srsym).Name) then
+    begin
+      srsym:=tprocdef(srsymtable.defowner).procsym;
+      srsymtable:=srsym.Owner;
+    end;
 end;
 
 
-Function SearchType(const hs:string;var size:tcgint): Boolean;
+Function SearchType(const hs:string;out size:tcgint): Boolean;
 var
   srsym : tsym;
   srsymtable : TSymtable;
@@ -1403,7 +1490,7 @@ begin
 end;
 
 
-Function GetRecordOffsetSize(s:string;Var Offset: tcgint;var Size:tcgint; var mangledname: string; needvmtofs: boolean; out hastypecast: boolean):boolean;
+Function GetRecordOffsetSize(s:string;out Offset: tcgint;out Size:tcgint; out mangledname: string; needvmtofs: boolean; out hastypecast: boolean):boolean;
 { search and returns the offset and size of records/objects of the base }
 { with field name setup in field.                              }
 { returns FALSE if not found.                                  }
@@ -1432,6 +1519,16 @@ Begin
   else
    begin
      asmsearchsym(base,sym,srsymtable);
+     { allow unitname.identifier }
+     if assigned(sym) and (sym.typ=unitsym) then
+       begin
+         i:=pos('.',s);
+         if i=0 then
+          i:=255;
+         base:=base+'.'+Copy(s,1,i-1);
+         delete(s,1,i);
+         asmsearchsym(base,sym,srsymtable);
+       end;
      st:=nil;
      { we can start with a var,type,typedconst }
      if assigned(sym) then
@@ -1647,9 +1744,30 @@ Begin
 end;
 
 
-  Procedure ConcatConstSymbol(p : TAsmList;const sym:string;symtyp:tasmsymtype;l:tcgint);
+  Procedure ConcatConstSymbol(p : TAsmList;const sym:string;symtyp:tasmsymtype;l:tcgint;constsize:byte;isofs:boolean);
   begin
+{$ifdef i8086}
+    { 'DW xx' as well as 'DW OFFSET xx' are just near pointers }
+    if constsize=2 then
+      p.concat(Tai_const.Createname_near(sym,l))
+    else if constsize=4 then
+      begin
+        if isofs then
+          begin
+            { 'DD OFFSET xx' is a 32-bit offset; since we don't produce 32-bit
+              relocations yet, just do a 16-bit one and set the high word to 0 }
+            p.concat(Tai_const.Createname_near(sym,l));
+            p.concat(Tai_const.Create_16bit(0));
+          end
+        else
+          { 'DD xx' is a far pointer }
+          p.concat(Tai_const.Createname_far(sym,l));
+      end
+    else
+      internalerror(2018020701);
+{$else i8086}
     p.concat(Tai_const.Createname(sym,l));
+{$endif i8086}
   end;
 
 

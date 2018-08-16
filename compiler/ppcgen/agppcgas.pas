@@ -315,7 +315,11 @@ unit agppcgas;
                   end;
                   case c.cond of
                     C_LT..C_NU:
-                      cond2str := tempstr+gas_regname(newreg(R_SPECIALREGISTER,c.cr,R_SUBWHOLE));
+                      begin
+                        if byte(c.cr)=0 then
+                          Comment(V_error,'Wrong use of whole CR register for '+tempstr);
+                        cond2str := tempstr+gas_regname(newreg(R_SPECIALREGISTER,c.cr,R_SUBWHOLE));
+                      end;
                     C_T,C_F,C_DNZT,C_DNZF,C_DZT,C_DZF:
                       cond2str := tempstr+tostr(c.crbit);
                     else
@@ -719,10 +723,24 @@ unit agppcgas;
          dollarsign : '.'
        );
 
+    as_ppc_clang_darwin_info : tasminfo =
+       (
+         id     : as_clang;
+         idtxt  : 'CLANG';
+         asmbin : 'clang';
+         asmcmd : '-c -o $OBJ $EXTRAOPT -arch $ARCH $DARWINVERSION -x assembler $ASM';
+         supported_targets : [system_powerpc_macos, system_powerpc_darwin, system_powerpc64_darwin];
+         flags : [af_needar,af_smartlink_sections,af_supports_dwarf];
+         labelprefix : 'L';
+         comment : '# ';
+         dollarsign: '$';
+       );
+
 begin
   RegisterAssembler(as_ppc_gas_info,TPPCGNUAssembler);
   RegisterAssembler(as_ppc_gas_legacy_info,TPPCGNUAssembler);
   RegisterAssembler(as_ppc_gas_darwin_powerpc_info,TPPCAppleGNUAssembler);
+  RegisterAssembler(as_ppc_clang_darwin_info,TPPCAppleGNUAssembler);
   RegisterAssembler(as_ppc_aix_powerpc_info,TPPCAIXAssembler);
   RegisterAssembler(as_ppc_gas_aix_powerpc_info,TPPCAIXAssembler);
 end.

@@ -111,6 +111,9 @@ const
   pfVmt      = 1024;
   pfResult   = 2048;
 
+  riifNonTrivialChild          = 1;
+  riifParentHasNonTrivialChild = 2;
+
   unknown_level         = 0;
   main_program_level    = 1;
   normal_function_level = 2;
@@ -400,6 +403,8 @@ type
     po_auto_raised_visibility,
     { procedure is far (x86 only) }
     po_far,
+    { near/far call model is specified explicitly (x86 only) }
+    po_hasnearfarcallmodel,
     { the procedure never returns, this information is usefull for dfa }
     po_noreturn,
     { procvar is a function reference }
@@ -633,8 +638,11 @@ type
     sto_has_helper,       { contains at least one helper symbol }
     sto_has_generic,      { contains at least one generic symbol }
     sto_has_operator,     { contains at least one operator overload }
-    sto_needs_init_final  { the symtable needs initialization and/or
+    sto_needs_init_final, { the symtable needs initialization and/or
                             finalization of variables/constants }
+    sto_has_non_trivial_init { contains at least on managed type that is not
+                               initialized to zero (e.g. a record with management
+                               operators }
   );
   tsymtableoptions = set of tsymtableoption;
 
@@ -805,14 +813,8 @@ inherited_objectoptions : tobjectoptions = [oo_has_virtual,oo_has_private,oo_has
              oo_can_have_published];
 {$endif not jvm}
 
-{$ifdef i386}
-   { we only take this into account on i386, on other platforms we always
-     push in the same order
-   }
-   pushleftright_pocalls : tproccalloptions = [pocall_register,pocall_pascal];
-{$endif}
-{$ifdef i8086}
-   { we only take this into account on i386, on other platforms we always
+{$if defined(i8086) or defined(i386)}
+   { we only take this into account on i8086 and i386, on other platforms we always
      push in the same order
    }
    pushleftright_pocalls : tproccalloptions = [pocall_register,pocall_pascal];
@@ -937,6 +939,88 @@ inherited_objectoptions : tobjectoptions = [oo_has_virtual,oo_has_private,oo_has
 
       { suffix for indirect symbols (AB_INDIRECT) }
       suffix_indirect = '$indirect';
+
+    { TProcTypeOption string identifiers for error messsages }
+    ProcTypeOptionKeywords: array[tproctypeoption] of ShortString = (
+      'potype_none',        {potype_none}
+      'program initialization',{potype_proginit}
+      '"INITIALIZATION"',   {potype_unitinit}
+      '"FINALIZATION"',     {potype_unitfinalize}
+      '"CONSTRUCTOR"',      {potype_constructor}
+      '"DESTRUCTOR"',       {potype_destructor}
+      '"OPERATOR"',         {potype_operator}
+      '"PROCEDURE"',        {potype_procedure}
+      '"FUNCTION"',         {potype_function}
+      '"CLASS CONSTRUCTOR"',{potype_class_constructor}
+      '"CLASS DESTRUCTOR"', {potype_class_destructor}
+      'property getters',   {potype_propgetter}
+      'property setters',   {potype_propsetter}
+      'exception filters',  {potype_exceptfilter}
+      '"main" stub',        {potype_mainstub}
+      'package stub'        {potype_pkgstub}
+    );
+
+    { TProcOption string identifiers for error messages }
+    ProcOptionKeywords: array[tprocoption] of ShortString = (
+      'po_none',            {po_none}
+      '"CLASS"',            {po_classmethod}
+      '"VIRTUAL"',          {po_virtualmethod}
+      '"ABSTRACT"',         {po_abstractmethod}
+      '"FINAL"',            {po_finalmethod}
+      '"STATIC"',           {po_staticmethod}
+      '"OVERRIDE"',         {po_overridingmethod}
+      'method pointers',    {po_methodpointer}
+      '"INTERRUPT"',        {po_interrupt}
+      'po_iocheck',         {po_iocheck}
+      '"ASSEMBLER"',        {po_assembler}
+      '"MESSAGE"',          {po_msgstr}
+      '"MESSAGE"',          {po_msgint}
+      '"EXPORT"',           {po_exports}
+      '"EXTERNAL"',         {po_external}
+      '"OVERLOAD"',         {po_overload}
+      'variable argument lists',{po_varargs}
+      'po_internconst',     {po_internconst}
+      'po_addressonly',     {po_addressonly}
+      '"PUBLIC"',           {po_public}
+      'po_hascallingconvention',{po_hascallingconvention}
+      '"REINTRODUCE"',      {po_reintroduce}
+      'po_explicitparaloc', {po_explicitparaloc}
+      '"NOSTACKFRAME"',     {po_nostackframe}
+      'po_has_mangledname', {po_has_mangledname}
+      'po_has_public_name', {po_has_public_name}
+      '"FORWARD"',          {po_forward}
+      'global routines',    {po_global}
+      '"SYSCALL"',          {po_syscall}
+      '"SYSCALL"',          {po_syscall_legacy}
+      '"SYSCALL"',          {po_syscall_basenone}
+      '"SYSCALL"',          {po_syscall_basefirst}
+      '"SYSCALL"',          {po_syscall_baselast}
+      '"SYSCALL"',          {po_syscall_basereg}
+      '"SYSCALL"',          {po_syscall_has_libsym}
+      '"SYSCALL"',          {po_syscall_has_importnr}
+      '"INLINE"',           {po_inline}
+      '"COMPILERPROC"',     {po_compilerproc}
+      'po_has_importdll',   {po_has_importdll}
+      'po_has_importname',  {po_has_importname}
+      'po_kylixlocal',      {po_kylixlocal}
+      '"DISPID"',           {po_dispid}
+      'po_weakexternal',    {po_weakexternal}
+      'po_objc',            {po_objc}
+      'po_enumerator_movenext',{po_enumerator_movenext}
+      'po_optional',        {po_optional}
+      'po_delphi_nested_cc',{po_delphi_nested_cc}
+      'RTL procedures',     {po_rtlproc}
+      'non-virtual Java methods',{po_java_nonvirtual}
+      'po_ignore_for_overload_resolution',{po_ignore_for_overload_resolution}
+      'po_auto_raised_visibility',{po_auto_raised_visibility}
+      '"FAR"',              {po_far}
+      'po_hasnearfarcallmodel',{po_hasnearfarcallmodel}
+      '"NORETURN"',{po_noreturn}
+      'po_is_function_ref',{po_is_function_ref}
+      'C-style blocks',{po_is_block}
+      'po_is_auto_getter',{po_is_auto_getter}
+      'po_is_auto_setter'{po_is_auto_setter}
+    );
 
 implementation
 

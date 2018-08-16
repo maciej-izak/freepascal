@@ -250,6 +250,10 @@ Implementation
 {$ifdef memdebug}
       cclasses,
 {$endif memdebug}
+{$ifdef OMFOBJSUPPORT}
+      omfbase,
+      ogomf,
+{$endif OMFOBJSUPPORT}
 {$if defined(cpuextended) and defined(FPC_HAS_TYPE_EXTENDED)}
 {$else}
 {$ifdef FPC_SOFT_FPUX80}
@@ -414,6 +418,7 @@ Implementation
         s: ansistring;
       begin
         MaybeAddLinePrefix;
+        s:='';
         setlength(s,len);
         move(p^,s[1],len);
         AsmWriteAnsiStringUnfiltered(decorator.LineFilter(s));
@@ -1630,6 +1635,11 @@ Implementation
                              break;
                            end;
                      end;
+{$ifdef OMFOBJSUPPORT}
+                   asd_omf_linnum_line:
+                     { ignore for now, but should be added}
+                     ;
+{$endif OMFOBJSUPPORT}
 {$ifdef ARM}
                    asd_thumb_func:
                      ObjData.ThumbFunc:=true;
@@ -1783,6 +1793,11 @@ Implementation
                    asd_code:
                      { ignore for now, but should be added}
                      ;
+{$ifdef OMFOBJSUPPORT}
+                   asd_omf_linnum_line:
+                     { ignore for now, but should be added}
+                     ;
+{$endif OMFOBJSUPPORT}
                    asd_cpu:
                      begin
                        ObjData.CPUType:=cpu_none;
@@ -2053,6 +2068,16 @@ Implementation
                              break;
                            end;
                      end;
+{$ifdef OMFOBJSUPPORT}
+                   asd_omf_linnum_line:
+                     begin
+                       TOmfObjSection(ObjData.CurrObjSec).LinNumEntries.Add(
+                         TOmfSubRecord_LINNUM_MsLink_Entry.Create(
+                           strtoint(tai_directive(hp).name),
+                           ObjData.CurrObjSec.Size
+                         ));
+                     end;
+{$endif OMFOBJSUPPORT}
                  end
                end;
              ait_symbolpair:

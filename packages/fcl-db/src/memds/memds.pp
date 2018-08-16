@@ -401,12 +401,13 @@ end;
 
 destructor TMemDataset.Destroy;
 begin
-  FStream.Free;
+//  FStream.Free;
   FreeMem(FFieldOffsets);
   FreeMem(FFieldSizes);
   FBlobs.Clear;
   FBlobs.Free;
   inherited Destroy;
+  FStream.Free;
 end;
 
 function TMemDataset.BookmarkValid(ABookmark: TBookmark): Boolean;
@@ -652,7 +653,7 @@ end;
 procedure TMemDataset.InternalOpen;
 
 begin
-  If (FFileName<>'') then
+  If (FFileName<>'') and FileExists(FFileName) then
     FOpenStream:=TFileStream.Create(FFileName,fmOpenRead);
   Try
     InternalInitFieldDefs;

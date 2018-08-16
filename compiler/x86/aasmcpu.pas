@@ -1,4 +1,4 @@
-{
+﻿{
     Copyright (c) 1998-2002 by Florian Klaempfl and Peter Vreman
 
     Contains the abstract assembler implementation for the i386
@@ -52,6 +52,7 @@ interface
       OT_BITS64    = $00000008;  { x86_64 and FPU }
       OT_BITS128   = $10000000;  { 16 byte SSE }
       OT_BITS256   = $20000000;  { 32 byte AVX }
+      OT_BITS512   = $40000000;  { 64 byte AVX512 }
       OT_BITS80    = $00000010;  { FPU only  }
       OT_FAR       = $00000020;  { this means 16:16 or 16:32, like in CALL/JMP }
       OT_NEAR      = $00000040;
@@ -86,6 +87,8 @@ interface
       otf_reg_mmx  = $02000000;
       otf_reg_xmm  = $04000000;
       otf_reg_ymm  = $08000000;
+
+      otf_reg_extra_mask = $0F000000;
       { Bits 16..19: subclasses, meaning depends on classes field }
       otf_sub0     = $00010000;
       otf_sub1     = $00020000;
@@ -93,7 +96,9 @@ interface
       otf_sub3     = $00080000;
       OT_REG_SMASK = otf_sub0 or otf_sub1 or otf_sub2 or otf_sub3;
 
-      OT_REG_TYPMASK = otf_reg_cdt or otf_reg_gpr or otf_reg_sreg or otf_reg_fpu or otf_reg_mmx or otf_reg_xmm or otf_reg_ymm;
+      OT_REG_EXTRA_MASK = $0F000000;
+
+      OT_REG_TYPMASK = otf_reg_cdt or otf_reg_gpr or otf_reg_sreg or otf_reg_extra_mask;
       { register class 0: CRx, DRx and TRx }
 {$ifdef x86_64}
       OT_REG_CDT   = OT_REGISTER or otf_reg_cdt or OT_BITS64;
@@ -175,7 +180,7 @@ interface
                                              { simple [address] offset  }
 
       { Matches any type of r/m operand }
-      OT_MEMORY_ANY = OT_MEMORY or OT_RM_GPR or OT_XMMRM or OT_MMXRM or OT_YMMRM;
+      OT_MEMORY_ANY = OT_MEMORY or OT_RM_GPR or OT_XMMRM or OT_MMXRM or OT_YMMRM or OT_REG_EXTRA_MASK;
 
       { Immediate operands }
       OT_IMM8      = OT_IMMEDIATE or OT_BITS8;
@@ -194,7 +199,7 @@ interface
 {$elseif defined(i8086)}
       instabentries = {$i i8086nop.inc}
 {$endif}
-      maxinfolen    = 8;
+      maxinfolen    = 9;
 
     type
       { What an instruction can change. Needed for optimizer and spilling code.
@@ -608,7 +613,8 @@ implementation
           OT_NEAR,OT_FAR,OT_SHORT,
           OT_NONE,
           OT_BITS128,
-          OT_BITS256
+          OT_BITS256,
+          OT_BITS512
          ),
          (OT_NONE,
           OT_BITS8,OT_BITS16,OT_BITS32,OT_BITS64,OT_BITS8,OT_BITS8,OT_BITS16,OT_BITS8,OT_BITS16,OT_BITS32,
@@ -618,7 +624,8 @@ implementation
           OT_NEAR,OT_FAR,OT_SHORT,
           OT_NONE,
           OT_BITS128,
-          OT_BITS256
+          OT_BITS256,
+          OT_BITS512
          ),
          (OT_NONE,
           OT_BITS8,OT_BITS16,OT_BITS32,OT_BITS64,OT_NONE,OT_NONE,OT_NONE,OT_NONE,OT_NONE,OT_NONE,
@@ -628,7 +635,8 @@ implementation
           OT_NEAR,OT_FAR,OT_SHORT,
           OT_NONE,
           OT_BITS128,
-          OT_BITS256
+          OT_BITS256,
+          OT_BITS512
          )
        );
 
@@ -646,7 +654,8 @@ implementation
           OT_NEAR,OT_FAR,OT_SHORT,
           OT_NONE,
           OT_BITS128,
-          OT_BITS256
+          OT_BITS256,
+          OT_BITS512
          ),
          (OT_NONE,
           OT_BITS8,OT_BITS16,OT_BITS32,OT_BITS64,OT_BITS8,OT_BITS8,OT_BITS16,
@@ -656,7 +665,8 @@ implementation
           OT_NEAR,OT_FAR,OT_SHORT,
           OT_NONE,
           OT_BITS128,
-          OT_BITS256
+          OT_BITS256,
+          OT_BITS512
          ),
          (OT_NONE,
           OT_BITS8,OT_BITS16,OT_BITS32,OT_BITS64,OT_NONE,OT_NONE,OT_NONE,
@@ -666,7 +676,8 @@ implementation
           OT_NEAR,OT_FAR,OT_SHORT,
           OT_NONE,
           OT_BITS128,
-          OT_BITS256
+          OT_BITS256,
+          OT_BITS512
          )
       );
 
@@ -684,7 +695,8 @@ implementation
           OT_NEAR,OT_FAR,OT_SHORT,
           OT_NONE,
           OT_BITS128,
-          OT_BITS256
+          OT_BITS256,
+          OT_BITS512
          ),
          (OT_NONE,
           OT_BITS8,OT_BITS16,OT_BITS32,OT_BITS64,OT_BITS8,OT_BITS8,OT_BITS16,
@@ -694,7 +706,8 @@ implementation
           OT_NEAR,OT_FAR,OT_SHORT,
           OT_NONE,
           OT_BITS128,
-          OT_BITS256
+          OT_BITS256,
+          OT_BITS512
          ),
          (OT_NONE,
           OT_BITS8,OT_BITS16,OT_BITS32,OT_BITS64,OT_NONE,OT_NONE,OT_NONE,
@@ -704,7 +717,8 @@ implementation
           OT_NEAR,OT_FAR,OT_SHORT,
           OT_NONE,
           OT_BITS128,
-          OT_BITS256
+          OT_BITS256,
+          OT_BITS512
          )
       );
 
@@ -1096,16 +1110,16 @@ implementation
                 s:=s+',';
                { type }
                addsize:=false;
-               if (ot and OT_XMMREG)=OT_XMMREG then
+               if (ot and OT_REG_EXTRA_MASK)=OT_XMMREG then
                 s:=s+'xmmreg'
                else
-                 if (ot and OT_YMMREG)=OT_YMMREG then
+                 if (ot and OT_REG_EXTRA_MASK)=OT_YMMREG then
                   s:=s+'ymmreg'
                else
-                 if (ot and OT_MMXREG)=OT_MMXREG then
+                 if (ot and OT_REG_EXTRA_MASK)=OT_MMXREG then
                   s:=s+'mmxreg'
                else
-                 if (ot and OT_FPUREG)=OT_FPUREG then
+                 if (ot and OT_REG_EXTRA_MASK)=OT_FPUREG then
                   s:=s+'fpureg'
                else
                 if (ot and OT_REGISTER)=OT_REGISTER then
@@ -1595,12 +1609,12 @@ implementation
           for i:=0 to p^.ops-1 do
            begin
              insot:=p^.optypes[i];
-             if ((insot and OT_XMMRM) = OT_XMMRM) OR
-                ((insot and OT_YMMRM) = OT_YMMRM) then
+             if ((insot and (OT_XMMRM or OT_REG_EXTRA_MASK)) = OT_XMMRM) OR
+                ((insot and (OT_YMMRM or OT_REG_EXTRA_MASK)) = OT_YMMRM) then
              begin
                if (insot and OT_SIZE_MASK) = 0 then
                begin
-                 case insot and (OT_XMMRM or OT_YMMRM) of
+                 case insot and (OT_XMMRM or OT_YMMRM or OT_REG_EXTRA_MASK) of
                    OT_XMMRM: insot := insot or OT_BITS128;
                    OT_YMMRM: insot := insot or OT_BITS256;
                  end;
@@ -3066,14 +3080,14 @@ implementation
               end
             else if IF_NEC in insentry^.flags then
               begin
-                { the NEC V20/V30 extensions are incompatible with 386+, due to overlapping opcodes }
+              { the NEC V20/V30 extensions are incompatible with 386+, due to overlapping opcodes }
                 if objdata.CPUType>=cpu_386 then
                   Message(asmw_e_instruction_not_supported_by_cpu);
               end
             else if IF_SANDYBRIDGE in insentry^.flags then
               begin
-                { todo: handle these properly }
-              end;
+              { todo: handle these properly }
+            end;
           end;
 {$endif i8086}
 
@@ -3547,7 +3561,8 @@ implementation
                 if needed_VEX and
                   (ops=4) and
                   (oper[opidx]^.typ=top_reg) and
-                  (oper[opidx]^.ot and (otf_reg_xmm or otf_reg_ymm)<>0) then
+                  ((oper[opidx]^.ot and OT_REG_EXTRA_MASK)=otf_reg_xmm) or
+                  ((oper[opidx]^.ot and OT_REG_EXTRA_MASK)=otf_reg_ymm) then
                   begin
                     bytes[0] := ((getsupreg(oper[opidx]^.reg) and 15) shl 4);
                     objdata.writebytes(bytes,1);
@@ -3703,15 +3718,24 @@ implementation
                  (oper[1]^.typ=top_reg) and
                  (oper[0]^.reg=oper[1]^.reg)
                 ) or
-                (((opcode=A_MOVSS) or (opcode=A_MOVSD) or (opcode=A_MOVQ) or
-                  (opcode=A_MOVAPS) or (opcode=A_MOVAPD) or
-                  (opcode=A_VMOVSS) or (opcode=A_VMOVSD) or (opcode=A_VMOVQ) or
-                  (opcode=A_VMOVAPS) or (opcode=A_VMOVAPD)) and
-                 (regtype = R_MMREGISTER) and
-                 (ops=2) and
-                 (oper[0]^.typ=top_reg) and
-                 (oper[1]^.typ=top_reg) and
-                 (oper[0]^.reg=oper[1]^.reg)
+                ({ checking the opcodes is a long "or" chain, so check first the registers which is more selective }
+                 ((regtype = R_MMREGISTER) and
+                  (ops=2) and
+                  (oper[0]^.typ=top_reg) and
+                  (oper[1]^.typ=top_reg) and
+                  (oper[0]^.reg=oper[1]^.reg)) and
+                  (
+                   (opcode=A_MOVSS) or (opcode=A_MOVSD) or
+                   (opcode=A_MOVQ) or (opcode=A_MOVD) or
+                   (opcode=A_MOVAPS) or (opcode=A_MOVAPD) or
+                   (opcode=A_MOVUPS) or (opcode=A_MOVUPD) or
+                   (opcode=A_MOVDQA) or (opcode=A_MOVDQU) or
+                   (opcode=A_VMOVSS) or (opcode=A_VMOVSD) or
+                   (opcode=A_VMOVQ) or (opcode=A_VMOVD) or
+                   (opcode=A_VMOVAPS) or (opcode=A_VMOVAPD) or
+                   (opcode=A_VMOVUPS) or (opcode=A_VMOVUPD) or
+                   (opcode=A_VMOVDQA) or (opcode=A_VMOVDQU)
+                  )
                 );
       end;
 
@@ -3725,33 +3749,33 @@ implementation
         fillchar(operation_type_table^,sizeof(toperation_type_table),byte(operand_read));
         for opcode:=low(tasmop) to high(tasmop) do
           with InsProp[opcode] do
-            begin
+          begin
               if Ch_Rop1 in Ch then
-                operation_type_table^[opcode,0]:=operand_read;
+                    operation_type_table^[opcode,0]:=operand_read;
               if Ch_Wop1 in Ch then
-                operation_type_table^[opcode,0]:=operand_write;
+                    operation_type_table^[opcode,0]:=operand_write;
               if [Ch_RWop1,Ch_Mop1]*Ch<>[] then
-                operation_type_table^[opcode,0]:=operand_readwrite;
+                    operation_type_table^[opcode,0]:=operand_readwrite;
               if Ch_Rop2 in Ch then
-                operation_type_table^[opcode,1]:=operand_read;
+                    operation_type_table^[opcode,1]:=operand_read;
               if Ch_Wop2 in Ch then
-                operation_type_table^[opcode,1]:=operand_write;
+                    operation_type_table^[opcode,1]:=operand_write;
               if [Ch_RWop2,Ch_Mop2]*Ch<>[] then
-                operation_type_table^[opcode,1]:=operand_readwrite;
+                    operation_type_table^[opcode,1]:=operand_readwrite;
               if Ch_Rop3 in Ch then
-                operation_type_table^[opcode,2]:=operand_read;
+                    operation_type_table^[opcode,2]:=operand_read;
               if Ch_Wop3 in Ch then
-                operation_type_table^[opcode,2]:=operand_write;
+                    operation_type_table^[opcode,2]:=operand_write;
               if [Ch_RWop3,Ch_Mop3]*Ch<>[] then
-                operation_type_table^[opcode,2]:=operand_readwrite;
+                    operation_type_table^[opcode,2]:=operand_readwrite;
               if Ch_Rop4 in Ch then
                 operation_type_table^[opcode,3]:=operand_read;
               if Ch_Wop4 in Ch then
                 operation_type_table^[opcode,3]:=operand_write;
               if [Ch_RWop4,Ch_Mop4]*Ch<>[] then
                 operation_type_table^[opcode,3]:=operand_readwrite;
-            end;
-      end;
+                end;
+              end;
 
 
     function taicpu.spilling_get_operation_type(opnr: longint): topertype;
@@ -4056,7 +4080,7 @@ implementation
                   NewRegSize := (insentry^.optypes[j] and OT_SIZE_MASK);
                   if NewRegSize = 0 then
                     begin
-                      case insentry^.optypes[j] and (OT_MMXREG OR OT_XMMREG OR OT_YMMREG) of
+                      case insentry^.optypes[j] and (OT_MMXREG or OT_XMMREG or OT_YMMREG or OT_REG_EXTRA_MASK) of
                         OT_MMXREG: begin
                                      NewRegSize := OT_BITS64;
                                    end;
@@ -4073,7 +4097,7 @@ implementation
                   end;
 
                 actRegSize  := actRegSize or NewRegSize;
-                actRegTypes := actRegTypes or (insentry^.optypes[j] and (OT_MMXREG OR OT_XMMREG OR OT_YMMREG));
+                actRegTypes := actRegTypes or (insentry^.optypes[j] and (OT_MMXREG or OT_XMMREG or OT_YMMREG or OT_REG_EXTRA_MASK));
                 end
               else if ((insentry^.optypes[j] and OT_MEMORY) <> 0) then
                 begin
@@ -4168,71 +4192,71 @@ implementation
               begin
                 if (actMemCount=2) and ((AsmOp=A_MOVS) or (AsmOp=A_CMPS)) then
                   actMemCount:=1;
-                case actMemCount of
-                    0: ; // nothing todo
-                    1: begin
-                         MRefInfo := msiUnkown;
-                         case actRegMemTypes and (OT_MMXRM OR OT_XMMRM OR OT_YMMRM) of
-                           OT_MMXRM: actMemSize := actMemSize or OT_BITS64;
-                           OT_XMMRM: actMemSize := actMemSize or OT_BITS128;
-                           OT_YMMRM: actMemSize := actMemSize or OT_BITS256;
+            case actMemCount of
+                0: ; // nothing todo
+                1: begin
+                     MRefInfo := msiUnkown;
+                     case actRegMemTypes and (OT_MMXRM or OT_XMMRM or OT_YMMRM or OT_REG_EXTRA_MASK) of
+                       OT_MMXRM: actMemSize := actMemSize or OT_BITS64;
+                       OT_XMMRM: actMemSize := actMemSize or OT_BITS128;
+                       OT_YMMRM: actMemSize := actMemSize or OT_BITS256;
+                     end;
+
+                     case actMemSize of
+                       0: MRefInfo := msiNoSize;
+                       OT_BITS8: MRefInfo := msiMem8;
+                       OT_BITS16: MRefInfo := msiMem16;
+                       OT_BITS32: MRefInfo := msiMem32;
+                       OT_BITS64: MRefInfo := msiMem64;
+                       OT_BITS128: MRefInfo := msiMem128;
+                       OT_BITS256: MRefInfo := msiMem256;
+                       OT_BITS80,
+                       OT_FAR,
+                       OT_NEAR,
+                       OT_SHORT: ; // ignore
+                       else
+                         begin
+                           bitcount := bitcnt(actMemSize);
+
+                           if bitcount > 1 then MRefInfo := msiMultiple
+                           else InternalError(777203);
                          end;
+                     end;
 
-                         case actMemSize of
-                           0: MRefInfo := msiNoSize;
-                           OT_BITS8: MRefInfo := msiMem8;
-                           OT_BITS16: MRefInfo := msiMem16;
-                           OT_BITS32: MRefInfo := msiMem32;
-                           OT_BITS64: MRefInfo := msiMem64;
-                           OT_BITS128: MRefInfo := msiMem128;
-                           OT_BITS256: MRefInfo := msiMem256;
-                           OT_BITS80,
-                           OT_FAR,
-                           OT_NEAR,
-                           OT_SHORT: ; // ignore
-                           else
-                             begin
-                               bitcount := bitcnt(actMemSize);
-
-                               if bitcount > 1 then MRefInfo := msiMultiple
-                               else InternalError(777203);
-                             end;
+                     if InsTabMemRefSizeInfoCache^[AsmOp].MemRefSize = msiUnkown then
+                       begin
+                         InsTabMemRefSizeInfoCache^[AsmOp].MemRefSize := MRefInfo;
+                       end
+                     else if InsTabMemRefSizeInfoCache^[AsmOp].MemRefSize <> MRefInfo then
+                       begin
+                         with InsTabMemRefSizeInfoCache^[AsmOp] do
+                         begin
+                           if ((MemRefSize = msiMem8)        OR (MRefInfo = msiMem8))   then MemRefSize := msiMultiple8
+                           else if ((MemRefSize = msiMem16)  OR (MRefInfo = msiMem16))  then MemRefSize := msiMultiple16
+                           else if ((MemRefSize = msiMem32)  OR (MRefInfo = msiMem32))  then MemRefSize := msiMultiple32
+                           else if ((MemRefSize = msiMem64)  OR (MRefInfo = msiMem64))  then MemRefSize := msiMultiple64
+                           else if ((MemRefSize = msiMem128) OR (MRefInfo = msiMem128)) then MemRefSize := msiMultiple128
+                           else if ((MemRefSize = msiMem256) OR (MRefInfo = msiMem256)) then MemRefSize := msiMultiple256
+                           else MemRefSize := msiMultiple;
                          end;
+                     end;
 
-                         if InsTabMemRefSizeInfoCache^[AsmOp].MemRefSize = msiUnkown then
-                           begin
-                             InsTabMemRefSizeInfoCache^[AsmOp].MemRefSize := MRefInfo;
-                           end
-                         else if InsTabMemRefSizeInfoCache^[AsmOp].MemRefSize <> MRefInfo then
-                           begin
-                             with InsTabMemRefSizeInfoCache^[AsmOp] do
-                             begin
-                               if ((MemRefSize = msiMem8)        OR (MRefInfo = msiMem8))   then MemRefSize := msiMultiple8
-                               else if ((MemRefSize = msiMem16)  OR (MRefInfo = msiMem16))  then MemRefSize := msiMultiple16
-                               else if ((MemRefSize = msiMem32)  OR (MRefInfo = msiMem32))  then MemRefSize := msiMultiple32
-                               else if ((MemRefSize = msiMem64)  OR (MRefInfo = msiMem64))  then MemRefSize := msiMultiple64
-                               else if ((MemRefSize = msiMem128) OR (MRefInfo = msiMem128)) then MemRefSize := msiMultiple128
-                               else if ((MemRefSize = msiMem256) OR (MRefInfo = msiMem256)) then MemRefSize := msiMultiple256
-                               else MemRefSize := msiMultiple;
-                             end;
+                     if actRegCount > 0 then
+                       begin
+                         case actRegTypes and (OT_MMXREG or OT_XMMREG or OT_YMMREG or OT_REG_EXTRA_MASK) of
+                           OT_MMXREG: RegMMXSizeMask := RegMMXSizeMask or actMemSize;
+                           OT_XMMREG: RegXMMSizeMask := RegXMMSizeMask or actMemSize;
+                           OT_YMMREG: RegYMMSizeMask := RegYMMSizeMask or actMemSize;
+                                 else begin
+                                        RegMMXSizeMask := not(0);
+                                        RegXMMSizeMask := not(0);
+                                        RegYMMSizeMask := not(0);
+                                      end;
                          end;
-
-                         if actRegCount > 0 then
-                           begin
-                             case actRegTypes and (OT_MMXREG or OT_XMMREG or OT_YMMREG) of
-                               OT_MMXREG: RegMMXSizeMask := RegMMXSizeMask or actMemSize;
-                               OT_XMMREG: RegXMMSizeMask := RegXMMSizeMask or actMemSize;
-                               OT_YMMREG: RegYMMSizeMask := RegYMMSizeMask or actMemSize;
-                                     else begin
-                                            RegMMXSizeMask := not(0);
-                                            RegXMMSizeMask := not(0);
-                                            RegYMMSizeMask := not(0);
-                                          end;
-                             end;
-                           end;
                        end;
-                  else InternalError(777202);
-                end;
+                   end;
+              else InternalError(777202);
+            end;
               end;
 
             inc(insentry);

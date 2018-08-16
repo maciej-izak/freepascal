@@ -211,11 +211,11 @@ Type
   TJSArrayLiteralElement = Class(TCollectionItem)
   private
     FExpr: TJSelement;
-    FFindex: Integer;
+    FElementIndex: Integer;
   Public
     Destructor Destroy; override;
     Property Expr : TJSElement Read FExpr Write FExpr;
-    Property ElementIndex : Integer Read FFindex Write FFIndex;
+    Property ElementIndex : Integer Read FElementIndex Write FElementIndex;
   end;
 
   { TJSArrayLiteralElements - Elements property of TJSArrayLiteral }
@@ -885,7 +885,7 @@ Type
   Public
     Constructor Create(ALine,AColumn : Integer; const ASource : String = ''); override;
     Destructor Destroy; override;
-    Property Cond : TJSelement Read FCond Write FCond;
+    Property Cond : TJSElement Read FCond Write FCond;
     Property Cases : TJSCaseElements Read FCases;
     Property TheDefault : TJSCaseElement Read FDefault Write FDefault; // one of Cases
   end;
@@ -923,7 +923,7 @@ Type
   TJSTryFinallyStatement = Class(TJSTryStatement);
 
 
-  { TJSFunctionDeclarationStatement - as TJSFuncDef, except as a statement }
+  { TJSFunctionDeclarationStatement - same as TJSFuncDef, except as a TJSElement }
 
   TJSFunctionDeclarationStatement = Class(TJSElement)
   private
@@ -1567,8 +1567,12 @@ begin
 end;
 
 procedure TJSArrayLiteral.AddElement(El: TJSElement);
+var
+  ArrEl: TJSArrayLiteralElement;
 begin
-  Elements.AddElement.Expr:=El;
+  ArrEl:=Elements.AddElement;
+  ArrEl.ElementIndex:=Elements.Count-1;
+  ArrEl.Expr:=El;
 end;
 
 destructor TJSArrayLiteral.Destroy;
@@ -1617,7 +1621,7 @@ end;
 
 destructor TJSArrayLiteralElement.Destroy;
 begin
-  FreeAndNil(Fexpr);
+  FreeAndNil(FExpr);
   inherited Destroy;
 end;
 
@@ -1631,6 +1635,8 @@ end;
 
 procedure TJSNewMemberExpression.AddArg(El: TJSElement);
 begin
+  if Args=nil then
+    Args:=TJSArguments.Create(Line,Column,Source);
   Args.Elements.AddElement.Expr:=El;
 end;
 

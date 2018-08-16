@@ -80,6 +80,8 @@ var
   ThreadQueueTail: TThread.PThreadQueueEntry;
   { used for serialized access to the queue }
   ThreadQueueLock: TRtlCriticalSection;
+  { usage counter for ThreadQueueLock }
+  ThreadQueueLockCounter : longint;
   { this list holds all instances of external threads that need to be freed at
     the end of the program }
   ExternalThreads: TThreadList;
@@ -224,6 +226,9 @@ constructor TThread.Create(CreateSuspended: Boolean;
                            const StackSize: SizeUInt);
 begin
   inherited Create;
+{$ifdef FPC_HAS_FEATURE_THREADING}
+    InterlockedIncrement(ThreadQueueLockCounter);
+{$endif}
   if FExternalThread then
 {$ifdef FPC_HAS_FEATURE_THREADING}
     FThreadID := GetCurrentThreadID
@@ -246,6 +251,10 @@ begin
   end;
   RemoveQueuedEvents(Self);
   DoneSynchronizeEvent;
+{$ifdef FPC_HAS_FEATURE_THREADING}
+  if InterlockedDecrement(ThreadQueueLockCounter)=0 then
+    DoneCriticalSection(ThreadQueueLock);
+{$endif}
   { set CurrentThreadVar to Nil? }
   inherited Destroy;
 end;
@@ -362,8 +371,18 @@ procedure TThread.DoneSynchronizeEvent;
 class procedure TThread.Synchronize(AThread: TThread; AMethod: TThreadMethod);
   var
     syncentry: PThreadQueueEntry;
+    thread: TThread;
   begin
-    if not Assigned(AThread) then begin
+{$ifdef FPC_HAS_FEATURE_THREADING}
+    if Assigned(AThread) and (AThread.ThreadID = GetCurrentThreadID) then
+{$else}
+    if Assigned(AThread) then
+{$endif}
+      thread := AThread
+    else if Assigned(CurrentThreadVar) then
+      thread := CurrentThreadVar
+    else begin
+      thread := Nil;
       { use a local synchronize event }
       New(syncentry);
       FillChar(syncentry^, SizeOf(TThreadQueueEntry), 0);
@@ -374,11 +393,13 @@ class procedure TThread.Synchronize(AThread: TThread; AMethod: TThreadMethod);
       syncentry^.ThreadID := 0{GetCurrentThreadID};
       syncentry^.SyncEvent := nil{RtlEventCreate};
 {$endif}
-    end else begin
-      { the Synchronize event is instantiated on demand }
-      AThread.InitSynchronizeEvent;
+    end;
 
-      syncentry := AThread.FSynchronizeEntry;
+    if Assigned(thread) then begin
+      { the Synchronize event is instantiated on demand }
+      thread.InitSynchronizeEvent;
+
+      syncentry := thread.FSynchronizeEntry;
     end;
 
     syncentry^.Exception := Nil;
@@ -388,7 +409,7 @@ class procedure TThread.Synchronize(AThread: TThread; AMethod: TThreadMethod);
     syncentry^.Method := Nil;
     syncentry^.Next := Nil;
 
-    if not Assigned(AThread) then begin
+    if not Assigned(thread) then begin
       { clean up again }
 {$ifdef FPC_HAS_FEATURE_THREADING}
       RtlEventDestroy(syncentry^.SyncEvent);
@@ -559,7 +580,7 @@ begin
         Continue;
       end;
       { then check for the method }
-      if entry^.Method <> aMethod then begin
+      if Assigned(aMethod) and (entry^.Method <> aMethod) then begin
         lastentry := entry;
         entry := entry^.Next;
         Continue;
@@ -2442,6 +2463,7 @@ procedure CommonInit;
 begin
 {$ifdef FPC_HAS_FEATURE_THREADING}
   SynchronizeTimeoutEvent:=RtlEventCreate;
+  InterlockedIncrement(ThreadQueueLockCounter);
   InitCriticalSection(ThreadQueueLock);
   MainThreadID:=GetCurrentThreadID;
 {$else}
@@ -2510,17 +2532,25 @@ begin
   FreeAndNil(ExternalThreads);
 {$ifdef FPC_HAS_FEATURE_THREADING}
   RtlEventDestroy(SynchronizeTimeoutEvent);
+  try
+    System.EnterCriticalSection(ThreadQueueLock);
 {$endif}
   { clean up the queue, but keep in mind that the entries used for Synchronize
     are owned by the corresponding TThread }
-  while Assigned(ThreadQueueHead) do begin
-    tmpentry := ThreadQueueHead;
-    ThreadQueueHead := tmpentry^.Next;
-    if not Assigned(tmpentry^.SyncEvent) then
-      Dispose(tmpentry);
-  end;
+    while Assigned(ThreadQueueHead) do begin
+      tmpentry := ThreadQueueHead;
+      ThreadQueueHead := tmpentry^.Next;
+      if not Assigned(tmpentry^.SyncEvent) then
+        Dispose(tmpentry);
+    end;
+    { We also need to reset ThreadQueueTail }
+    ThreadQueueTail := nil;
 {$ifdef FPC_HAS_FEATURE_THREADING}
-  DoneCriticalSection(ThreadQueueLock);
+  finally
+    System.LeaveCriticalSection(ThreadQueueLock);
+  end;
+  if InterlockedDecrement(ThreadQueueLockCounter)=0 then
+    DoneCriticalSection(ThreadQueueLock);
 {$endif}
 end;
 

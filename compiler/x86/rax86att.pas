@@ -459,13 +459,8 @@ Implementation
                   { don't allow direct access to fields of parameters, because that
                     will generate buggy code. Allow it only for explicit typecasting }
                   if hasdot and
-                     (not oper.hastype) and
-                     (oper.opr.localsym.typ=paravarsym) and
-                     (not(po_assembler in current_procinfo.procdef.procoptions) or
-                      (tparavarsym(oper.opr.localsym).paraloc[calleeside].location^.loc<>LOC_REGISTER) or
-                      (not is_implicit_pointer_object_type(oper.opr.localsym.vardef) and
-                       not paramanager.push_addr_param(oper.opr.localsym.varspez,oper.opr.localsym.vardef,current_procinfo.procdef.proccalloption))) then
-                    Message(asmr_e_cannot_access_field_directly_for_parameters);
+                     (not oper.hastype) then
+                    checklocalsubscript(oper.opr.localsym);
                   inc(oper.opr.localsymofs,l);
                   inc(oper.opr.localconstoffset,l);
                 end;
@@ -610,7 +605,7 @@ Implementation
               { Constant memory offset }
               { This must absolutely be followed by (  }
               oper.InitRef;
-              oper.opr.ref.offset:=BuildConstExpression(True,False);
+              oper.opr.ref.offset:=asizeint(BuildConstExpression(True,False));
               if actasmtoken<>AS_LPAREN then
                 Message(asmr_e_invalid_reference_syntax)
               else
@@ -750,6 +745,12 @@ Implementation
                Begin
                  Consume(AS_COLON);
                  oper.InitRef;
+                 if not is_segment_reg(tempreg) then
+                   Message(asmr_e_invalid_seg_override);
+{$ifdef x86_64}
+                 if (tempreg=NR_CS) or (tempreg=NR_DS) or (tempreg=NR_SS) or (tempreg=NR_ES) then
+                   Message1(asmr_w_segment_override_ignored_in_64bit_mode,gas_regname(tempreg));
+{$endif x86_64}
                  oper.opr.ref.segment:=tempreg;
                  { This must absolutely be followed by a reference }
                  if not MaybeBuildReference then

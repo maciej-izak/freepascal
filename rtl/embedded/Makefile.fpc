@@ -59,6 +59,11 @@ ifdef RELEASE
 override FPCOPT+=-Ur
 endif
 
+# Always include rtl.cfg config file for i8086
+ifeq ($(ARCH),i8086)
+override FPCOPT+=@rtl.cfg
+endif
+
 CPU_UNITS=
 SYSINIT_UNITS=
 CPU_SPECIFIC_COMMON_UNITS=
@@ -104,12 +109,13 @@ CPU_UNITS=attiny44a attiny26 attiny48 attiny10 attiny84a attiny2313 attiny461 at
 CPU_UNITS_DEFINED=1
 endif
 ifeq ($(SUBARCH),avr35)
-CPU_UNITS=at90usb82 at90usb162 attiny167 atmega8u2 atmega8a atmega16u2 atmega32u2 attiny1634
+CPU_UNITS=at90usb82 at90usb162 attiny167 atmega8u2 atmega16u2 atmega32u2 attiny1634
 CPU_UNITS_DEFINED=1
 endif
 ifeq ($(SUBARCH),avr4)
-CPU_UNITS=at90pwm161 atmega88p at90pwm3b atmega48a atmega48 atmega88a at90pwm81 atmega8 atmega8515 \
-          atmega88pa atmega88 atmega48p atmega8535 at90pwm1 at90pwm2b atmega48pa ata6285 ata6286
+CPU_UNITS=atmega88p at90pwm3b atmega48a atmega48 atmega88a at90pwm81 atmega8 atmega8515 \
+          atmega88pa atmega88 atmega48p atmega8535 at90pwm1 at90pwm2b atmega48pa ata6285 ata6286 \
+          atmega8a
 CPU_UNITS_DEFINED=1
 endif
 ifeq ($(SUBARCH),avr5)
@@ -123,7 +129,7 @@ CPU_UNITS=atmega645 atmega165a atmega649a atmega32u4 atmega168p atmega3250pa atm
           atmega16hvb atmega164p atmega325a atmega640 atmega6450 atmega329p at90usb647 \
           atmega168 atmega6490a atmega32m1 atmega64c1 atmega644pa atmega325pa atmega6450a \
           atmega329pa atmega6450p atmega64 atmega165pa atmega16a atmega649 atmega649p \
-          atmega3250p atmega325 atmega169pa avrsim
+          atmega3250p atmega325 atmega169pa avrsim at90pwm161
 CPU_UNITS_DEFINED=1
 endif
 ifeq ($(SUBARCH),avr51)
@@ -150,6 +156,11 @@ endif
 
 ifeq ($(ARCH),x86_64)
 CPU_SPECIFIC_COMMON_UNITS=sysutils math classes fgl macpas typinfo types rtlconsts getopts lineinfo
+# CPU_UNITS=multiboot
+endif
+
+ifeq ($(ARCH),m68k)
+CPU_SPECIFIC_COMMON_UNITS=sysutils math
 # CPU_UNITS=multiboot
 endif
 
@@ -197,7 +208,7 @@ startup$(OEXT) : $(CPU_TARGET)/startup.s
 #
 
 $(SYSTEMUNIT)$(PPUEXT) : $(SYSTEMUNIT).pp $(SYSDEPS) $(INC)/softfpu.pp
-        $(COMPILER) -Us -Sg $(SYSTEMUNIT).pp @rtl.cfg $(REDIR)
+        $(COMPILER) $(FPC_SYSTEM_OPT) -Us -Sg $(SYSTEMUNIT).pp @system.cfg $(REDIR)
 
 uuchar$(PPUEXT): $(INC)/uuchar.pp $(SYSTEMUNIT)$(PPUEXT)
 	$(COMPILER) $<

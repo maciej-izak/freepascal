@@ -34,6 +34,7 @@ interface
 
        ti8086inlinenode = class(tx86inlinenode)
          function pass_typecheck_cpu: tnode; override;
+         procedure pass_generate_code_cpu;override;
          function typecheck_faraddr: tnode;
          function typecheck_seg: tnode; override;
          function first_seg: tnode; override;
@@ -69,7 +70,18 @@ implementation
            in_faraddr_x:
              result:=typecheck_faraddr;
            else
-             inherited;
+             result:=inherited;
+         end;
+       end;
+
+     procedure ti8086inlinenode.pass_generate_code_cpu;
+       begin
+         case inlinenumber of
+           in_x86_inportl,
+           in_x86_outportl:
+             internalerror(2018070302);
+           else
+             inherited pass_generate_code_cpu;
          end;
        end;
 
@@ -104,7 +116,7 @@ implementation
 
      function ti8086inlinenode.typecheck_seg: tnode;
        var
-         isprocvar: Boolean;
+         isprocvar,need_conv_to_voidptr: Boolean;
          procpointertype: tdef;
          hsym: tfieldvarsym;
        begin
@@ -131,12 +143,17 @@ implementation
             ) then
            begin
              isprocvar:=(left.resultdef.typ=procvardef);
+             need_conv_to_voidptr:=
+               (m_tp_procvar in current_settings.modeswitches) or
+               (m_mac_procvar in current_settings.modeswitches);
 
              if not isprocvar then
                begin
                  if current_settings.x86memorymodel in x86_far_code_models then
                    begin
                      left:=ctypeconvnode.create_proc_to_procvar(left);
+                     if need_conv_to_voidptr then
+                       include(ttypeconvnode(left).convnodeflags,tcnf_proc_2_procvar_2_voidpointer);
                      left.fileinfo:=fileinfo;
                      typecheckpass(left);
                    end
@@ -144,19 +161,10 @@ implementation
                    exit;
                end;
 
-             { In tp procvar mode the result is always a voidpointer. Insert
-               a typeconversion to voidpointer. For methodpointers we need
-               to load the proc field }
-             if (m_tp_procvar in current_settings.modeswitches) or
-                (m_mac_procvar in current_settings.modeswitches) then
+             { In tp procvar mode for methodpointers we need to load the proc field }
+             if need_conv_to_voidptr then
                begin
-                 if tabstractprocdef(left.resultdef).is_addressonly then
-                   begin
-                     result:=ctypeconvnode.create_internal(left,tabstractprocdef(left.resultdef).address_type);
-                     include(result.flags,nf_load_procvar);
-                     left:=nil;
-                   end
-                 else
+                 if not tabstractprocdef(left.resultdef).is_addressonly then
                    begin
                      { For procvars and for nested routines we need to return
                        the proc field of the methodpointer }
@@ -205,14 +213,21 @@ implementation
          if left.resultdef.typ=procvardef then
            begin
              if left.resultdef.size<>4 then
-               internalerror(2017121302);
-             Writeln(left.location.loc);
+               CGMessage(type_e_seg_procvardef_wrong_memory_model);
              case left.location.loc of
                LOC_REGISTER,LOC_CREGISTER:
                  begin
                    location_reset(location,LOC_REGISTER,OS_16);
                    location.register:=cg.GetNextReg(left.location.register);
                  end;
+               LOC_CREFERENCE,LOC_REFERENCE:
+                  begin
+                    location_reset(location,LOC_REGISTER,OS_16);
+                    segref:=left.location.reference;
+                    inc(segref.offset,2);
+                    location.register:=cg.getintregister(current_asmdata.CurrAsmList,OS_16);
+                    current_asmdata.CurrAsmList.concat(Taicpu.op_ref_reg(A_MOV,S_W,segref,location.register));
+                  end;
                else
                  internalerror(2017121301);
              end;

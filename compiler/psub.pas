@@ -31,9 +31,6 @@ interface
       symdef,procinfo,optdfa;
 
     type
-
-      { tcgprocinfo }
-
       tcgprocinfo = class(tprocinfo)
       private
         procedure CreateInlineInfo;
@@ -130,7 +127,8 @@ implementation
        optloop,
        optconstprop,
        optdeadstore,
-       optloadmodifystore
+       optloadmodifystore,
+       optutils
 {$if defined(arm)}
        ,cpuinfo
 {$endif arm}
@@ -679,8 +677,7 @@ implementation
 
      destructor tcgprocinfo.destroy;
        begin
-         if assigned(code) then
-           code.free;
+         code.free;
          if not final_used then
            final_asmnode.free;
          inherited destroy;
@@ -1481,6 +1478,8 @@ implementation
               code of the ppc (and possibly other processors)               }
             procdef.init_paraloc_info(callerside);
 
+            CalcExecutionWeights(code);
+
             { Print the node to tree.log }
             if paraprintnodetree=1 then
               printproc( 'right before code generation');
@@ -2222,7 +2221,12 @@ implementation
                  begin
                    MessagePos1(pd.fileinfo,parser_e_header_dont_match_forward,pd.fullprocname(false));
                    tprocsym(pd.procsym).write_parameter_lists(pd);
-                 end;
+                 end
+                else
+                  begin
+                    if pd.is_generic and not assigned(pd.struct) then
+                      tprocsym(pd.procsym).owner.includeoption(sto_has_generic);
+                  end;
               end;
            end;
 

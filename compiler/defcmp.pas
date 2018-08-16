@@ -491,7 +491,9 @@ implementation
                    end;
                  arraydef :
                    begin
-                     if (m_mac in current_settings.modeswitches) and
+                     if (((m_mac in current_settings.modeswitches) and
+                          is_integer(def_to)) or
+                         is_widechar(def_to)) and
                         (fromtreetype=stringconstn) then
                        begin
                          eq:=te_convert_l3;
@@ -2329,7 +2331,7 @@ implementation
          if checkincompatibleuniv then
            include(pa_comp,cpo_warn_incompatible_univ);
          { check return value and options, methodpointer is already checked }
-         po_comp:=[po_interrupt,po_iocheck,po_varargs];
+         po_comp:=[po_interrupt,po_iocheck,po_varargs,po_far];
          { check static only if we compare method pointers }
          if def1.is_methodpointer and def2.is_methodpointer then
            include(po_comp,po_staticmethod);

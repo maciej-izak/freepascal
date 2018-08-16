@@ -98,7 +98,7 @@ implementation
       verbose,globals,cutils,compinnr,
       globtype,constexp,
       symconst,symtype,symdef,
-      defutil,
+      defcmp,defutil,
       htypechk,pass_1,
       cgbase,
       ncon,ncnv,ncal,nadd,nld,nbas,nflw,ninl,
@@ -189,7 +189,8 @@ implementation
         result:=
           (left.resultdef.typ=orddef) and
           (right.resultdef.typ=orddef) and
-          (is_64bitint(left.resultdef) or is_64bitint(right.resultdef));
+          { include currency as well }
+          (is_64bit(left.resultdef) or is_64bit(right.resultdef));
 {$endif cpu64bitaly}
       end;
 
@@ -226,7 +227,7 @@ implementation
 
          { allow operator overloading }
          t:=self;
-         if isbinaryoverloaded(t) then
+         if isbinaryoverloaded(t,[]) then
            begin
               result:=t;
               exit;
@@ -429,7 +430,9 @@ implementation
           u32bit:
             procname := procname + 'dword';
           s32bit:
-            procname := procname + 'longint'
+            procname := procname + 'longint';
+          scurrency:
+            procname := procname + 'currency';
           else
             internalerror(2015070501);
         end;
@@ -784,42 +787,58 @@ implementation
 
          { allow operator overloading }
          t:=self;
-         if isbinaryoverloaded(t) then
+         if isbinaryoverloaded(t,[]) then
            begin
               result:=t;
               exit;
            end;
 
-         { calculations for ordinals < 32 bit have to be done in
-           32 bit for backwards compatibility. That way 'shl 33' is
-           the same as 'shl 1'. It's ugly but compatible with delphi/tp/gcc }
-         if (not is_64bit(left.resultdef)) and
-            (torddef(left.resultdef).ordtype<>u32bit) then
+{$ifdef SUPPORT_MMX}
+         if (cs_mmx in current_settings.localswitches) and
+           is_mmx_able_array(left.resultdef) and
+           ((is_mmx_able_array(right.resultdef) and
+             equal_defs(left.resultdef,right.resultdef)
+            ) or is_constintnode(right)) then
            begin
-             { keep singness of orignal type }
-             if is_signed(left.resultdef) then
+             if not(mmx_type(left.resultdef) in [mmxu16bit,mmxs16bit,mmxfixed16,mmxu32bit,mmxs32bit,mmxu64bit,mmxs64bit]) then
+               CGMessage3(type_e_operator_not_supported_for_types,node2opstr(nodetype),left.resultdef.typename,right.resultdef.typename);
+             if not(is_mmx_able_array(right.resultdef)) then
+               inserttypeconv(right,sinttype);
+           end
+         else
+{$endif SUPPORT_MMX}
+           begin
+             { calculations for ordinals < 32 bit have to be done in
+               32 bit for backwards compatibility. That way 'shl 33' is
+               the same as 'shl 1'. It's ugly but compatible with delphi/tp/gcc }
+             if (not is_64bit(left.resultdef)) and
+                (torddef(left.resultdef).ordtype<>u32bit) then
                begin
+                 { keep singness of orignal type }
+                 if is_signed(left.resultdef) then
+                   begin
 {$if defined(cpu64bitalu) or defined(cpu32bitalu)}
-                 inserttypeconv(left,s32inttype)
+                     inserttypeconv(left,s32inttype)
 {$elseif defined(cpu16bitalu) or defined(cpu8bitalu)}
-                 inserttypeconv(left,get_common_intdef(torddef(left.resultdef),torddef(sinttype),true));
+                     inserttypeconv(left,get_common_intdef(torddef(left.resultdef),torddef(sinttype),true));
 {$else}
-                 internalerror(2013031301);
+                     internalerror(2013031301);
 {$endif}
-               end
-             else
-               begin
+                   end
+                 else
+                   begin
 {$if defined(cpu64bitalu) or defined(cpu32bitalu)}
-                 inserttypeconv(left,u32inttype);
+                     inserttypeconv(left,u32inttype);
 {$elseif defined(cpu16bitalu) or defined(cpu8bitalu)}
-                 inserttypeconv(left,get_common_intdef(torddef(left.resultdef),torddef(uinttype),true));
+                     inserttypeconv(left,get_common_intdef(torddef(left.resultdef),torddef(uinttype),true));
 {$else}
-                 internalerror(2013031301);
+                     internalerror(2013031301);
 {$endif}
-               end
-           end;
+                   end
+               end;
 
-         inserttypeconv(right,sinttype);
+             inserttypeconv(right,sinttype);
+           end;
 
          resultdef:=left.resultdef;
 
@@ -985,7 +1004,7 @@ implementation
            begin
              { allow operator overloading }
              t:=self;
-             if isunaryoverloaded(t) then
+             if isunaryoverloaded(t,[]) then
                begin
                   result:=t;
                   exit;
@@ -1117,7 +1136,7 @@ implementation
           begin
             { allow operator overloading }
             t:=self;
-            if isunaryoverloaded(t) then
+            if isunaryoverloaded(t,[]) then
               begin
                 result:=t;
                 exit;
@@ -1175,7 +1194,8 @@ implementation
          end;
 
         { constant folding }
-        if (left.nodetype=ordconstn) then
+        if (left.nodetype=ordconstn) and
+          (left.resultdef.typ=orddef) then
           begin
              v:=tordconstnode(left).value;
              def:=left.resultdef;
@@ -1296,7 +1316,7 @@ implementation
            begin
              { allow operator overloading }
              t:=self;
-             if isunaryoverloaded(t) then
+             if isunaryoverloaded(t,[]) then
                begin
                   result:=t;
                   exit;

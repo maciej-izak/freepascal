@@ -34,7 +34,7 @@
                "TextSize=16777216" - set maximum size of text/image data returned
                "ApplicationName=YourAppName" - Set the app name for the connection. MSSQL 2000 and higher only
 }
-unit mssqlconn;
+unit MSSQLConn;
 
 {$mode objfpc}{$H+}
 
@@ -65,6 +65,7 @@ type
     function CheckError(const Ret: RETCODE): RETCODE;
     procedure Execute(const cmd: string); overload;
     procedure ExecuteDirectSQL(const Query: string);
+    procedure CancelQuery;
     procedure GetParameters(cursor: TSQLCursor; AParams: TParams);
     function TranslateFldType(SQLDataType: integer): TFieldType;
     function AutoCommit: boolean;
@@ -226,9 +227,10 @@ var
   ParamBinding : TParamBinding;
 begin
   if assigned(AParams) and (AParams.Count > 0) then
-    FQuery:=AParams.ParseSQL(Buf, false, sqEscapeSlash in FConnection.ConnOptions, sqEscapeRepeat in FConnection.ConnOptions, psSimulated, ParamBinding, FParamReplaceString)
+    FQuery := AParams.ParseSQL(Buf, False, sqEscapeSlash in FConnection.ConnOptions, sqEscapeRepeat in FConnection.ConnOptions, psSimulated, ParamBinding, FParamReplaceString)
   else
-    FQuery:=Buf;
+    FQuery := Buf;
+  FPrepared := True;
 end;
 
 function TDBLibCursor.ReplaceParams(AParams: TParams): string;
@@ -345,6 +347,17 @@ begin
   end;
 end;
 
+procedure TMSSQLConnection.CancelQuery;
+begin
+  // Cancel the query currently being retrieved, discarding all pending rows and all remaining resultsets
+  if Fstatus = MORE_ROWS then begin
+    repeat
+      dbcanquery(FDBProc);
+    until dbresults(FDBProc) <> SUCCEED;
+    Fstatus := NO_MORE_ROWS;
+  end;
+end;
+
 function TMSSQLConnection.GetHandle: pointer;
 begin
   Result:=FDBProc;
@@ -375,6 +388,9 @@ begin
         //  Result := '0x' + StrToHex(Param.AsString)
         //else
         Result := 'N' + inherited GetAsSQLText(Param);
+      ftDateTime:
+        // ISO 8601 format is unambiguous; is not affected by the SET DATEFORMAT or SET LANGUAGE setting.
+        Result := '''' + FormatDateTime('yyyy-mm-dd"T"hh:nn:ss.zzz', Param.AsDateTime, FSQLFormatSettings) + '''';
       ftBlob, ftBytes, ftVarBytes:
         Result := '0x' + StrToHex(Param.AsString);
       else
@@ -571,8 +587,8 @@ end;
 
 procedure TMSSQLConnection.UnPrepareStatement(cursor: TSQLCursor);
 begin
-  if assigned(FDBProc) and (Fstatus <> NO_MORE_ROWS) then
-    dbcanquery(FDBProc);
+  CancelQuery;
+  cursor.FPrepared := False;
 end;
 
 procedure TMSSQLConnection.Execute(const cmd: string);
@@ -919,7 +935,8 @@ end;
 
 procedure TMSSQLConnection.FreeFldBuffers(cursor: TSQLCursor);
 begin
-  inherited FreeFldBuffers(cursor);
+  CancelQuery;
+  inherited;
 end;
 
 procedure TMSSQLConnection.UpdateIndexDefs(IndexDefs: TIndexDefs; TableName: string);

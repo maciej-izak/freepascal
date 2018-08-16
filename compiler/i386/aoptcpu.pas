@@ -150,25 +150,6 @@ begin
 end;
 
 
-function InstrReadsFlags(p: tai): boolean;
-  var
-    l: longint;
-  begin
-    InstrReadsFlags := true;
-    case p.typ of
-      ait_instruction:
-        if InsProp[taicpu(p).opcode].Ch*
-           [Ch_RCarryFlag,Ch_RParityFlag,Ch_RAuxiliaryFlag,Ch_RZeroFlag,Ch_RSignFlag,Ch_ROverflowFlag,
-            Ch_RWCarryFlag,Ch_RWParityFlag,Ch_RWAuxiliaryFlag,Ch_RWZeroFlag,Ch_RWSignFlag,Ch_RWOverflowFlag,
-            Ch_RFlags,Ch_RWFlags,Ch_RFLAGScc,Ch_All]<>[] then
-          exit;
-      ait_label:
-        exit;
-    end;
-    InstrReadsFlags := false;
-  end;
-
-
 procedure TCPUAsmOptimizer.PrePeepHoleOpts;
 var
   p,hp1: tai;
@@ -934,142 +915,8 @@ begin
                         end;
                     end;
                   A_SHL, A_SAL:
-                    begin
-                      if (taicpu(p).oper[0]^.typ = Top_Const) and
-                         (taicpu(p).oper[1]^.typ = Top_Reg) and
-                         (taicpu(p).opsize = S_L) and
-                         (taicpu(p).oper[0]^.val <= 3) then
-                    {Changes "shl const, %reg32; add const/reg, %reg32" to one lea statement}
-                        begin
-                          TmpBool1 := True; {should we check the next instruction?}
-                          TmpBool2 := False; {have we found an add/sub which could be
-                                              integrated in the lea?}
-                          reference_reset(tmpref,2,[]);
-                          TmpRef.index := taicpu(p).oper[1]^.reg;
-                          TmpRef.scalefactor := 1 shl taicpu(p).oper[0]^.val;
-                          while TmpBool1 and
-                                GetNextInstruction(p, hp1) and
-                                (tai(hp1).typ = ait_instruction) and
-                                ((((taicpu(hp1).opcode = A_ADD) or
-                                   (taicpu(hp1).opcode = A_SUB)) and
-                                  (taicpu(hp1).oper[1]^.typ = Top_Reg) and
-                                  (taicpu(hp1).oper[1]^.reg = taicpu(p).oper[1]^.reg)) or
-                                 (((taicpu(hp1).opcode = A_INC) or
-                                   (taicpu(hp1).opcode = A_DEC)) and
-                                  (taicpu(hp1).oper[0]^.typ = Top_Reg) and
-                                  (taicpu(hp1).oper[0]^.reg = taicpu(p).oper[1]^.reg))) and
-                                (not GetNextInstruction(hp1,hp2) or
-                                 not instrReadsFlags(hp2)) Do
-                            begin
-                              TmpBool1 := False;
-                              if (taicpu(hp1).oper[0]^.typ = Top_Const) then
-                                begin
-                                  TmpBool1 := True;
-                                  TmpBool2 := True;
-                                  case taicpu(hp1).opcode of
-                                    A_ADD:
-                                      inc(TmpRef.offset, longint(taicpu(hp1).oper[0]^.val));
-                                    A_SUB:
-                                      dec(TmpRef.offset, longint(taicpu(hp1).oper[0]^.val));
-                                  end;
-                                  asml.remove(hp1);
-                                  hp1.free;
-                                end
-                              else
-                                if (taicpu(hp1).oper[0]^.typ = Top_Reg) and
-                                   (((taicpu(hp1).opcode = A_ADD) and
-                                     (TmpRef.base = NR_NO)) or
-                                    (taicpu(hp1).opcode = A_INC) or
-                                    (taicpu(hp1).opcode = A_DEC)) then
-                                  begin
-                                    TmpBool1 := True;
-                                    TmpBool2 := True;
-                                    case taicpu(hp1).opcode of
-                                      A_ADD:
-                                        TmpRef.base := taicpu(hp1).oper[0]^.reg;
-                                      A_INC:
-                                        inc(TmpRef.offset);
-                                      A_DEC:
-                                        dec(TmpRef.offset);
-                                    end;
-                                    asml.remove(hp1);
-                                    hp1.free;
-                                  end;
-                            end;
-                          if TmpBool2 or
-                             ((current_settings.optimizecputype < cpu_Pentium2) and
-                             (taicpu(p).oper[0]^.val <= 3) and
-                             not(cs_opt_size in current_settings.optimizerswitches)) then
-                            begin
-                              if not(TmpBool2) and
-                                  (taicpu(p).oper[0]^.val = 1) then
-                                begin
-                                  hp1 := taicpu.Op_reg_reg(A_ADD,taicpu(p).opsize,
-                                            taicpu(p).oper[1]^.reg, taicpu(p).oper[1]^.reg)
-                                end
-                              else
-                                hp1 := taicpu.op_ref_reg(A_LEA, S_L, TmpRef,
-                                            taicpu(p).oper[1]^.reg);
-                              InsertLLItem(p.previous, p.next, hp1);
-                              p.free;
-                              p := hp1;
-                            end;
-                        end
-                      else
-                        if (current_settings.optimizecputype < cpu_Pentium2) and
-                           (taicpu(p).oper[0]^.typ = top_const) and
-                           (taicpu(p).oper[1]^.typ = top_reg) then
-                          if (taicpu(p).oper[0]^.val = 1) then
-    {changes "shl $1, %reg" to "add %reg, %reg", which is the same on a 386,
-    but faster on a 486, and Tairable in both U and V pipes on the Pentium
-    (unlike shl, which is only Tairable in the U pipe)}
-                            begin
-                              hp1 := taicpu.Op_reg_reg(A_ADD,taicpu(p).opsize,
-                                        taicpu(p).oper[1]^.reg, taicpu(p).oper[1]^.reg);
-                              InsertLLItem(p.previous, p.next, hp1);
-                              p.free;
-                              p := hp1;
-                            end
-                          else if (taicpu(p).opsize = S_L) and
-                                  (taicpu(p).oper[0]^.val<= 3) then
-                    {changes "shl $2, %reg" to "lea (,%reg,4), %reg"
-                            "shl $3, %reg" to "lea (,%reg,8), %reg}
-                              begin
-                                reference_reset(tmpref,2,[]);
-                                TmpRef.index := taicpu(p).oper[1]^.reg;
-                                TmpRef.scalefactor := 1 shl taicpu(p).oper[0]^.val;
-                                hp1 := taicpu.Op_ref_reg(A_LEA,S_L,TmpRef, taicpu(p).oper[1]^.reg);
-                                InsertLLItem(p.previous, p.next, hp1);
-                                p.free;
-                                p := hp1;
-                              end
-                    end;
-                  A_SETcc :
-                    { changes
-                        setcc (funcres)             setcc reg
-                        movb (funcres), reg      to leave/ret
-                        leave/ret                               }
-                    begin
-                      if (taicpu(p).oper[0]^.typ = top_ref) and
-                         GetNextInstruction(p, hp1) and
-                         GetNextInstruction(hp1, hp2) and
-                         IsExitCode(hp2) and
-                         (taicpu(p).oper[0]^.ref^.base = current_procinfo.FramePointer) and
-                         (taicpu(p).oper[0]^.ref^.index = NR_NO) and
-                         not(assigned(current_procinfo.procdef.funcretsym) and
-                             (taicpu(p).oper[0]^.ref^.offset < tabstractnormalvarsym(current_procinfo.procdef.funcretsym).localloc.reference.offset)) and
-                         (hp1.typ = ait_instruction) and
-                         (taicpu(hp1).opcode = A_MOV) and
-                         (taicpu(hp1).opsize = S_B) and
-                         (taicpu(hp1).oper[0]^.typ = top_ref) and
-                         RefsEqual(taicpu(hp1).oper[0]^.ref^, taicpu(p).oper[0]^.ref^) then
-                        begin
-                          taicpu(p).loadReg(0,taicpu(hp1).oper[1]^.reg);
-                          DebugMsg('Peephole optimizer SetccMovbLeaveRet2SetccLeaveRet',p);
-                          asml.remove(hp1);
-                          hp1.free;
-                        end
-                    end;
+                    if OptPass1SHLSAL(p) then
+                      Continue;
                   A_SUB:
                     if OptPass1Sub(p) then
                       continue;
@@ -1109,6 +956,9 @@ begin
                   A_MOVSS:
                     if OptPass1MOVXX(p) then
                       continue;
+                  A_SETcc:
+                   if OptPass1SETcc(p) then
+                     continue;
                 end;
             end; { if is_jmp }
           end;
@@ -1179,47 +1029,11 @@ begin
               end;
             case taicpu(p).opcode Of
               A_CALL:
-                begin
-                  { don't do this on modern CPUs, this really hurts them due to
-                    broken call/ret pairing }
-                  if (current_settings.optimizecputype < cpu_Pentium2) and
-                     not(cs_create_pic in current_settings.moduleswitches) and
-                     GetNextInstruction(p, hp1) and
-                     (hp1.typ = ait_instruction) and
-                     (taicpu(hp1).opcode = A_JMP) and
-                     ((taicpu(hp1).oper[0]^.typ=top_ref) and (taicpu(hp1).oper[0]^.ref^.refaddr=addr_full)) then
-                    begin
-                      hp2 := taicpu.Op_sym(A_PUSH,S_L,taicpu(hp1).oper[0]^.ref^.symbol);
-                      InsertLLItem(p.previous, p, hp2);
-                      taicpu(p).opcode := A_JMP;
-                      taicpu(p).is_jmp := true;
-                      asml.remove(hp1);
-                      hp1.free;
-                    end
-                  { replace
-                      call   procname
-                      ret
-                    by
-                      jmp    procname
-
-                    this should never hurt except when pic is used, not sure
-                    how to handle it then
-
-                    but do it only on level 4 because it destroys stack back traces
-                  }
-                  else if (cs_opt_level4 in current_settings.optimizerswitches) and
-                     not(cs_create_pic in current_settings.moduleswitches) and
-                     GetNextInstruction(p, hp1) and
-                     (hp1.typ = ait_instruction) and
-                     (taicpu(hp1).opcode = A_RET) and
-                     (taicpu(hp1).ops=0) then
-                    begin
-                      taicpu(p).opcode := A_JMP;
-                      taicpu(p).is_jmp := true;
-                      asml.remove(hp1);
-                      hp1.free;
-                    end;
-                end;
+                if PostPeepHoleOptCall(p) then
+                  Continue;
+              A_LEA:
+                if PostPeepholeOptLea(p) then
+                  Continue;
               A_CMP:
                 if PostPeepholeOptCmp(p) then
                   Continue;

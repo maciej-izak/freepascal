@@ -42,6 +42,7 @@ begin
     T:=P.Targets.AddUnit('ascii85.pp');
     T:=P.Targets.AddUnit('avl_tree.pp');
     T:=P.Targets.AddUnit('base64.pp');
+    T:=P.Targets.AddUnit('pascodegen.pp');
     T:=P.Targets.AddUnit('fpobserver.pp');
       T.ResourceStrings:=true;
     T:=P.Targets.AddUnit('blowfish.pp');
@@ -97,7 +98,7 @@ begin
       T.ResourceStrings:=true;
     T:=P.Targets.AddUnit('fptemplate.pp');
       T.ResourceStrings:=true;
-    T:=P.Targets.AddUnit('syncobjs.pp',AllOSes-[GO32v2,nativent]);
+    T:=P.Targets.AddUnit('syncobjs.pp',AllOSes-[go32v2,nativent,atari]);
     T:=P.Targets.AddUnit('uriparser.pp');
     T:=P.Targets.AddUnit('wformat.pp');
     T:=P.Targets.AddUnit('whtml.pp');
@@ -122,9 +123,9 @@ begin
       AddUnit('csvreadwrite');
       AddUnit('contnrs');
       end;
-    T:=P.Targets.addUnit('advancedipc.pp');
+    T:=P.Targets.addUnit('advancedipc.pp',AllOSes-[atari]);
       T.ResourceStrings:=true;
-    T:=P.Targets.addUnit('advancedsingleinstance.pas');
+    T:=P.Targets.addUnit('advancedsingleinstance.pas',AllOSes-[atari]);
       T.ResourceStrings:=true;
     // Additional sources
     P.Sources.AddSrcFiles('src/win/fclel.*', P.Directory);
@@ -151,8 +152,6 @@ begin
       T:=P.Targets.AddExampleProgram('fpdoc.dtd');
       T:=P.Targets.AddExampleProgram('fstream.pp');
       T:=P.Targets.AddExampleProgram('htdump.pp');
-      T:=P.Targets.AddExampleProgram('ipcclient.pp');
-      T:=P.Targets.AddExampleProgram('ipcserver.pp');
       T:=P.Targets.AddExampleProgram('isockcli.pp');
       T:=P.Targets.AddExampleProgram('isocksvr.pp');
       T:=P.Targets.AddExampleProgram('istream.pp');

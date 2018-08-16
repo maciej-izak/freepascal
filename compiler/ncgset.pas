@@ -257,17 +257,59 @@ implementation
          genjumps := checkgenjumps(setparts,numparts,use_small);
 
          orgopsize := def_cgsize(left.resultdef);
-         uopsize := OS_32;
-         uopdef := u32inttype;
-         if is_signed(left.resultdef) then
+{$if defined(cpu8bitalu)}
+         if (tsetdef(right.resultdef).setbase>=-128) and
+           (tsetdef(right.resultdef).setmax-tsetdef(right.resultdef).setbase+1<=256) then
            begin
-             opsize := OS_S32;
-             opdef := s32inttype;
+             uopsize := OS_8;
+             uopdef := u8inttype;
+             if is_signed(left.resultdef) then
+               begin
+                 opsize := OS_S8;
+                 opdef := s8inttype;
+               end
+             else
+               begin
+                 opsize := uopsize;
+                 opdef := uopdef;
+               end;
+           end
+{$endif defined(cpu8bitalu)}
+{$if defined(cpu8bitalu)}
+{ this should be also enabled for 16 bit CPUs, however, I have no proper testing facility for 16 bit, my
+  testing results using Dosbox are no reliable }
+{ $if defined(cpu8bitalu) or defined(cpu16bitalu)}
+         else if (tsetdef(right.resultdef).setbase>=-32768) and
+           (tsetdef(right.resultdef).setmax-tsetdef(right.resultdef).setbase+1<=65536) then
+           begin
+             uopsize := OS_16;
+             uopdef := u16inttype;
+             if is_signed(left.resultdef) then
+               begin
+                 opsize := OS_S16;
+                 opdef := s16inttype;
+               end
+             else
+               begin
+                 opsize := uopsize;
+                 opdef := uopdef;
+               end;
            end
          else
+{$endif defined(cpu8bitalu)}
            begin
-             opsize := uopsize;
-             opdef := uopdef;
+             uopsize := OS_32;
+             uopdef := u32inttype;
+             if is_signed(left.resultdef) then
+               begin
+                 opsize := OS_S32;
+                 opdef := s32inttype;
+               end
+             else
+               begin
+                 opsize := uopsize;
+                 opdef := uopdef;
+               end;
            end;
          needslabel := false;
 
@@ -990,6 +1032,7 @@ implementation
         end;
 
       begin
+        labelarray:=nil;
         SetLength(labelarray,case_count_labels(root));
         nextarrayentry:=0;
         addarrayentry(root);
@@ -1009,7 +1052,6 @@ implementation
          labelcnt : tcgint;
          max_linear_list : aint;
          max_dist : aword;
-         oldexecutionweight : longint;
       begin
          location_reset(location,LOC_VOID,OS_NO);
 
@@ -1144,12 +1186,6 @@ implementation
                 genlinearlist(labels);
            end;
 
-         { estimates the repeat of each instruction }
-         oldexecutionweight:=cg.executionweight;
-         cg.executionweight:=cg.executionweight div case_count_labels(labels);
-         if cg.executionweight<1 then
-           cg.executionweight:=1;
-
          { generate the instruction blocks }
          for i:=0 to blocks.count-1 do
            begin
@@ -1173,8 +1209,6 @@ implementation
               load_all_regvars(current_asmdata.CurrAsmList);
 {$endif OLDREGVARS}
            end;
-
-         cg.executionweight:=oldexecutionweight;
 
          current_asmdata.CurrAsmList.concat(cai_align.create(current_settings.alignment.jumpalign));
          hlcg.a_label(current_asmdata.CurrAsmList,endlabel);

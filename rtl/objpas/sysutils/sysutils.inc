@@ -288,13 +288,13 @@ end;
        ErrCode:=Code;
     end;
 
-{$if defined(win32) or defined(win64)}
+{$if defined(win32) or defined(win64) or defined (wince)}
 function EExternal.GetExceptionRecord: PExceptionRecord;
 begin
   result:=@FExceptionRecord;
 end;
 
-{$endif win32 or win64}
+{$endif win32 or win64 or wince}
 
 {$push}
 {$S-}
@@ -342,7 +342,7 @@ type
   end;
 
 const
-  exceptmap: array[0..29] of TExceptMapEntry = (
+  exceptmap: array[0..30] of TExceptMapEntry = (
     (code: 200; cls: EDivByZero;     msg: @SDivByZero),
     (code: 201; cls: ERangeError;    msg: @SRangeError),
     (code: 202; cls: EStackOverflow; msg: @SStackOverflow),
@@ -371,9 +371,10 @@ const
     (code: 229; cls: ESafecallException; msg: @SSafecallException),
     (code: 231; cls: EConvertError;  msg: @SiconvError),
     (code: 232; cls: ENoThreadSupport; msg: @SNoThreadSupport),
-    (code: 233; cls: ENoWideStringSupport; msg: @SSigQuit),
+    (code: 233; cls: ESigQuit; msg: @SSigQuit),
     (code: 234; cls: ENoWideStringSupport; msg: @SMissingWStringManager),
-    (code: 235; cls: ENoDynLibsSupport; msg: @SNoDynLibsSupport)
+    (code: 235; cls: ENoDynLibsSupport; msg: @SNoDynLibsSupport),
+    (code: 236; cls: EThreadError; msg: @SThreadError)
   );
 
 function FindExceptMapEntry(err: longint): PExceptMapEntry;
@@ -471,6 +472,13 @@ begin
 end;
 
 {$endif}
+
+procedure CheckOSError(LastError: Integer);
+begin
+  if LastError <> 0 then
+    RaiseLastOSError(LastError);
+end;
+
 Procedure AssertErrorHandler (Const Msg,FN : ShortString;LineNo:longint; TheAddr : pointer);
 Var
   S : String;
@@ -726,7 +734,7 @@ begin
 end;
 {$endif}
 
-{$if defined(win32) or defined(win64)}
+{$if defined(win32) or defined(win64) or defined(wince)}
 function GetModuleName(Module: HMODULE): string;
 var
   ResultLength, BufferLength: DWORD;
@@ -793,3 +801,15 @@ begin
   result:=ExecuteProcess(ToSingleByteFileSystemEncodedFileName(Path),ComLineA);
 end;
 {$endif}
+
+
+// generic ifthen..
+{$IFNDEF VER3_0}
+generic function IfThen<T>(val:boolean;const iftrue:T; const iffalse:T) :T; inline; overload;
+begin
+  if val then 
+    Result := ifTrue
+  else
+    Result:=ifFalse;  
+end;
+{$ENDIF}

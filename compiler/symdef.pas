@@ -110,6 +110,7 @@ interface
           function  alignment:shortint;override;
           function  is_publishable : boolean;override;
           function  needs_inittable : boolean;override;
+          function  has_non_trivial_init_child(check_parent:boolean):boolean;override;
           function  rtti_mangledname(rt:trttitype):TSymStr;override;
           function  OwnerHierarchyName: string; override;
           function  fullownerhierarchyname(skipprocparams:boolean):TSymStr;override;
@@ -346,6 +347,7 @@ interface
           { debug }
           function  needs_inittable : boolean;override;
           function  needs_separate_initrtti:boolean;override;
+          function  has_non_trivial_init_child(check_parent:boolean):boolean;override;
        end;
        trecorddefclass = class of trecorddef;
 
@@ -458,6 +460,7 @@ interface
           function  is_publishable : boolean;override;
           function  needs_inittable : boolean;override;
           function  needs_separate_initrtti : boolean;override;
+          function  has_non_trivial_init_child(check_parent:boolean):boolean;override;
           function  rtti_mangledname(rt:trttitype):TSymStr;override;
           function  vmt_mangledname : TSymStr;
           function  vmt_def: trecorddef;
@@ -517,6 +520,7 @@ interface
           function elecount : asizeuint;
           constructor create_from_pointer(def:tpointerdef);virtual;
           constructor create(l,h:asizeint;def:tdef);virtual;
+          constructor create_openarray;virtual;
           class function getreusable(def: tdef; elems: asizeint): tarraydef; virtual;
           { same as above, but in case the def must never be freed after the
             current module has been compiled -- even if the def was not written
@@ -633,6 +637,8 @@ interface
           function stack_tainting_parameter(side: tcallercallee): boolean;
           function is_pushleftright: boolean;virtual;
           function address_type:tdef;virtual;
+          { address type, generated for ofs() }
+          function ofs_address_type:tdef;virtual;
           procedure declared_far;virtual;
           procedure declared_near;virtual;
        private
@@ -739,7 +745,7 @@ interface
          function Getforwarddef: boolean;
          procedure Setforwarddef(AValue: boolean);
          function Getinterfacedef: boolean;
-         procedure Setinterfacedef(AValue: boolean);
+         procedure Setinterfacedef(AValue: boolean);virtual;
          function Gethasforward: boolean;
          procedure Sethasforward(AValue: boolean);
          function GetIsEmpty: boolean;
@@ -1472,10 +1478,13 @@ implementation
           last one in the list }
         for i:=0 to st.symlist.count-1 do
           begin
-            if not (st.symlist[i] is ttypesym) then
-              continue;
-            def:=ttypesym(st.SymList[i]).typedef;
             sym:=tsym(st.symlist[i]);
+            if not (sym.typ in [typesym,procsym]) then
+              continue;
+            if sym.typ=typesym then
+              def:=ttypesym(st.SymList[i]).typedef
+            else
+              def:=nil;
             if is_objectpascal_helper(def) then
               begin
                 s:=generate_objectpascal_helper_key(tobjectdef(def).extendeddef);
@@ -1493,7 +1502,8 @@ implementation
                 if addgenerics then
                   add_generic_dummysym(sym);
                 { add nested helpers as well }
-                if (def.typ in [recorddef,objectdef]) and
+                if assigned(def) and
+                    (def.typ in [recorddef,objectdef]) and
                     (sto_has_helper in tabstractrecorddef(def).symtable.tableoptions) then
                   add_helpers_and_generics(tabstractrecorddef(def).symtable,false);
               end;
@@ -2092,6 +2102,12 @@ implementation
     function tstoreddef.needs_inittable : boolean;
       begin
          needs_inittable:=false;
+      end;
+
+
+    function tstoreddef.has_non_trivial_init_child(check_parent:boolean):boolean;
+      begin
+        result:=false;
       end;
 
 
@@ -3616,6 +3632,12 @@ implementation
       end;
 
 
+    constructor tarraydef.create_openarray;
+      begin
+        self.create(0,-1,sizesinttype)
+      end;
+
+
     class function tarraydef.getreusable(def: tdef; elems: asizeint): tarraydef;
       var
         res: PHashSetItem;
@@ -3650,6 +3672,7 @@ implementation
         result:=tarraydef(res^.Data);
       end;
 
+
     class function tarraydef.getreusable_no_free(def: tdef; elems: asizeint): tarraydef;
       begin
         result:=getreusable(def,elems);
@@ -3664,6 +3687,7 @@ implementation
         symtable:=nil;
         inherited;
       end;
+
 
     constructor tarraydef.create_from_pointer(def:tpointerdef);
       begin
@@ -4531,6 +4555,12 @@ implementation
       end;
 
 
+    function trecorddef.has_non_trivial_init_child(check_parent:boolean):boolean;
+      begin
+        result:=trecordsymtable(symtable).has_non_trivial_init;
+      end;
+
+
     procedure trecorddef.buildderef;
       begin
          inherited buildderef;
@@ -5213,6 +5243,12 @@ implementation
       end;
 
 
+    function tabstractprocdef.ofs_address_type:tdef;
+      begin
+        result:=address_type;
+      end;
+
+
     procedure tabstractprocdef.declared_far;
       begin
         Message1(parser_w_proc_directive_ignored,'FAR');
@@ -5835,6 +5871,8 @@ implementation
         else if po_is_block in procoptions then
           s:=s+' is block';
         s:=s+';';
+        if po_far in procoptions then
+          s:=s+' far;';
         { forced calling convention? }
         if (po_hascallingconvention in procoptions) then
           s:=s+' '+ProcCallOptionStr[proccalloption]+';';
@@ -6521,6 +6559,8 @@ implementation
            s := s+' of object';
          if is_nested_pd(self) then
            s := s+' is nested';
+         if po_far in procoptions then
+           s := s+';far';
          GetTypeName := s+';'+ProcCallOptionStr[proccalloption]+'>';
       end;
 
@@ -7222,6 +7262,19 @@ implementation
       begin
         result:=not (objecttype in [odt_interfacecom,odt_interfacecorba,odt_dispinterface]);
       end;
+
+
+    function tobjectdef.has_non_trivial_init_child(check_parent:boolean):boolean;
+      begin
+        if objecttype in [odt_class,odt_object] then
+          begin
+            result:=tobjectsymtable(symtable).has_non_trivial_init or
+                      (check_parent and assigned(childof) and childof.has_non_trivial_init_child(true));
+          end
+        else
+          result:=false;
+      end;
+
 
     function tobjectdef.rtti_mangledname(rt: trttitype): TSymStr;
       begin

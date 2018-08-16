@@ -534,6 +534,8 @@ begin
     Result:=nil
   else if VarIsArray(FValue) then
     Result:=FValue
+  else if VarIsStr(FValue) then
+    Result:=BytesOf(VarToStr(FValue))
   else
     // todo: conversion from other variant types to TBytes
     Result:=FValue;
@@ -593,7 +595,7 @@ var P: Pointer;
 begin
   If IsNull then
     Result:=''
-  else if (FDataType in [ftBytes, ftVarBytes]) and VarIsArray(FValue) then
+  else if (FDataType in [ftBytes, ftVarBytes, ftBlob]) and VarIsArray(FValue) then
   begin
     SetLength(Result, (VarArrayHighBound(FValue, 1) + 1) div SizeOf(Char));
     P := VarArrayLock(FValue);
@@ -840,6 +842,7 @@ Var
   VT : Integer;
 
 begin
+  if FDataType=AValue then Exit;
   FDataType:=AValue;
   VT:=FieldTypetoVariantMap[AValue];
   If (VT=varError) then
@@ -880,7 +883,7 @@ begin
     AssignParam(TParam(Source))
   else if (Source is TField) then
     AssignField(TField(Source))
-  else if (source is TStrings) then
+  else if (Source is TStrings) then
     AsMemo:=TStrings(Source).Text
   else
     inherited Assign(Source);
@@ -1113,7 +1116,6 @@ begin
     DatabaseErrorFmt(SBadParamFieldType,[Name],DataSet);
   end;
 
-
 end;
 
 Procedure TParam.LoadFromFile(const FileName: string; BlobType: TBlobType);
@@ -1149,11 +1151,11 @@ end;
 Procedure TParam.SetBlobData(Buffer: Pointer; ASize: Integer);
 
 Var
-  Temp : String;
+  Temp : TBlobData;
 
 begin
   SetLength(Temp,ASize);
-  Move(Buffer^,Temp[1],ASize);
+  Move(Buffer^,Temp[0],ASize);
   AsBlob:=Temp;
 end;
 

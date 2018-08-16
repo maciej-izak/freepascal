@@ -7,16 +7,18 @@
   {$define USE_UNICODEDUCET_UNIT}
   {$define USE_CPALL_UNIT}
 {$endif}
+{$ifndef USE_INTERNAL_UNICODE}
 {$ifdef unix}
 uses
   {$ifdef darwin}iosxwstr{$else}cwstring{$endif};
-{$else}
+{$endif}
+{$else def USE_INTERNAL_UNICODE}
 uses
- {$ifdef USE_FPWIDESTRING_UNIT}
-  fpwidestring,
- {$endif}
  {$ifdef USE_UNICODEDUCET_UNIT}
   unicodeducet,
+ {$endif}
+ {$ifdef USE_FPWIDESTRING_UNIT}
+  fpwidestring,
  {$endif}
  {$ifdef USE_CPALL_UNIT}
   cpall,
@@ -25,7 +27,7 @@ uses
    but simpifies the conditional construction
    for fpwidestring and unicodeducet use }
   strings;
-{$endif}
+{$endif def USE_INTERNAL_UNICODE}
 
 type
   tcpstr1 = type AnsiString(1253);

@@ -73,7 +73,6 @@ UNITPREFIX=rtl
 
 ifeq ($(findstring 1.0.,$(FPC_VERSION)),)
 SYSTEMUNIT=system
-override FPCOPT+=-dNOMOUSE
 else
 SYSTEMUNIT="Error: Darwin is not supported for 1.0"
 endif
@@ -124,7 +123,7 @@ SYSDEPS=$(SYSINCDEPS) $(SYSCPUDEPS)
 #
 
 $(SYSTEMUNIT)$(PPUEXT) : $(BSDINC)/$(SYSTEMUNIT).pp $(SYSDEPS)
-        $(COMPILER) -Us -Sg $(BSDINC)/$(SYSTEMUNIT).pp
+        $(COMPILER) $(FPC_SYSTEM_OPT) -Us -Sg $(BSDINC)/$(SYSTEMUNIT).pp
 
 sysinit$(PPUEXT) : sysinit.pas $(SYSTEMUNIT)$(PPUEXT)
 	$(COMPILER) $<

@@ -54,7 +54,8 @@ interface
          [m_delphi,m_class,m_objpas,m_result,m_string_pchar,
           m_pointer_2_procedure,m_autoderef,m_tp_procvar,m_initfinal,m_default_ansistring,
           m_out,m_default_para,m_duplicate_names,m_hintdirective,
-          m_property,m_default_inline,m_except,m_advanced_records];
+          m_property,m_default_inline,m_except,m_advanced_records,
+          m_array_operators];
        delphiunicodemodeswitches = delphimodeswitches + [m_systemcodepage,m_default_unicodestring];
        fpcmodeswitches =
          [m_fpc,m_string_pchar,m_nested_comment,m_repeat_forward,
@@ -213,6 +214,15 @@ interface
         property items[I:longint]:TLinkRec read getlinkrec; default;
       end;
 
+      tpendingstateflag = (
+        psf_alignment_changed,
+        psf_verbosity_full_switched,
+        psf_local_switches_changed,
+        psf_packenum_changed,
+        psf_packrecords_changed,
+        psf_setalloc_changed
+      );
+      tpendingstateflags = set of tpendingstateflag;
 
       tpendingstate = record
         nextverbositystr : shortstring;
@@ -220,8 +230,11 @@ interface
         nextverbosityfullswitch: longint;
         nextcallingstr : shortstring;
         nextmessagerecord : pmessagestaterecord;
-        verbosityfullswitched,
-        localswitcheschanged : boolean;
+        nextalignment : talignmentinfo;
+        nextpackenum : shortint;
+        nextpackrecords : shortint;
+        nextsetalloc : shortint;
+        flags : tpendingstateflags;
       end;
 
 
@@ -278,6 +291,8 @@ interface
        includesearchpath,
        frameworksearchpath  : TSearchPathList;
        packagesearchpath     : TSearchPathList;
+       { list of default namespaces }
+       namespacelist : TCmdStrList;
        { contains tpackageentry entries }
        packagelist : TFPHashList;
        autoloadunits      : string;
@@ -407,7 +422,11 @@ interface
         optimizerswitches : [];
         genwpoptimizerswitches : [];
         dowpoptimizerswitches : [];
+{$ifdef i8086}
+        debugswitches : [ds_dwarf_sets,ds_dwarf_omf_linnum];
+{$else i8086}
         debugswitches : [ds_dwarf_sets];
+{$endif i8086}
 
         setalloc : 0;
         packenum : 4;
@@ -537,10 +556,12 @@ interface
 
     var
       starttime  : real;
+      startsystime : TSystemTime;
 
     function getdatestr:string;
     function gettimestr:string;
     function filetimestring( t : longint) : string;
+    function getrealtime(const st: TSystemTime) : real;
     function getrealtime : real;
 
     procedure DefaultReplacements(var s:ansistring);
@@ -823,13 +844,17 @@ implementation
        Result := L0(Year)+'/'+L0(Month)+'/'+L0(Day)+' '+L0(Hour)+':'+L0(min)+':'+L0(sec);
      end;
 
+   function getrealtime(const st: TSystemTime) : real;
+     begin
+       result := st.Hour*3600.0 + st.Minute*60.0 + st.Second + st.MilliSecond/1000.0;
+     end;
 
    function getrealtime : real;
      var
        st:TSystemTime;
      begin
        GetLocalTime(st);
-       result:=st.Hour*3600.0+st.Minute*60.0+st.Second+st.MilliSecond/1000.0;
+       result:=getrealtime(st);
      end;
 
 {****************************************************************************
@@ -1110,7 +1135,8 @@ implementation
          'SYSV_ABI_DEFAULT',
          'SYSV_ABI_CDECL',
          'MS_ABI_DEFAULT',
-         'MS_ABI_CDECL'
+         'MS_ABI_CDECL',
+         'VECTORCALL'
         );
       var
         t  : tproccalloption;
@@ -1483,6 +1509,7 @@ implementation
        LinkLibraryAliases.Free;
        LinkLibraryOrder.Free;
        packagesearchpath.Free;
+       namespacelist.Free;
      end;
 
    procedure InitGlobals;
@@ -1519,6 +1546,7 @@ implementation
         objectsearchpath:=TSearchPathList.Create;
         frameworksearchpath:=TSearchPathList.Create;
         packagesearchpath:=TSearchPathList.Create;
+        namespacelist:=TCmdStrList.Create;
 
         { Def file }
         usewindowapi:=false;

@@ -374,7 +374,7 @@ implementation
                     setclassdef:=java_juenumset;
                   end;
                 left:=caddrnode.create_internal(left);
-                include(left.flags,nf_typedaddr);
+                include(taddrnode(left).addrnodeflags,anf_typedaddr);
                 inserttypeconv_explicit(left,setclassdef);
                 result:=ccallnode.createinternmethod(
                   cloadvmtaddrnode.create(ctypenode.create(setclassdef)),
@@ -831,7 +831,7 @@ implementation
         { store the data in the newly created array }
         basereg:=hlcg.getaddressregister(current_asmdata.CurrAsmList,java_jlobject);
         thlcgjvm(hlcg).a_load_stack_reg(current_asmdata.CurrAsmList,java_jlobject,basereg);
-        reference_reset_base(arrayref,basereg,0,4,[]);
+        reference_reset_base(arrayref,basereg,0,ctempposinvalid,4,[]);
         arrayref.arrayreftype:=art_indexconst;
         arrayref.indexoffset:=0;
         hlcg.a_load_loc_ref(current_asmdata.CurrAsmList,left.resultdef,left.resultdef,left.location,arrayref);
@@ -1617,14 +1617,14 @@ implementation
   constructor tjvmasnode.ppuload(t: tnodetype; ppufile: tcompilerppufile);
     begin
       inherited;
-      classreftypecast:=boolean(ppufile.getbyte);
+      classreftypecast:=ppufile.getboolean;
     end;
 
 
   procedure tjvmasnode.ppuwrite(ppufile: tcompilerppufile);
     begin
       inherited ppuwrite(ppufile);
-      ppufile.putbyte(byte(classreftypecast));
+      ppufile.putboolean(classreftypecast);
     end;
 
 

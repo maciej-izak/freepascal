@@ -33,10 +33,25 @@ interface
        ;
 
     type
+       ttypeconvnodeflag = (
+          { the typeconvnode is a proc_2_procvar, generated internally by an
+            address operator, such as @proc, Addr(proc), Ofs(proc) or Seg(proc),
+            which is then going to be converted to a void pointer. Why does it
+            matter? Because, on i8086 far code memory models you're allowed to
+            take the address of a _near_ procedure as a void pointer (which the
+            @ operator does in TP mode), but not as a procvar (in that case the
+            procedure must be far). }
+          tcnf_proc_2_procvar_2_voidpointer,
+          { proc_2_procvar, generated internally by Ofs() }
+          tcnf_proc_2_procvar_get_offset_only
+       );
+       ttypeconvnodeflags = set of ttypeconvnodeflag;
+
        ttypeconvnode = class(tunarynode)
           totypedef   : tdef;
           totypedefderef : tderef;
           convtype : tconverttype;
+          convnodeflags : ttypeconvnodeflags;
           warn_pointer_to_signed,
           assignment_side: boolean;
           constructor create(node : tnode;def:tdef);virtual;
@@ -566,6 +581,8 @@ implementation
                                      inserttypeconv(p2,u8inttype);
                                    end;
 
+                                if tordconstnode(p2).value.svalue>tordconstnode(p3).value.svalue then
+                                  CGMessagePos(p2.fileinfo,type_w_empty_constant_range_set);
                                 for l:=tordconstnode(p2).value.svalue to tordconstnode(p3).value.svalue do
                                   do_set(l);
                                 p2.free;
@@ -865,6 +882,40 @@ implementation
           end;
       end;
 
+
+    { similar as above, but for assigning @classtype.method to a
+      procvar of object. pexpr.do_proc_call() stores the symtable of classtype
+      in the loadnode so we can retrieve it here (rather than the symtable in
+      which method was found, which may be a parent class) }
+    function maybe_classmethod_to_methodprocvar(var fromnode: tnode; todef: tdef): boolean;
+      var
+        hp: tnode;
+      begin
+        result:=false;
+        if not(m_tp_procvar in current_settings.modeswitches) and
+           (todef.typ=procvardef) and
+           is_methodpointer(tprocvardef(todef)) and
+           (fromnode.nodetype=typeconvn) and
+           (ttypeconvnode(fromnode).convtype=tc_proc_2_procvar) and
+           is_methodpointer(fromnode.resultdef) and
+           (po_classmethod in tprocvardef(fromnode.resultdef).procoptions) and
+           not(po_staticmethod in tprocvardef(fromnode.resultdef).procoptions) and
+           (proc_to_procvar_equal(tprocdef(ttypeconvnode(fromnode).left.resultdef),tprocvardef(todef),false)>=te_convert_l1) then
+          begin
+            hp:=fromnode;
+            fromnode:=ttypeconvnode(fromnode).left;
+            if (fromnode.nodetype=loadn) and
+               not assigned(tloadnode(fromnode).left) then
+              tloadnode(fromnode).set_mp(cloadvmtaddrnode.create(ctypenode.create(tdef(tloadnode(fromnode).symtable.defowner))));
+            fromnode:=ctypeconvnode.create_proc_to_procvar(fromnode);
+            ttypeconvnode(fromnode).totypedef:=todef;
+            typecheckpass(fromnode);
+            ttypeconvnode(hp).left:=nil;
+            hp.free;
+            result:=true;
+          end;
+      end;
+
 {*****************************************************************************
                            TTYPECONVNODE
 *****************************************************************************}
@@ -875,6 +926,7 @@ implementation
       begin
          inherited create(typeconvn,node);
          convtype:=tc_none;
+         convnodeflags:=[];
          totypedef:=def;
          if def=nil then
           internalerror(200103281);
@@ -932,6 +984,7 @@ implementation
         inherited ppuload(t,ppufile);
         ppufile.getderef(totypedefderef);
         convtype:=tconverttype(ppufile.getbyte);
+        ppufile.getsmallset(convnodeflags);
       end;
 
 
@@ -940,6 +993,7 @@ implementation
         inherited ppuwrite(ppufile);
         ppufile.putderef(totypedefderef);
         ppufile.putbyte(byte(convtype));
+        ppufile.putsmallset(convnodeflags);
       end;
 
 
@@ -963,60 +1017,31 @@ implementation
       begin
          n:=ttypeconvnode(inherited dogetcopy);
          n.convtype:=convtype;
+         n.convnodeflags:=convnodeflags;
          n.totypedef:=totypedef;
          n.assignment_side:=assignment_side;
          dogetcopy:=n;
       end;
 
     procedure ttypeconvnode.printnodeinfo(var t : text);
-      const
-        convtyp2str : array[tconverttype] of pchar = (
-          'tc_none',
-          'tc_equal',
-          'tc_not_possible',
-          'tc_string_2_string',
-          'tc_char_2_string',
-          'tc_char_2_chararray',
-          'tc_pchar_2_string',
-          'tc_cchar_2_pchar',
-          'tc_cstring_2_pchar',
-          'tc_cstring_2_int',
-          'tc_ansistring_2_pchar',
-          'tc_string_2_chararray',
-          'tc_chararray_2_string',
-          'tc_array_2_pointer',
-          'tc_pointer_2_array',
-          'tc_int_2_int',
-          'tc_int_2_bool',
-          'tc_bool_2_bool',
-          'tc_bool_2_int',
-          'tc_real_2_real',
-          'tc_int_2_real',
-          'tc_real_2_currency',
-          'tc_proc_2_procvar',
-          'tc_nil_2_methodprocvar',
-          'tc_arrayconstructor_2_set',
-          'tc_set_2_set',
-          'tc_cord_2_pointer',
-          'tc_intf_2_string',
-          'tc_intf_2_guid',
-          'tc_class_2_intf',
-          'tc_char_2_char',
-          'tc_dynarray_2_openarray',
-          'tc_pwchar_2_string',
-          'tc_variant_2_dynarray',
-          'tc_dynarray_2_variant',
-          'tc_variant_2_enum',
-          'tc_enum_2_variant',
-          'tc_interface_2_variant',
-          'tc_variant_2_interface',
-          'tc_array_2_dynarray',
-          'tc_elem_2_openarray',
-          'tc_arrayconstructor_2_dynarray'
-        );
+      var
+        first: Boolean;
+        i: ttypeconvnodeflag;
       begin
         inherited printnodeinfo(t);
-        write(t,', convtype = ',strpas(convtyp2str[convtype]));
+        write(t,', convtype = ',convtype);
+        write(t,', convnodeflags = [');
+        first:=true;
+        for i:=low(ttypeconvnodeflag) to high(ttypeconvnodeflag) do
+          if i in convnodeflags then
+            begin
+              if not first then
+                write(t,',')
+              else
+                first:=false;
+              write(t,i);
+            end;
+        write(t,']');
       end;
 
 
@@ -1186,6 +1211,7 @@ implementation
         exprtype : tdef;
       begin
          result:=nil;
+         sa:='';
          if (left.nodetype=ordconstn) and
             ((tstringdef(resultdef).stringtype in [st_widestring,st_unicodestring,st_ansistring]) or
              (torddef(left.resultdef).ordtype in [uchar,uwidechar])) then
@@ -1600,11 +1626,20 @@ implementation
          result:=nil;
          if left.nodetype<>stringconstn then
            internalerror(200510012);
-         if tstringconstnode(left).len=4 then
+         if (m_mac in current_settings.modeswitches) and
+            is_integer(resultdef) and
+            (tstringconstnode(left).cst_type=cst_conststring) and
+            (tstringconstnode(left).len=4) then
            begin
              pb:=pbyte(tstringconstnode(left).value_str);
              fcc:=(pb[0] shl 24) or (pb[1] shl 16) or (pb[2] shl 8) or pb[3];
              result:=cordconstnode.create(fcc,u32inttype,false);
+           end
+         else if is_widechar(resultdef) and
+            (tstringconstnode(left).cst_type=cst_unicodestring) and
+            (pcompilerwidestring(tstringconstnode(left).value_str)^.len=1) then
+           begin
+             result:=cordconstnode.create(pcompilerwidestring(tstringconstnode(left).value_str)^.data[0], resultdef, false);
            end
          else
            CGMessage2(type_e_illegal_type_conversion,left.resultdef.typename,resultdef.typename);
@@ -1704,6 +1739,8 @@ implementation
 
     function ttypeconvnode.typecheck_dynarray_to_openarray : tnode;
       begin
+        if (actualtargetnode(@left)^.nodetype in [pointerconstn,niln]) then
+          CGMessage(type_e_no_addr_of_constant);
         { a dynamic array is a pointer to an array, so to convert it to }
         { an open array, we have to dereference it (JM)                 }
         result := ctypeconvnode.create_internal(left,cpointerdef.getreusable(resultdef));
@@ -2330,8 +2367,16 @@ implementation
         if (nf_absolute in flags) then
           begin
             convtype:=tc_equal;
-            if (tstoreddef(resultdef).is_intregable<>tstoreddef(left.resultdef).is_intregable) or
-            (tstoreddef(resultdef).is_fpuregable<>tstoreddef(left.resultdef).is_fpuregable) then
+            { we need to check regability only if something is really regable }
+            if ((tstoreddef(left.resultdef).is_intregable) or
+               (tstoreddef(resultdef).is_fpuregable)) and
+               (
+               (tstoreddef(resultdef).is_intregable<>tstoreddef(left.resultdef).is_intregable) or
+               (tstoreddef(resultdef).is_fpuregable<>tstoreddef(left.resultdef).is_fpuregable) or
+               { like in pdecvar.read_absolute(): if the size changes, the
+                 register size would also have to change (but second_nothing
+                 does not handle this) }
+               (tstoreddef(resultdef).size<>tstoreddef(left.resultdef).size)) then
               make_not_regable(left,[ra_addr_regable]);
             exit;
           end;
@@ -2395,14 +2440,20 @@ implementation
 {$ifdef llvm}
                      { we still may have to insert a type conversion at the
                        llvm level }
-                     if left.resultdef<>resultdef then
+                     if (left.resultdef<>resultdef) and
+                        { if unspecialised generic -> we won't generate any code
+                          for this, and keeping the type conversion node will
+                          cause valid_for_assign to fail because the typecast will be from/to something of 0
+                          bytes to/from something with a non-zero size }
+                        not is_typeparam(left.resultdef) and
+                        not is_typeparam(resultdef) then
                        result:=nil
                      else
 {$endif llvm}
                        begin
                          left.resultdef:=resultdef;
                          if (nf_explicit in flags) and (left.nodetype = addrn) then
-                           include(left.flags, nf_typedaddr);
+                           include(taddrnode(left).addrnodeflags,anf_typedaddr);
                          result:=left;
                          left:=nil;
                        end;
@@ -2479,7 +2530,8 @@ implementation
                        result:=typecheck_call_helper(convtype);
                      exit;
                    end
-                  else if maybe_global_proc_to_nested(left,resultdef) then
+                  else if maybe_global_proc_to_nested(left,resultdef) or
+                          maybe_classmethod_to_methodprocvar(left,resultdef) then
                     begin
                       result:=left;
                       left:=nil;
@@ -2861,7 +2913,17 @@ implementation
                 resultdef:=left.resultdef;
                 left:=nil;
                 exit;
-              end;
+              end
+            else if
+              (convtype<>tc_cstring_2_pchar)  and
+              is_dynamicstring(left.resultdef) and
+              (tstringconstnode(left).len=0) and
+              (resultdef.typ=pointerdef) and
+              cstringconstnode.emptydynstrnil then
+            begin
+              result:=cnilnode.create;
+              exit;
+            end;
 
           realconstn :
             begin
@@ -2913,7 +2975,9 @@ implementation
                  methodpointer. The typeconv of the methodpointer will then
                  take care of updateing size of niln to OS_64 }
                if not((resultdef.typ=procvardef) and
-                      not(tprocvardef(resultdef).is_addressonly)) then
+                      not(tprocvardef(resultdef).is_addressonly)) and
+                  { converting (dynamic array) nil to a an open array is not allowed }
+                  not is_open_array(resultdef) then
                  begin
                    left.resultdef:=resultdef;
                    if ([nf_explicit,nf_internal] * flags <> []) then
@@ -3917,6 +3981,7 @@ implementation
         docompare :=
           inherited docompare(p) and
           (convtype = ttypeconvnode(p).convtype) and
+          (convnodeflags = ttypeconvnode(p).convnodeflags) and
           equal_defs(totypedef,ttypeconvnode(p).totypedef);
       end;
 
@@ -4259,6 +4324,8 @@ implementation
     function tisnode.pass_1 : tnode;
       var
         procname: string;
+        statement : tstatementnode;
+        tempnode : ttempcreatenode;
       begin
         result:=nil;
         { Passing a class type to an "is" expression cannot result in a class
@@ -4268,9 +4335,42 @@ implementation
 
         if is_class(left.resultdef) and
            (right.resultdef.typ=classrefdef) then
-          result := ccallnode.createinternres('fpc_do_is',
-            ccallparanode.create(left,ccallparanode.create(right,nil)),
-            resultdef)
+          begin
+            if (right.nodetype=loadvmtaddrn) and
+              (tloadvmtaddrnode(right).left.nodetype=typen) and
+              (oo_is_sealed in tobjectdef(tloadvmtaddrnode(right).left.resultdef).objectoptions) and
+              equal_defs(left.resultdef,tclassrefdef(right.resultdef).pointeddef) then
+              begin
+                if might_have_sideeffects(left) or
+                  (node_complexity(left)>2) then
+                  begin
+                    result:=internalstatements(statement);
+                    tempnode:=ctempcreatenode.create(left.resultdef,left.resultdef.size,tt_persistent,true);
+                    addstatement(statement,tempnode);
+                    addstatement(statement,cassignmentnode.create_internal(ctemprefnode.create(tempnode),left));
+                    addstatement(statement,caddnode.create_internal(andn,
+                      caddnode.create_internal(unequaln,ctemprefnode.create(tempnode),cnilnode.create),
+                      caddnode.create_internal(equaln,cloadvmtaddrnode.create(ctemprefnode.create(tempnode)),right)
+                      )
+                    );
+
+                    left:=nil;
+                    right:=nil;
+                  end
+                else
+                  begin
+                    result:=caddnode.create_internal(andn,
+                      caddnode.create_internal(unequaln,left.getcopy,cnilnode.create),
+                      caddnode.create_internal(equaln,cloadvmtaddrnode.create(left.getcopy),right)
+                      );
+                    right:=nil;
+                  end;
+              end
+            else
+              result := ccallnode.createinternres('fpc_do_is',
+                ccallparanode.create(left,ccallparanode.create(right,nil)),
+                resultdef);
+          end
         else
           begin
             if is_class(left.resultdef) then

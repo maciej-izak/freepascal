@@ -32,7 +32,7 @@ interface
 
     type
        tmmxtype = (mmxno,mmxu8bit,mmxs8bit,mmxu16bit,mmxs16bit,
-                   mmxu32bit,mmxs32bit,mmxfixed16,mmxsingle);
+                   mmxu32bit,mmxs32bit,mmxfixed16,mmxsingle,mmxs64bit,mmxu64bit);
 
 
 {*****************************************************************************
@@ -205,6 +205,9 @@ interface
     {# Returns true if p is a short string type }
     function is_shortstring(p : tdef) : boolean;
 
+    {# Returns true if p is any pointer def }
+    function is_pointer(p : tdef) : boolean;
+
     {# Returns true if p is a pchar def }
     function is_pchar(p : tdef) : boolean;
 
@@ -289,6 +292,9 @@ interface
       the high-range.
     }
     procedure getrange(def : tdef;out l, h : TConstExprInt);
+
+    { Returns the range type of an ordinal type in the sense of ISO-10206 }
+    function get_iso_range_type(def: tdef): tdef;
 
     { type being a vector? }
     function is_vector(p : tdef) : boolean;
@@ -853,6 +859,12 @@ implementation
                                 is_widechar(tarraydef(p).elementdef);
       end;
 
+    { true if p is any pointer def }
+    function is_pointer(p : tdef) : boolean;
+      begin
+        is_pointer:=(p.typ=pointerdef);
+      end;
+
     { true if p is a pchar def }
     function is_pchar(p : tdef) : boolean;
       begin
@@ -1114,6 +1126,64 @@ implementation
       end;
 
 
+    { The range-type of an ordinal-type that is a subrange-type shall be the host-type (see 6.4.2.4) of the subrange-type.
+      The range-type of an ordinal-type that is not a subrange-type shall be the ordinal-type.
+
+      The subrange-bounds shall be of compatible ordinal-types, and the range-type (see 6.4.2.1) of the ordinal-types shall
+      be designated the host-type of the subrange-type. }
+    function get_iso_range_type(def: tdef): tdef;
+      begin
+        result:=nil;
+        case def.typ of
+           orddef:
+             begin
+               if is_integer(def) then
+                 begin
+                   if (torddef(def).low>=torddef(sinttype).low) and
+                      (torddef(def).high<=torddef(sinttype).high) then
+                     result:=sinttype
+                   else
+                     range_to_type(torddef(def).low,torddef(def).high,result);
+                 end
+               else case torddef(def).ordtype of
+                 pasbool8:
+                   result:=pasbool8type;
+                 pasbool16:
+                   result:=pasbool16type;
+                 pasbool32:
+                   result:=pasbool32type;
+                 pasbool64:
+                   result:=pasbool64type;
+                 bool8bit:
+                   result:=bool8type;
+                 bool16bit:
+                   result:=bool16type;
+                 bool32bit:
+                   result:=bool32type;
+                 bool64bit:
+                   result:=bool64type;
+                 uchar:
+                   result:=cansichartype;
+                 uwidechar:
+                   result:=cwidechartype;
+                 scurrency:
+                   result:=s64currencytype;
+                 else
+                   internalerror(2018010901);
+               end;
+             end;
+           enumdef:
+             begin
+               while assigned(tenumdef(def).basedef) do
+                 def:=tenumdef(def).basedef;
+               result:=def;
+             end
+           else
+             internalerror(2018010701);
+        end;
+      end;
+
+
     function is_vector(p : tdef) : boolean;
       begin
         result:=(p.typ=arraydef) and
@@ -1268,7 +1338,24 @@ implementation
           arraydef :
             begin
               if is_dynamic_array(def) or not is_special_array(def) then
-                result := int_cgsize(def.size)
+                begin
+                  if (cs_support_vectors in current_settings.globalswitches) and is_vector(def) and ((TArrayDef(def).elementdef.typ = floatdef) and not (cs_fp_emulation in current_settings.moduleswitches)) then
+                    begin
+                      { Determine if, based on the floating-point type and the size
+                        of the array, if it can be made into a vector }
+                      case TFloatDef(def).floattype of
+                        s32real:
+                          result := float_array_cgsize(def.size);
+                        s64real:
+                          result := double_array_cgsize(def.size);
+                        else
+                          { If not, fall back }
+                          result := int_cgsize(def.size);
+                      end;
+                    end
+                  else
+                    result := int_cgsize(def.size);
+                end
               else
                 result := OS_NO;
             end;
@@ -1309,25 +1396,53 @@ implementation
         case def.typ of
           arraydef:
             begin
-              if tarraydef(def).elementdef.typ in [orddef,floatdef] then
-                begin
-                  { this is not correct, OS_MX normally mean that the vector
-                    contains elements of size X. However, vectors themselves
-                    can also have different sizes (e.g. a vector of 2 singles on
-                    SSE) and the total size is currently more important }
-                  case def.size of
-                    1: result:=OS_M8;
-                    2: result:=OS_M16;
-                    4: result:=OS_M32;
-                    8: result:=OS_M64;
-                    16: result:=OS_M128;
-                    32: result:=OS_M256;
-                    else
-                      internalerror(2013060103);
+              case tarraydef(def).elementdef.typ of
+                orddef:
+                  begin
+                    { this is not correct, OS_MX normally mean that the vector
+                      contains elements of size X. However, vectors themselves
+                      can also have different sizes (e.g. a vector of 2 singles on
+                      SSE) and the total size is currently more important }
+                    case def.size of
+                      1: result:=OS_M8;
+                      2: result:=OS_M16;
+                      4: result:=OS_M32;
+                      8: result:=OS_M64;
+                      16: result:=OS_M128;
+                      32: result:=OS_M256;
+                      64: result:=OS_M512;
+                      else
+                        internalerror(2013060103);
+                    end;
                   end;
-                end
-              else
-                result:=def_cgsize(def);
+                floatdef:
+                  begin
+                    case TFloatDef(tarraydef(def).elementdef).floattype of
+                      s32real:
+                        case def.size of
+                          4:  result:=OS_MF32;
+                          16: result:=OS_MF128;
+                          32: result:=OS_MF256;
+                          64: result:=OS_MF512;
+                          else
+                            internalerror(2017121400);
+                        end;
+                      s64real:
+                        case def.size of
+                          8:  result:=OS_MD64;
+                          16: result:=OS_MD128;
+                          32: result:=OS_MD256;
+                          64: result:=OS_MD512;
+                          else
+                            internalerror(2017121401);
+                        end;
+                      else
+                        internalerror(2017121402);
+                    end;
+                  end;
+                else
+                  result:=def_cgsize(def);
+              end;
             end
           else
             result:=def_cgsize(def);

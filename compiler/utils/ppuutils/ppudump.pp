@@ -180,7 +180,8 @@ const
   { 91 }  'AROS-arm',
   { 92 }  'WebAssembly-wasm',
   { 93 }  'Linux-sparc64',
-  { 94 }  'Solaris-sparc64'
+  { 94 }  'Solaris-sparc64',
+  { 95 }  'NetBSD-arm'
   );
 
 const
@@ -682,7 +683,8 @@ const
      (mask:sto_has_helper;   str:'Has helper'),
      (mask:sto_has_generic;  str:'Has generic'),
      (mask:sto_has_operator; str:'Has operator'),
-     (mask:sto_needs_init_final;str:'Needs init final table')
+     (mask:sto_needs_init_final;str:'Needs init final table'),
+     (mask:sto_has_non_trivial_init;str:'Has non trivial init')
   );
 var
   options : tsymtableoptions;
@@ -1007,7 +1009,7 @@ function getexprint:Tconstexprint;
 
 begin
   getexprint.overflow:=false;
-  getexprint.signed:=boolean(ppufile.getbyte);
+  getexprint.signed:=ppufile.getboolean;
   getexprint.svalue:=ppufile.getint64;
 end;
 
@@ -1989,6 +1991,7 @@ const
      (mask:po_rtlproc;         str: 'RTL procedure'),
      (mask:po_auto_raised_visibility; str: 'Visibility raised by compiler'),
      (mask:po_far;             str: 'Far'),
+     (mask:po_hasnearfarcallmodel; str: 'Near/Far explicit'),
      (mask:po_noreturn;        str: 'No return'),
      (mask:po_is_function_ref; str: 'Function reference'),
      (mask:po_is_block;        str: 'C "Block"'),
@@ -2115,6 +2118,7 @@ begin
   writeln([space,'         Spez : ',Varspez2Str(i)]);
   writeln([space,'      Regable : ',Varregable2Str(ppufile.getbyte)]);
   writeln([space,'   Addr Taken : ',(ppufile.getbyte<>0)]);
+  writeln([space,'Escaped Scope : ',(ppufile.getbyte<>0)]);
   write  ([space,'     Var Type : ']);
   if VarDef <> nil then
     readderef('',VarDef.VarType)
@@ -2803,7 +2807,7 @@ begin
              write  ([space,' DefaultConst : ']);
              readderef('',TPpuParamDef(def).DefaultValue);
              writeln([space,'       ParaNr : ',getword]);
-             writeln([space,'        Univ  : ',boolean(getbyte)]);
+             writeln([space,'        Univ  : ',getboolean]);
              writeln([space,'     VarState : ',getbyte]);
              writeln([space,'         Refs : ',getbyte]);
              if (vo_has_explicit_paraloc in varoptions) then
@@ -2834,8 +2838,8 @@ begin
          ibmacrosym :
            begin
              readcommonsym('Macro symbol ');
-             writeln([space,'       Defined: ',boolean(getbyte)]);
-             writeln([space,'  Compiler var: ',boolean(getbyte)]);
+             writeln([space,'       Defined: ',getboolean]);
+             writeln([space,'  Compiler var: ',getboolean]);
              len:=getlongint;
              writeln([space,'  Value length: ',len]);
              if len > 0 then
@@ -3735,13 +3739,11 @@ begin
                while not EndOfEntry do
                  begin
                     Write('Conditional ',getstring);
-                    b:=getbyte;
-                    if boolean(b)=true then
+                    if getboolean then
                       write(' defined at startup')
                     else
                       write(' not defined at startup');
-                    b:=getbyte;
-                    if boolean(b)=true then
+                    if getboolean then
                       writeln(' was used')
                     else
                       writeln;
@@ -3982,7 +3984,7 @@ begin
       WriteError('!! Error in PPU');
       exit;
     end;
-  if boolean(ppufile.getbyte) then
+  if ppufile.getboolean then
     begin
       readsymtableoptions('interface macro');
       {skip the definition section for macros (since they are never used) }

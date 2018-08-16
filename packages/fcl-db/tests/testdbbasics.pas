@@ -1,4 +1,4 @@
-unit TestDBBasics;
+ unit TestDBBasics;
 
 {$IFDEF FPC}
   {$mode Delphi}{$H+}
@@ -28,6 +28,7 @@ type
     // fields
     procedure TestSetFieldValues;
     procedure TestGetFieldValues;
+    procedure TestClearFields;
 
     procedure TestSupportIntegerFields;
     procedure TestSupportSmallIntFields;
@@ -293,6 +294,7 @@ begin
 end;
 
 procedure TTestDBBasics.TestMove;
+
 var i,count      : integer;
     aDatasource  : TDataSource;
     aDatalink    : TDataLink;
@@ -1201,6 +1203,15 @@ begin
     end;
 end;
 
+procedure TTestDBBasics.TestClearFields;
+begin
+  with DBConnector.GetNDataset(true,14) do
+    begin
+    open;
+    AssertException('Cannot call clearfields when not in edit mode',EDatabaseError,ClearFields);
+    end;
+end;
+
 procedure TTestCursorDBBasics.TestDelete1;
 begin
   FTestDelete1(false);
@@ -1941,7 +1952,6 @@ begin
       end
     else
       MaxIndexesCount := 3;
-
     try
       open;
     except
@@ -1964,9 +1974,9 @@ begin
     while not eof do
       begin
       if AFieldType=ftString then
-        CheckTrue(AnsiCompareStr(VarToStr(LastValue),VarToStr(FieldByName('F'+FieldTypeNames[AfieldType]).AsString))<=0)
+        CheckTrue(AnsiCompareStr(VarToStr(LastValue),VarToStr(FieldByName('F'+FieldTypeNames[AfieldType]).AsString))<=0,'Forward, Correct string value')
       else
-        CheckTrue(LastValue<=FieldByName('F'+FieldTypeNames[AfieldType]).AsVariant);
+        CheckTrue(LastValue<=FieldByName('F'+FieldTypeNames[AfieldType]).AsVariant,'Forward, Correct variant value');
       LastValue:=FieldByName('F'+FieldTypeNames[AfieldType]).AsVariant;
       Next;
       end;
@@ -1974,9 +1984,9 @@ begin
     while not bof do
       begin
       if AFieldType=ftString then
-        CheckTrue(AnsiCompareStr(VarToStr(LastValue),VarToStr(FieldByName('F'+FieldTypeNames[AfieldType]).AsString))>=0)
+        CheckTrue(AnsiCompareStr(VarToStr(LastValue),VarToStr(FieldByName('F'+FieldTypeNames[AfieldType]).AsString))>=0,'Backward, Correct string value')
       else
-        CheckTrue(LastValue>=FieldByName('F'+FieldTypeNames[AfieldType]).AsVariant);
+        CheckTrue(LastValue>=FieldByName('F'+FieldTypeNames[AfieldType]).AsVariant,'Backward, Correct variant value');
       LastValue:=FieldByName('F'+FieldTypeNames[AfieldType]).AsVariant;
       Prior;
       end;
@@ -2418,12 +2428,13 @@ begin
   with ds do
     begin
     AFieldType:=ftString;
+
     AddIndex('testindex','F'+FieldTypeNames[AfieldType],[]);
     IndexName:='testindex';
-    open; //Record 0
+    Open;
     OldStringValue:=FieldByName('F'+FieldTypeNames[AfieldType]).AsString;
     next; //Now on record 1
-    CheckTrue(OldStringValue<=FieldByName('F'+FieldTypeNames[AfieldType]).AsString,'Record 0 must be smaller than record 1 with asc sorted index');
+    CheckTrue(AnsiCompareStr(OldStringValue,FieldByName('F'+FieldTypeNames[AfieldType]).AsString)<=0,'Record 0 must be smaller than record 1 with asc sorted index');
     OldStringValue:=FieldByName('F'+FieldTypeNames[AfieldType]).AsString;
     next; //Now on record 2
     CheckTrue(AnsiCompareStr(OldStringValue,FieldByName('F'+FieldTypeNames[AfieldType]).AsString)<=0,'Record 1 must be smaller than record 2 with asc sorted index');
@@ -2432,7 +2443,6 @@ begin
     edit;
     FieldByName('F'+FieldTypeNames[AfieldType]).AsString := 'ZZZ'; //should be sorted last
     post;
-
     prior; // Now on record 0
     // Check ZZZ is sorted on/after record 0
     CheckTrue(AnsiCompareStr('ZZZ',FieldByName('F'+FieldTypeNames[AfieldType]).AsString)>=0, 'Prior>');
@@ -2459,7 +2469,6 @@ begin
     // empty dataset and other than default index (default_order) active
     CheckTrue(BOF, 'No BOF when opening empty dataset');
     CheckTrue(EOF, 'No EOF when opening empty dataset');
-
     // append data at end
     for i:=20 downto 0 do
       AppendRecord([i, inttostr(i)]);
@@ -2518,20 +2527,16 @@ begin
   with ds do
     begin
     AFieldType:=ftString;
-    
     IndexFieldNames:='F'+FieldTypeNames[AfieldType];
-
     open;
     PrevValue:='';
     while not eof do
       begin
-      CheckTrue(AnsiCompareStr(FieldByName('F'+FieldTypeNames[AfieldType]).AsString,PrevValue)>=0);
+      CheckTrue(AnsiCompareStr(FieldByName('F'+FieldTypeNames[AfieldType]).AsString,PrevValue)>=0,IntToStr(RecNo)+': '+FieldByName('F'+FieldTypeNames[AfieldType]).AsString+'>='+PrevValue+' ?');
       PrevValue:=FieldByName('F'+FieldTypeNames[AfieldType]).AsString;
       Next;
       end;
-
     CheckEquals('F'+FieldTypeNames[AfieldType],IndexFieldNames);
-
     end;
 end;
 
@@ -2542,7 +2547,7 @@ begin
   bufds := DBConnector.GetNDataset(5) as TCustomBufDataset;
   s := bufds.IndexFieldNames;
   s := bufds.IndexName;
-  AssertTrue(S<>'');
+  CheckEquals('',S,'Default index name');
   bufds.CompareBookmarks(nil,nil);
 end;
 {$endif fpc}
@@ -2679,7 +2684,7 @@ var i          : byte;
     Fld        : TField;
 
 begin
-  TestFieldDefinition(ftString,11,ds,Fld);
+  TestFieldDefinition(ftString, 10*DBConnector.CharSize+1, ds, Fld);
 
   for i := 0 to testValuesCount-1 do
     begin
@@ -2867,7 +2872,7 @@ var i          : byte;
     Fld        : TField;
 
 begin
-  TestFieldDefinition(ftFixedChar,11,ds,Fld);
+  TestFieldDefinition(ftFixedChar, 10*DBConnector.CharSize+1, ds, Fld);
 
   for i := 0 to testValuesCount-1 do
     begin

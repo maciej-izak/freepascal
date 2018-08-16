@@ -18,7 +18,8 @@ interface
 
 Uses Classes,
      pipes,
-     SysUtils;
+     SysUtils,
+     Math;
 
 Type
   TProcessOption = (poRunSuspended,poWaitOnExit,
@@ -46,14 +47,18 @@ Type
   TProcessForkEvent = procedure(Sender : TObject) of object;
   {$endif UNIX}
 
+  TRunCommandEventCode = (RunCommandIdle,RunCommandFinished,RunCommandException);
+  TOnRunCommandEvent = procedure(Sender : TObject;Status:TRunCommandEventCode;const Message:string) of object;
+
   { TProcess }
 
   TProcess = Class (TComponent)
   Private
+    FOnRunCommandEvent: TOnRunCommandEvent;
     FProcessOptions : TProcessOptions;
+    FRunCommandSleepTime: Integer;
     FStartupOptions : TStartupOptions;
     FProcessID : Integer;
-    FTerminalProgram: String;
     FThreadID : Integer;
     FProcessHandle : Thandle;
     FThreadHandle : Thandle;
@@ -101,6 +106,7 @@ Type
     procedure SetEnvironment(const Value: TStrings);
     Procedure ConvertCommandLine;
     function  PeekExitStatus: Boolean;
+    Procedure IntOnIdleSleep(Sender : TObject;Status:TRunCommandEventCode;const Message:String);
   Protected
     FRunning : Boolean;
     FExitCode : Cardinal;
@@ -123,6 +129,10 @@ Type
     Function Terminate (AExitCode : Integer): Boolean; virtual;
     Function WaitOnExit : Boolean;
     Function WaitOnExit(Timeout : DWord) : Boolean;
+    function ReadInputStream(p:TInputPipeStream;var BytesRead:integer;var DataLength:integer;var Data:string;MaxLoops:integer=10):boolean;
+    function ReadInputStream(p:TInputPipeStream;data:TStream;MaxLoops:integer=10):boolean;
+    function RunCommandLoop(out outputstring:string;out stderrstring:string; out anexitstatus:integer):integer;
+
     Property WindowRect : Trect Read GetWindowRect Write SetWindowRect;
     Property Handle : THandle Read FProcessHandle;
     Property ProcessHandle : THandle Read FProcessHandle;
@@ -135,6 +145,8 @@ Type
     Property ExitStatus : Integer Read GetExitStatus;
     Property ExitCode : Integer Read GetExitCode;
     Property InheritHandles : Boolean Read FInheritHandles Write FInheritHandles;
+    Property OnRunCommandEvent : TOnRunCommandEvent Read FOnRunCommandEvent Write FOnRunCommandEvent;
+    Property RunCommandSleepTime : Integer read FRunCommandSleepTime write FRunCommandSleepTime;
     {$ifdef UNIX}
     property OnForkEvent : TProcessForkEvent Read FForkEvent Write FForkEvent;
     {$endif UNIX}
@@ -258,6 +270,8 @@ begin
   FPipeBufferSize := 1024;
   FEnvironment:=TStringList.Create;
   FParameters:=TStringList.Create;
+  FRunCommandSleepTime:=100;
+  FOnRunCommandEvent:=@IntOnIdleSleep;
 end;
 
 Destructor TProcess.Destroy;
@@ -475,100 +489,108 @@ end;
 Const
   READ_BYTES = 65536; // not too small to avoid fragmentation when reading large files.
 
+function TProcess.ReadInputStream(p:TInputPipeStream;var BytesRead:integer;var DataLength:integer;var data:string;MaxLoops:integer=10):boolean;
+var Available, NumBytes: integer;
+begin
+    Available:=P.NumBytesAvailable;
+    result:=Available>0;
+    if not result then
+     exit;
+    while (available > 0) and (MaxLoops>0) do
+      begin
+        if (BytesRead + available > DataLength) then
+          begin
+            DataLength:=BytesRead + READ_BYTES;
+            Setlength(Data,DataLength);
+          end;
+        NumBytes := p.Read(data[1+BytesRead], Available);
+        if NumBytes > 0 then
+          Inc(BytesRead, NumBytes);
+        Available:=P.NumBytesAvailable;
+        dec(MaxLoops);
+      end;
+end;
+
+function TProcess.ReadInputStream(p:TInputPipeStream;data:TStream;MaxLoops:integer=10):boolean;
+const
+  BufSize = 4096;
+var
+  Buffer: array[0..BufSize - 1] of byte;
+  ReadBytes: integer;
+  Available : integer;
+begin
+  Available:=P.NumBytesAvailable;
+  result:=Available>0;
+  if not result then
+    Exit;
+  while (available > 0) and (MaxLoops>0) do
+  begin
+    ReadBytes := Output.Read({%H-}Buffer, min(BufSize,Available));
+    data.Write(Buffer, ReadBytes);
+    Available:=P.NumBytesAvailable;
+    dec(MaxLoops);
+  end;
+end;
+
+procedure TProcess.IntOnIdleSleep(Sender : TObject;status:TRunCommandEventCode;const message:string);
+begin
+  if status=RunCommandIdle then
+    sleep(FRunCommandSleepTime);
+end;
+
 // helperfunction that does the bulk of the work.
 // We need to also collect stderr output in order to avoid
 // lock out if the stderr pipe is full.
-function internalRuncommand(p:TProcess;out outputstring:string;
-                            out stderrstring:string; out exitstatus:integer):integer;
+function TProcess.RunCommandLoop(out outputstring:string;
+                            out stderrstring:string; out anexitstatus:integer):integer;
 var
     numbytes,bytesread,available : integer;
     outputlength, stderrlength : integer;
     stderrnumbytes,stderrbytesread : integer;
 begin
   result:=-1;
-  try
     try
-    p.Options := p.Options + [poUsePipes];
+    Options := Options + [poUsePipes];
     bytesread:=0;
     outputlength:=0;
     stderrbytesread:=0;
     stderrlength:=0;
-    p.Execute;
-    while p.Running do
+    Execute;
+    while Running do
       begin
         // Only call ReadFromStream if Data from corresponding stream
         // is already available, otherwise, on  linux, the read call
         // is blocking, and thus it is not possible to be sure to handle
         // big data amounts bboth on output and stderr pipes. PM.
-        available:=P.Output.NumBytesAvailable;
-        if  available > 0 then
-          begin
-            if (BytesRead + available > outputlength) then
-              begin
-                outputlength:=BytesRead + READ_BYTES;
-                Setlength(outputstring,outputlength);
-              end;
-            NumBytes := p.Output.Read(outputstring[1+bytesread], available);
-            if NumBytes > 0 then
-              Inc(BytesRead, NumBytes);
-          end
-        // The check for assigned(P.stderr) is mainly here so that
-        // if we use poStderrToOutput in p.Options, we do not access invalid memory.
-        else if assigned(P.stderr) and (P.StdErr.NumBytesAvailable > 0) then
-          begin
-            available:=P.StdErr.NumBytesAvailable;
-            if (StderrBytesRead + available > stderrlength) then
-              begin
-                stderrlength:=StderrBytesRead + READ_BYTES;
-                Setlength(stderrstring,stderrlength);
-              end;
-            StderrNumBytes := p.StdErr.Read(stderrstring[1+StderrBytesRead], available);
-            if StderrNumBytes > 0 then
-              Inc(StderrBytesRead, StderrNumBytes);
-          end
-        else
-          Sleep(100);
+        if not ReadInputStream(output,BytesRead,OutputLength,OutputString,1) then
+          // The check for assigned(P.stderr) is mainly here so that
+          // if we use poStderrToOutput in p.Options, we do not access invalid memory.
+          if assigned(stderr) then
+            if not ReadInputStream(StdErr,StdErrBytesRead,StdErrLength,StdErrString,1) then
+              if Assigned(FOnRunCommandEvent) Then
+                FOnRunCommandEvent(self,RunCommandIdle,'');
       end;
     // Get left output after end of execution
-    available:=P.Output.NumBytesAvailable;
-    while available > 0 do
-      begin
-        if (BytesRead + available > outputlength) then
-          begin
-            outputlength:=BytesRead + READ_BYTES;
-            Setlength(outputstring,outputlength);
-          end;
-        NumBytes := p.Output.Read(outputstring[1+bytesread], available);
-        if NumBytes > 0 then
-          Inc(BytesRead, NumBytes);
-        available:=P.Output.NumBytesAvailable;
-      end;
+    ReadInputStream(output,BytesRead,OutputLength,OutputString,250);
     setlength(outputstring,BytesRead);
-    while assigned(P.stderr) and (P.Stderr.NumBytesAvailable > 0) do
-      begin
-        available:=P.Stderr.NumBytesAvailable;
-        if (StderrBytesRead + available > stderrlength) then
-          begin
-            stderrlength:=StderrBytesRead + READ_BYTES;
-            Setlength(stderrstring,stderrlength);
-          end;
-        StderrNumBytes := p.StdErr.Read(stderrstring[1+StderrBytesRead], available);
-        if StderrNumBytes > 0 then
-          Inc(StderrBytesRead, StderrNumBytes);
-      end;
+    if assigned(stderr) then
+      ReadInputStream(StdErr,StdErrBytesRead,StdErrLength,StdErrString,250);
     setlength(stderrstring,StderrBytesRead);
-    exitstatus:=p.exitstatus;
+    anexitstatus:=exitstatus;
     result:=0; // we came to here, document that.
+    if Assigned(FOnRunCommandEvent) then          // allow external apps to react to that and finish GUI
+      FOnRunCommandEvent(self,RunCommandFinished,'');
+
     except
       on e : Exception do
          begin
            result:=1;
            setlength(outputstring,BytesRead);
+           setlength(stderrstring,StderrBytesRead);
+           if Assigned(FOnRunCommandEvent) then
+             FOnRunCommandEvent(self,RunCommandException,e.Message);
          end;
      end;
-  finally
-    p.free;
-    end;
 end;
 
 { Functions without StderrString }
@@ -591,7 +613,11 @@ begin
   if high(commands)>=0 then
    for i:=low(commands) to high(commands) do
      p.Parameters.add(commands[i]);
-  result:=internalruncommand(p,outputstring,errorstring,exitstatus);
+  try
+    result:=p.RunCommandLoop(outputstring,errorstring,exitstatus);
+  finally
+    p.free;
+  end;
 end;
 
 function RunCommandInDir(const curdir,cmdline:string;out outputstring:string):boolean; deprecated;
@@ -604,7 +630,11 @@ begin
   p.setcommandline(cmdline);
   if curdir<>'' then
     p.CurrentDirectory:=curdir;
-  result:=internalruncommand(p,outputstring,errorstring,exitstatus)=0;
+  try
+    result:=p.RunCommandLoop(outputstring,errorstring,exitstatus)=0;
+  finally
+    p.free;
+  end;
   if exitstatus<>0 then result:=false;
 end;
 
@@ -624,7 +654,11 @@ begin
   if high(commands)>=0 then
    for i:=low(commands) to high(commands) do
      p.Parameters.add(commands[i]);
-  result:=internalruncommand(p,outputstring,errorstring,exitstatus)=0;
+  try
+    result:=p.RunCommandLoop(outputstring,errorstring,exitstatus)=0;
+  finally
+    p.free;
+  end;
   if exitstatus<>0 then result:=false;
 end;
 
@@ -636,7 +670,11 @@ Var
 begin
   p:=TProcess.create(nil);
   p.setcommandline(cmdline);
-  result:=internalruncommand(p,outputstring,errorstring,exitstatus)=0;
+  try
+    result:=p.RunCommandLoop(outputstring,errorstring,exitstatus)=0;
+  finally
+    p.free;
+  end;
   if exitstatus<>0 then result:=false;
 end;
 
@@ -654,7 +692,11 @@ begin
   if high(commands)>=0 then
    for i:=low(commands) to high(commands) do
      p.Parameters.add(commands[i]);
-  result:=internalruncommand(p,outputstring,errorstring,exitstatus)=0;
+  try
+    result:=p.RunCommandLoop(outputstring,errorstring,exitstatus)=0;
+  finally
+    p.free;
+  end;
   if exitstatus<>0 then result:=false;
 end;
 

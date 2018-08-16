@@ -16,6 +16,7 @@ unit jswriter;
 
 {$mode objfpc}{$H+}
 { $DEFINE DEBUGJSWRITER}
+{AllowWriteln}
 
 interface
 
@@ -123,6 +124,7 @@ Type
     FFreeWriter : Boolean;
     FIndentChar : Char;
     FIndentSize: Byte;
+    FLastChar: WideChar;
     FLinePos : Integer;
     FOptions: TWriteOptions;
     FSkipCurlyBrackets : Boolean;
@@ -186,6 +188,7 @@ Type
     Property Options : TWriteOptions Read FOptions Write SetOptions;
     Property IndentSize : Byte Read FIndentSize Write FIndentSize;
     Property UseUTF8 : Boolean Read GetUseUTF8;
+    property LastChar: WideChar read FLastChar;
   end;
   EJSWriter = Class(Exception);
 
@@ -223,6 +226,7 @@ end;
 
 function TBufferWriter.GetAsAnsistring: AnsiString;
 begin
+  Result:='';
   SetLength(Result,BufferLength);
   if (BufferLength>0) then
     Move(FBuffer[0],Result[1],BufferLength);
@@ -245,6 +249,7 @@ Var
 
 begin
   SL:=BufferLength div SizeOf(UnicodeChar); // Silently ignores last byte
+  Result:='';
   SetLength(Result,SL);
   if (SL>0) then
     Move(FBuffer[0],Result[1],SL*SizeOf(UnicodeChar));
@@ -349,8 +354,11 @@ end;
 procedure TJSWriter.WriteIndent;
 
 begin
-  If (FLinePos=0) then
+  If (FLinePos=0) and (FCurIndent>0) then
+    begin
     FLinePos:=Writer.Write(StringOfChar(FIndentChar,FCurIndent));
+    FLastChar:=WideChar(FIndentChar);
+    end;
 end;
 
 procedure TJSWriter.Indent;
@@ -376,10 +384,15 @@ begin
   if UseUTF8 then
     begin
     S:=UTF16ToUTF8(U);
+    if S='' then exit;
     FLinePos:=FLinePos+Writer.Write(S);
+    FLastChar:=WideChar(S[length(S)]);
     end
-  else
+  else if U<>'' then
+    begin
     FLinePos:=FLinePos+Writer.Write(U);
+    FLastChar:=U[length(U)];
+    end;
 end;
 
 procedure TJSWriter.Write(const S: AnsiString);
@@ -389,7 +402,9 @@ begin
   else
     begin
     WriteIndent;
+    if s='' then exit;
     FLinePos:=FLinePos+Writer.Write(S);
+    FLastChar:=WideChar(S[length(S)]);
     end;
 end;
 
@@ -401,6 +416,7 @@ begin
     begin
     WriteIndent;
     Writer.WriteLn(S);
+    FLastChar:=WideChar(#10);
     FLinePos:=0;
     end;
 end;
@@ -419,6 +435,8 @@ begin
     begin
     WriteIndent;
     FLinePos:=FLinePos+Writer.Write(U);
+    Writer.WriteLn('');
+    FLastChar:=WideChar(#10);
     FLinePos:=0;
     end;
 end;
@@ -505,10 +523,12 @@ const
   end;
 
 Var
-  S : String;
+  S , S2: String;
   JS: TJSString;
   p, StartP: PWideChar;
-  MinIndent, CurLineIndent: Integer;
+  MinIndent, CurLineIndent, j, Exp, Code: Integer;
+  i: SizeInt;
+  D: TJSNumber;
 begin
   if V.CustomValue<>'' then
     begin
@@ -563,13 +583,140 @@ begin
       exit;
       end;
     jstNumber :
-      if Frac(V.AsNumber)=0 then // this needs to be improved
-        Str(Round(V.AsNumber),S)
+      if (Frac(V.AsNumber)=0)
+          and (V.AsNumber>double(low(int64)))
+          and (V.AsNumber<double(high(int64))) then
+        begin
+        Str(Round(V.AsNumber),S);
+        end
       else
+        begin
         Str(V.AsNumber,S);
+        if S[1]=' ' then Delete(S,1,1);
+        i:=Pos('E',S);
+        if (i>2) then
+          begin
+          j:=i-2;
+          case s[j] of
+          '0':
+            begin
+            // check for 1.2340000000000001E...
+            while (j>1) and (s[j]='0') do dec(j);
+            if s[j]='.' then inc(j);
+            S2:=LeftStr(S,j)+copy(S,i,length(S));
+            val(S2,D,Code);
+            if (Code=0) and (D=V.AsNumber) then
+              S:=S2;
+            end;
+          '9':
+            begin
+            // check for 1.234999999999991E...
+            while (j>1) and (s[j]='9') do dec(j);
+            // cut '99999'
+            S2:=LeftStr(S,j)+copy(S,i,length(S));
+            if S[j]='.' then
+              Insert('0',S2,j+1);
+            // increment, e.g. 1.2999 -> 1.3
+            repeat
+              case S2[j] of
+              '0'..'8':
+                begin
+                S2[j]:=chr(ord(S2[j])+1);
+                break;
+                end;
+              '9':
+                S2[j]:='0';
+              '.': ;
+              end;
+              dec(j);
+              if (j=0) or not (S2[j] in ['0'..'9','.']) then
+                begin
+                // e.g. -9.999 became 0.0
+                val(copy(S,i+1,length(S)),Exp,Code);
+                if Code=0 then
+                  begin
+                  S2:='1E'+IntToStr(Exp+1);
+                  if S[1]='-' then
+                    S2:='-'+S2;
+                  end;
+                break;
+                end;
+            until false;
+            val(S2,D,Code);
+            if (Code=0) and (D=V.AsNumber) then
+              S:=S2;
+            end;
+          end;
+          end;
+        // chomp default exponent E+000
+        i:=Pos('E',S);
+        if i>0 then
+          begin
+          val(copy(S,i+1,length(S)),Exp,Code);
+          if Code=0 then
+            begin
+            if Exp=0 then
+              // 1.1E+000 -> 1.1
+              Delete(S,i,length(S))
+            else if (Exp>=-6) and (Exp<=6) then
+              begin
+              Delete(S,i,length(S));
+              j:=Pos('.',S);
+              if j>0 then
+                Delete(S,j,1)
+              else
+                begin
+                j:=1;
+                while not (S[j] in ['0'..'9']) do inc(j);
+                end;
+              if Exp<0 then
+                begin
+                // e.g. -1.2  E-1
+                while Exp<0 do
+                  begin
+                  if (j>1) and (S[j-1] in ['0'..'9']) then
+                    dec(j)
+                  else
+                    Insert('0',S,j);
+                  inc(Exp);
+                  end;
+                Insert('.',S,j);
+                if (j=1) or not (S[j-1] in ['0'..'9']) then
+                  Insert('0',S,j);
+                if S[length(S)]='0' then
+                  Delete(S,length(S),1);
+                end
+              else
+                begin
+                // e.g. -1.2  E1
+                while Exp>0 do
+                  begin
+                  if (j<=length(S)) and (S[j] in ['0'..'9']) then
+                    inc(j)
+                  else
+                    Insert('0',S,j);
+                  dec(Exp);
+                  end;
+                if j<=length(S) then
+                  Insert('.',S,j);
+                end;
+              end
+            else
+              begin
+              // e.g. 1.0E+001  -> 1.0E1
+              S:=LeftStr(S,i)+IntToStr(Exp);
+              end
+            end;
+          end;
+        end;
     jstObject : ;
     jstReference : ;
-    JSTCompletion : ;
+    jstCompletion : ;
+  end;
+  if S='' then exit;
+  case S[1] of
+  '+': if FLastChar='+' then Write(' ');
+  '-': if FLastChar='-' then Write(' ');
   end;
   Write(S);
 end;
@@ -868,15 +1015,19 @@ begin
 end;
 
 procedure TJSWriter.WriteUnary(El: TJSUnary);
-
 Var
   S : String;
-
 begin
   FSkipRoundBrackets:=false;
   S:=El.PreFixOperator;
   if (S<>'') then
+    begin
+    case S[1] of
+    '+': if FLastChar='+' then Write(' ');
+    '-': if FLastChar='-' then Write(' ');
+    end;
     Write(S);
+    end;
   WriteJS(El.A);
   if (S='') then
     begin
@@ -884,6 +1035,9 @@ begin
     if (S<>'') then
       begin
       Writer.CurElement:=El;
+      if ((S='-') and (FLastChar='-'))
+          or ((S='+') and (FLastChar='+')) then
+        Write(' ');
       Write(S);
       end;
     end;
@@ -1028,14 +1182,24 @@ end;
 
 procedure TJSWriter.WriteConditionalExpression(El: TJSConditionalExpression);
 
+var
+  NeedBrackets: Boolean;
 begin
-  write('(');
+  NeedBrackets:=true;
+  if NeedBrackets then
+    begin
+    write('(');
+    FSkipRoundBrackets:=true;
+    end;
   WriteJS(El.A);
   write(' ? ');
-  WriteJS(El.B);
+  if El.B<>nil then
+    WriteJS(El.B);
   write(' : ');
-  WriteJS(El.C);
-  write(')');
+  if El.C<>nil then
+    WriteJS(El.C);
+  if NeedBrackets then
+    write(')');
 end;
 
 procedure TJSWriter.WriteAssignStatement(El: TJSAssignStatement);

@@ -626,6 +626,7 @@ implementation
               if token<>_RKLAMMER then
                 p1:=sub_expr(opcompare,[ef_accept_equal],p1);
               p1:=caddrnode.create(p1);
+              include(taddrnode(p1).addrnodeflags,anf_ofs);
               got_addrn:=false;
               { Ofs() returns a cardinal/qword, not a pointer }
               inserttypeconv_internal(p1,uinttype);
@@ -1042,7 +1043,15 @@ implementation
                 if (p1.nodetype<>typen) then
                   tloadnode(p2).set_mp(p1)
                 else
-                  p1.free;
+                  begin
+                    typecheckpass(p1);
+                    if (p1.resultdef.typ=objectdef) then
+                      { so we can create the correct  method pointer again in case
+                        this is a "objectprocvar:=@classname.method" expression }
+                      tloadnode(p2).symtable:=tobjectdef(p1.resultdef).symtable
+                    else
+                      p1.free;
+                  end;
               end;
              p1:=p2;
 
@@ -2025,7 +2034,7 @@ implementation
                        end;
                    end;
                  end
-               else if (p1.resultdef.typ<>pointerdef) then
+               else if not(p1.resultdef.typ in [pointerdef,undefineddef]) then
                  begin
                     { ^ as binary operator is a problem!!!! (FK) }
                     again:=false;
@@ -2729,7 +2738,7 @@ implementation
                          Factor_read_id
          ---------------------------------------------}
 
-       procedure factor_read_id(out p1:tnode;var again:boolean);
+       procedure factor_read_id(out p1:tnode;out again:boolean);
 
          function findwithsymtable : boolean;
            var
@@ -2758,7 +2767,7 @@ implementation
            wasgenericdummy,
            allowspecialize,
            isspecialize,
-           unit_found : boolean;
+           unit_found, tmpgetaddr: boolean;
            dummypos,
            tokenpos: tfileposinfo;
            spezcontext : tspecializationcontext;
@@ -2801,7 +2810,7 @@ implementation
                  searchsym(pattern,srsym,srsymtable);
                { handle unit specification like System.Writeln }
                if not isspecialize then
-                 unit_found:=try_consume_unitsym(srsym,srsymtable,t,true,allowspecialize,isspecialize)
+                 unit_found:=try_consume_unitsym(srsym,srsymtable,t,true,allowspecialize,isspecialize,pattern)
                else
                  begin
                    unit_found:=false;
@@ -2828,8 +2837,7 @@ implementation
 
                if isspecialize then
                  begin
-                   if not assigned(srsym) or
-                       (srsym.typ<>typesym) then
+                   if not assigned(srsym) then
                      begin
                        identifier_not_found(orgstoredpattern,tokenpos);
                        srsym:=generrorsym;
@@ -3174,8 +3182,13 @@ implementation
                           callflags:=[]
                         else
                           callflags:=[cnf_unit_specified];
-                        do_proc_call(srsym,srsymtable,nil,
-                                     (getaddr and not(token in [_CARET,_POINT,_LECKKLAMMER])),
+                        { TP7 uglyness: @proc^ is parsed as (@proc)^,
+                          but @notproc^ is parsed as @(notproc^) }
+                        if m_tp_procvar in current_settings.modeswitches then
+                          tmpgetaddr:=getaddr and not(token in [_POINT,_LECKKLAMMER])
+                        else
+                          tmpgetaddr:=getaddr and not(token in [_CARET,_POINT,_LECKKLAMMER]);
+                        do_proc_call(srsym,srsymtable,nil,tmpgetaddr,
                                      again,p1,callflags,spezcontext);
                         spezcontext:=nil;
                       end;
@@ -3408,6 +3421,11 @@ implementation
                    sub_expr if necessary }
                  dopostfix:=not could_be_generic(idstr);
                end;
+           { TP7 uglyness: @proc^ is parsed as (@proc)^, but @notproc^ is parsed
+             as @(notproc^) }
+           if (m_tp_procvar in current_settings.modeswitches) and (token=_CARET) and
+              getaddr and (p1.nodetype=loadn) and (tloadnode(p1).symtableentry.typ=procsym) then
+             dopostfix:=false;
            { maybe an additional parameter instead of misusing hadspezialize? }
            if dopostfix and not (ef_had_specialize in flags) then
              updatefpos:=postfixoperators(p1,again,getaddr);
@@ -3680,7 +3698,15 @@ implementation
                     postfixoperators(p1,again,getaddr);
                   end
                  else
-                  p1:=ctypenode.create(hdef);
+                   begin
+                     p1:=ctypenode.create(hdef);
+                     if token=_POINT then
+                       begin
+                         again:=true;
+                         { handle type helpers here }
+                         postfixoperators(p1,again,getaddr);
+                       end;
+                   end;
                end;
 
              _FILE :
@@ -3762,7 +3788,15 @@ implementation
                   end
                  else
                   p1:=factor(true,[]);
-                 if token in postfixoperator_tokens then
+                 if (token in postfixoperator_tokens) and
+                   { TP7 uglyness: @proc^ is parsed as (@proc)^, but @notproc^
+                     is parsed as @(notproc^) }
+                    not
+                    (
+                     (m_tp_procvar in current_settings.modeswitches) and
+                     (token=_CARET) and (p1.nodetype=loadn) and (tloadnode(p1).symtableentry.typ=procsym)
+                    )
+                   then
                   begin
                     again:=true;
                     postfixoperators(p1,again,getaddr);
@@ -3771,13 +3805,18 @@ implementation
                  p1:=caddrnode.create(p1);
                  p1.fileinfo:=filepos;
                  if cs_typed_addresses in current_settings.localswitches then
-                   include(p1.flags,nf_typedaddr);
+                   include(taddrnode(p1).addrnodeflags,anf_typedaddr);
                  { Store the procvar that we are expecting, the
                    addrn will use the information to find the correct
                    procdef or it will return an error }
                  if assigned(getprocvardef) and
                     (taddrnode(p1).left.nodetype = loadn) then
                    taddrnode(p1).getprocvardef:=getprocvardef;
+                 if (token in postfixoperator_tokens) then
+                  begin
+                    again:=true;
+                    postfixoperators(p1,again,getaddr);
+                  end;
                end;
 
              _LKLAMMER :
@@ -4080,6 +4119,7 @@ implementation
                   internalerror(2015092703);
               end;
               do_member_read(structdef,getaddr,gensym,result,again,[],spezcontext);
+              spezcontext:=nil;
             end
           else
             begin

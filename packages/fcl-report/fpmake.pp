@@ -24,6 +24,7 @@ begin
     P.Dependencies.Add('fcl-pdf');
     P.Dependencies.Add('fcl-json');
     P.Dependencies.Add('fcl-db');
+    P.Dependencies.Add('fcl-web');
     P.Author := 'Michael Van Canneyt';
     P.License := 'LGPL with modification, ';
     P.HomepageURL := 'www.freepascal.org';
@@ -48,11 +49,61 @@ begin
       AddUnit('fpreportstreamer');
       AddUnit('fpreporthtmlparser');
       end;
+
+    T:=P.Targets.AddUnit('fpreportdata.pp');
+    T.ResourceStrings := True;
+    with T.Dependencies do
+      AddUnit('fpreport');
+      
+    T:=P.Targets.AddUnit('fpreportdatacsv.pp');
+    T.ResourceStrings := True;
+    with T.Dependencies do
+      begin
+      AddUnit('fpreport');
+      AddUnit('fpreportdata');
+      end;
+
+    T:=P.Targets.AddUnit('fpreportdatadbf.pp');
+    T.ResourceStrings := True;
+    with T.Dependencies do
+      begin
+      AddUnit('fpreport');
+      AddUnit('fpreportdata');
+      end;
+
+    T:=P.Targets.AddUnit('fpreportdatajson.pp');
+    T.ResourceStrings := True;
+    with T.Dependencies do
+      begin
+      AddUnit('fpreport');
+      AddUnit('fpreportdata');
+      end;
+
+
+    T:=P.Targets.AddUnit('fpreportdatasqldb.pp');
+    T.ResourceStrings := True;
+    with T.Dependencies do
+      begin
+      AddUnit('fpreport');
+      AddUnit('fpreportdata');
+      end;
       
     T:=P.Targets.AddUnit('fpjsonreport.pp');
     T.ResourceStrings := True;
     with T.Dependencies do
+      begin
       AddUnit('fpreport');
+      AddUnit('fpreportdata');
+      end; 
+
+    T:=P.Targets.AddUnit('fplazreport.pp');
+    T.ResourceStrings := True;
+    with T.Dependencies do
+      begin
+      AddUnit('fpreport');
+      AddUnit('fpjsonreport');
+      AddUnit('fpreportdb');
+      end; 
       
     T:=P.Targets.AddUnit('fpreportjson.pp');
     T.ResourceStrings := True;

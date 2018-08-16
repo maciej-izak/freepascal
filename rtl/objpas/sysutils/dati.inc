@@ -796,6 +796,7 @@ function SplitDateTimeStr(DateTimeStr: AnsiString; const FS: TFormatSettings; ou
 }
 const
   WhiteSpace = [#9,#10,#13,#32];
+  Space : String = #32; // String, to avoid error 'Cannot decide what overload to call'
 
 var
   p: Integer;
@@ -818,7 +819,7 @@ begin
     end;
   p:=1;
   //find separator
-  if (FS.DateSeparator<>#32) then
+  if Pos(Space,FS.DateSeparator)=0 then
     begin  
     while (p<Length(DateTimeStr)) and (not (DateTimeStr[p+1] in WhiteSpace)) do 
       Inc(p);
@@ -915,9 +916,7 @@ var
   isEnable_E_Format : Boolean;
   isEnable_G_Format : Boolean;
   eastasiainited : boolean;
-{$endif win32 or win64}
 
-{$if defined(win32) or defined(win64)}
   procedure InitEastAsia;
   var     ALCID : LCID;
          PriLangID , SubLangID : Word;
@@ -1081,7 +1080,7 @@ var
         ':': StoreStr(@FormatSettings.TimeSeparator, 1);
 	'[': if (fdoInterval in Options) then isInterval := true else StoreStr(FormatCurrent, 1);
 	']': if (fdoInterval in Options) then isInterval := false else StoreStr(FormatCurrent, 1);
-        ' ', 'C', 'D', 'H', 'M', 'N', 'S', 'T', 'Y', 'Z', 'F' :
+        ' ', 'C', 'D', 'H', 'M', 'N', 'S', 'T', 'Y', 'Z', 'F' {$IFDEF MSWindows}, 'G', 'E'{$ENDIF MSWindows} :
         begin
           while (P < FormatEnd) and (UpCase(P^) = Token) do
             Inc(P);
@@ -1185,7 +1184,7 @@ var
             'E':
                begin
                  if not Eastasiainited then InitEastAsia;
-                 if Not(isEnable_E_Format) then StoreStr(@FormatCurrent^, 1)
+                 if Not(isEnable_E_Format) then StoreStr(FormatCurrent, 1)
                   else
                    begin
                      while (P < FormatEnd) and (UpCase(P^) = Token) do
@@ -1199,7 +1198,7 @@ var
              'G':
                begin
                  if not Eastasiainited then InitEastAsia;
-                 if Not(isEnable_G_Format) then StoreStr(@FormatCurrent^, 1)
+                 if Not(isEnable_G_Format) then StoreStr(FormatCurrent, 1)
                   else
                    begin
                      while (P < FormatEnd) and (UpCase(P^) = Token) do

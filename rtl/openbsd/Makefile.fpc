@@ -139,7 +139,7 @@ dllprt0$(OEXT) : $(CPU_TARGET)/dllprt0.as
 #
 
 $(SYSTEMUNIT)$(PPUEXT) : $(BSDINC)/$(SYSTEMUNIT).pp sysconst.inc systypes.inc syscalls.inc $(SYSDEPS)
-        $(COMPILER) -Us -Sg $(BSDINC)/$(SYSTEMUNIT).pp
+        $(COMPILER) $(FPC_SYSTEM_OPT) -Us -Sg $(BSDINC)/$(SYSTEMUNIT).pp
 
 uuchar$(PPUEXT): $(INC)/uuchar.pp $(SYSTEMUNIT)$(PPUEXT)
         $(COMPILER) $<
@@ -267,7 +267,7 @@ extpas$(PPUEXT) : $(INC)/extpas.pp dos$(PPUEXT)
 x86$(PPUEXT) : $(UNIXINC)/x86.pp $(SYSTEMUNIT)$(PPUEXT)
         $(COMPILER) $<
 
-ports$(PPUEXT) : $(UNIXINC)/ports.pp x86$(PPUEXT) $(SYSTEMUNIT)$(PPUEXT)
+ports$(PPUEXT) : $(UNIXINC)/ports.pp $(SYSTEMUNIT)$(PPUEXT)
         $(COMPILER) $<
 
 ifneq ($(findstring $(ARCH),x86_64 i386),)

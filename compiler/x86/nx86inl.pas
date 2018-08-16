@@ -33,10 +33,13 @@ interface
          protected
           procedure maybe_remove_round_trunc_typeconv; virtual;
          public
+          function pass_typecheck_cpu:tnode;override;
+
           { first pass override
             so that the code generator will actually generate
             these nodes.
           }
+          function first_cpu: tnode;override;
           function first_pi: tnode ; override;
           function first_arctan_real: tnode; override;
           function first_abs_real: tnode; override;
@@ -51,7 +54,11 @@ interface
           function first_fma: tnode; override;
           function first_frac_real : tnode; override;
           function first_int_real : tnode; override;
+
+          function simplify(forinline : boolean) : tnode; override;
+
           { second pass override to generate these nodes }
+          procedure pass_generate_code_cpu;override;
           procedure second_IncludeExclude;override;
           procedure second_pi; override;
           procedure second_arctan_real; override;
@@ -83,10 +90,12 @@ implementation
       verbose,compinnr,
       defutil,
       aasmbase,aasmdata,aasmcpu,
-      symtype,symdef,symcpu,
-      cgbase,pass_2,
+      symconst,symtype,symdef,symcpu,
+      ncnv,
+      htypechk,
+      cgbase,pass_1,pass_2,
       cpuinfo,cpubase,nutils,
-      ncal,ncgutil,
+      ncal,ncgutil,nld,
       tgobj,
       cga,cgutils,cgx86,cgobj,hlcgobj;
 
@@ -98,6 +107,78 @@ implementation
      procedure tx86inlinenode.maybe_remove_round_trunc_typeconv;
        begin
          { only makes a difference for x86_64 }
+       end;
+
+
+     function tx86inlinenode.pass_typecheck_cpu: tnode;
+       begin
+         Result:=nil;
+         case inlinenumber of
+           in_x86_inportb:
+             begin
+               CheckParameters(1);
+               resultdef:=u8inttype;
+             end;
+           in_x86_inportw:
+             begin
+               CheckParameters(1);
+               resultdef:=u16inttype;
+             end;
+           in_x86_inportl:
+             begin
+               CheckParameters(1);
+               resultdef:=s32inttype;
+             end;
+           in_x86_outportb,
+           in_x86_outportw,
+           in_x86_outportl:
+             begin
+               CheckParameters(2);
+               resultdef:=voidtype;
+             end;
+           in_x86_cli,
+           in_x86_sti:
+             resultdef:=voidtype;
+           in_x86_get_cs,
+           in_x86_get_ss,
+           in_x86_get_ds,
+           in_x86_get_es,
+           in_x86_get_fs,
+           in_x86_get_gs:
+{$ifdef i8086}
+             resultdef:=u16inttype;
+{$else i8086}
+             resultdef:=s32inttype;
+{$endif i8086}
+           else
+             Result:=inherited pass_typecheck_cpu;
+         end;
+       end;
+
+
+     function tx86inlinenode.first_cpu: tnode;
+       begin
+         Result:=nil;
+         case inlinenumber of
+           in_x86_inportb,
+           in_x86_inportw,
+           in_x86_inportl,
+           in_x86_get_cs,
+           in_x86_get_ss,
+           in_x86_get_ds,
+           in_x86_get_es,
+           in_x86_get_fs,
+           in_x86_get_gs:
+             expectloc:=LOC_REGISTER;
+           in_x86_outportb,
+           in_x86_outportw,
+           in_x86_outportl,
+           in_x86_cli,
+           in_x86_sti:
+             expectloc:=LOC_VOID;
+           else
+             Result:=inherited first_cpu;
+         end;
        end;
 
 
@@ -281,6 +362,7 @@ implementation
          if (current_settings.fputype>=fpu_sse41) and
            ((is_double(resultdef)) or (is_single(resultdef))) then
            begin
+             maybe_remove_round_trunc_typeconv;
              expectloc:=LOC_MMREGISTER;
              Result:=nil;
            end
@@ -294,11 +376,135 @@ implementation
          if (current_settings.fputype>=fpu_sse41) and
            ((is_double(resultdef)) or (is_single(resultdef))) then
            begin
-             expectloc:=LOC_MMREGISTER;
              Result:=nil;
+             expectloc:=LOC_MMREGISTER;
            end
          else
            Result:=inherited first_int_real;
+       end;
+
+
+     function tx86inlinenode.simplify(forinline : boolean) : tnode;
+       var
+         temp : tnode;
+       begin
+         if (current_settings.fputype>=fpu_sse41) and
+           (inlinenumber=in_int_real) and (left.nodetype=typeconvn) and
+           not(nf_explicit in left.flags) and
+           (ttypeconvnode(left).left.resultdef.typ=floatdef) and
+           ((is_double(ttypeconvnode(left).left.resultdef)) or (is_single(ttypeconvnode(left).left.resultdef))) then
+           begin
+             { get rid of the type conversion }
+             temp:=ttypeconvnode(left).left;
+             ttypeconvnode(left).left:=nil;
+             left.free;
+             left:=temp;
+             result:=self.getcopy;
+             tinlinenode(result).resultdef:=temp.resultdef;
+             typecheckpass(result);
+           end
+         else
+           Result:=inherited simplify(forinline);
+       end;
+
+
+     procedure tx86inlinenode.pass_generate_code_cpu;
+
+       procedure inport(dreg:TRegister;dsize:topsize;dtype:tdef);
+         var
+           portnumber: tnode;
+         begin
+           portnumber:=left;
+           secondpass(portnumber);
+           if (portnumber.location.loc=LOC_CONSTANT) and
+              (portnumber.location.value>=0) and
+              (portnumber.location.value<=255) then
+             begin
+               hlcg.getcpuregister(current_asmdata.CurrAsmList,dreg);
+               current_asmdata.CurrAsmList.concat(taicpu.op_const_reg(A_IN,dsize,portnumber.location.value,dreg));
+               location_reset(location,LOC_REGISTER,def_cgsize(resultdef));
+               location.register:=hlcg.getintregister(current_asmdata.CurrAsmList,resultdef);
+               hlcg.ungetcpuregister(current_asmdata.CurrAsmList,dreg);
+               hlcg.a_load_reg_reg(current_asmdata.CurrAsmList,dtype,resultdef,dreg,location.register);
+             end
+           else
+             begin
+               hlcg.getcpuregister(current_asmdata.CurrAsmList,NR_DX);
+               hlcg.a_load_loc_reg(current_asmdata.CurrAsmList,portnumber.resultdef,u16inttype,portnumber.location,NR_DX);
+               hlcg.getcpuregister(current_asmdata.CurrAsmList,dreg);
+               current_asmdata.CurrAsmList.concat(taicpu.op_reg_reg(A_IN,dsize,NR_DX,dreg));
+               hlcg.ungetcpuregister(current_asmdata.CurrAsmList,NR_DX);
+               location_reset(location,LOC_REGISTER,def_cgsize(resultdef));
+               location.register:=hlcg.getintregister(current_asmdata.CurrAsmList,resultdef);
+               hlcg.ungetcpuregister(current_asmdata.CurrAsmList,dreg);
+               hlcg.a_load_reg_reg(current_asmdata.CurrAsmList,dtype,resultdef,dreg,location.register);
+             end;
+         end;
+
+       procedure outport(dreg:TRegister;dsize:topsize;dtype:tdef);
+         var
+           portnumber, portdata: tnode;
+         begin
+           portnumber:=tcallparanode(tcallparanode(left).right).left;
+           portdata:=tcallparanode(left).left;
+           secondpass(portdata);
+           secondpass(portnumber);
+           hlcg.getcpuregister(current_asmdata.CurrAsmList,dreg);
+           hlcg.a_load_loc_reg(current_asmdata.CurrAsmList,portdata.resultdef,dtype,portdata.location,dreg);
+           if (portnumber.location.loc=LOC_CONSTANT) and
+              (portnumber.location.value>=0) and
+              (portnumber.location.value<=255) then
+             current_asmdata.CurrAsmList.concat(taicpu.op_reg_const(A_OUT,dsize,dreg,portnumber.location.value))
+           else
+             begin
+               hlcg.getcpuregister(current_asmdata.CurrAsmList,NR_DX);
+               hlcg.a_load_loc_reg(current_asmdata.CurrAsmList,portnumber.resultdef,u16inttype,portnumber.location,NR_DX);
+               current_asmdata.CurrAsmList.concat(taicpu.op_reg_reg(A_OUT,dsize,dreg,NR_DX));
+               hlcg.ungetcpuregister(current_asmdata.CurrAsmList,NR_DX);
+             end;
+           hlcg.ungetcpuregister(current_asmdata.CurrAsmList,dreg);
+         end;
+
+       procedure get_segreg(segreg:tregister);
+         begin
+           location_reset(location,LOC_REGISTER,def_cgsize(resultdef));
+           location.register:=hlcg.getintregister(current_asmdata.CurrAsmList,resultdef);
+           current_asmdata.CurrAsmList.concat(taicpu.op_reg_reg(A_MOV,TCGSize2OpSize[def_cgsize(resultdef)],segreg,location.register));
+         end;
+
+       begin
+         case inlinenumber of
+           in_x86_inportb:
+             inport(NR_AL,S_B,u8inttype);
+           in_x86_inportw:
+             inport(NR_AX,S_W,u16inttype);
+           in_x86_inportl:
+             inport(NR_EAX,S_L,s32inttype);
+           in_x86_outportb:
+             outport(NR_AL,S_B,u8inttype);
+           in_x86_outportw:
+             outport(NR_AX,S_W,u16inttype);
+           in_x86_outportl:
+             outport(NR_EAX,S_L,s32inttype);
+           in_x86_cli:
+             current_asmdata.CurrAsmList.concat(taicpu.op_none(A_CLI));
+           in_x86_sti:
+             current_asmdata.CurrAsmList.concat(taicpu.op_none(A_STI));
+           in_x86_get_cs:
+             get_segreg(NR_CS);
+           in_x86_get_ss:
+             get_segreg(NR_SS);
+           in_x86_get_ds:
+             get_segreg(NR_DS);
+           in_x86_get_es:
+             get_segreg(NR_ES);
+           in_x86_get_fs:
+             get_segreg(NR_FS);
+           in_x86_get_gs:
+             get_segreg(NR_GS);
+           else
+             inherited pass_generate_code_cpu;
+         end;
        end;
 
 
@@ -641,7 +847,7 @@ implementation
                  begin
                    r:=cg.getintregister(current_asmdata.CurrAsmList,OS_ADDR);
                    cg.a_loadaddr_ref_reg(current_asmdata.CurrAsmList,left.location.reference,r);
-                   reference_reset_base(ref,r,0,left.location.reference.alignment,left.location.reference.volatility);
+                   reference_reset_base(ref,r,0,left.location.reference.temppos,left.location.reference.alignment,left.location.reference.volatility);
                    current_asmdata.CurrAsmList.concat(taicpu.op_ref(A_PREFETCHNTA,S_NO,ref));
                  end;
                else

@@ -30,6 +30,7 @@ Unit Rax86int;
       cpubase,
       globtype,
       aasmbase,
+      cgbase,
       rasm,
       rax86;
 
@@ -44,9 +45,27 @@ Unit Rax86int;
        {------------------ Assembler Operators  --------------------}
       AS_BYTE,AS_WORD,AS_DWORD,AS_QWORD,AS_TBYTE,AS_DQWORD,AS_OWORD,AS_XMMWORD,AS_YWORD,AS_YMMWORD,AS_NEAR,AS_FAR,
       AS_HIGH,AS_LOW,AS_OFFSET,AS_SIZEOF,AS_VMTOFFSET,AS_SEG,AS_TYPE,AS_PTR,AS_MOD,AS_SHL,AS_SHR,AS_NOT,
-      AS_AND,AS_OR,AS_XOR,AS_WRT,AS___GOTPCREL);
+      AS_AND,AS_OR,AS_XOR,AS_WRT,AS___GOTPCREL,AS_TARGET_DIRECTIVE);
 
     type
+       { input flags for BuildConstSymbolExpression }
+       tconstsymbolexpressioninputflag = (
+         cseif_needofs,
+         cseif_isref,
+         cseif_startingminus,
+         { allows using full reference-like syntax for constsymbol expressions,
+           for example:
+           Rec.Str[5]  ->  Rec.Str+5 }
+         cseif_referencelike
+       );
+       tconstsymbolexpressioninputflags = set of tconstsymbolexpressioninputflag;
+       { output flags for BuildConstSymbolExpression }
+       tconstsymbolexpressionoutputflag = (
+         cseof_isseg,
+         cseof_is_farproc_entry,
+         cseof_hasofs
+       );
+       tconstsymbolexpressionoutputflags = set of tconstsymbolexpressionoutputflag;
        tx86intreader = class(tasmreader)
          actasmpattern_origcase : string;
          actasmtoken : tasmtoken;
@@ -63,15 +82,20 @@ Unit Rax86int;
          procedure GetToken;
          function consume(t : tasmtoken):boolean;
          procedure RecoverConsume(allowcomma:boolean);
-         procedure BuildRecordOffsetSize(const expr: string;var offset:tcgint;var size:tcgint; var mangledname: string; needvmtofs: boolean; out hastypecast: boolean);
-         procedure BuildConstSymbolExpression(needofs,isref,startingminus:boolean;var value:tcgint;var asmsym:string;var asmsymtyp:TAsmsymtype;out isseg,is_farproc_entry:boolean);
+         procedure AddReferences(dest,src : tx86operand);
+         procedure SetSegmentOverride(oper:tx86operand;seg:tregister);
+         procedure BuildRecordOffsetSize(const expr: string;out offset:tcgint;out size:tcgint; out mangledname: string; needvmtofs: boolean; out hastypecast: boolean);
+         procedure BuildConstSymbolExpression(in_flags: tconstsymbolexpressioninputflags;out value:tcgint;out asmsym:string;out asmsymtyp:TAsmsymtype;out size:tcgint;out out_flags:tconstsymbolexpressionoutputflags);
          function BuildConstExpression:aint;
-         function BuildRefConstExpression(startingminus:boolean=false):aint;
+         function BuildRefConstExpression(out size:tcgint;startingminus:boolean=false):aint;
          procedure BuildReference(oper : tx86operand);
          procedure BuildOperand(oper: tx86operand;istypecast:boolean);
          procedure BuildConstantOperand(oper: tx86operand);
          procedure BuildOpCode(instr : tx86instruction);
          procedure BuildConstant(constsize: byte);
+
+         function is_targetdirective(const s: string): boolean;virtual;
+         procedure HandleTargetDirective;virtual;
        end;
 
 
@@ -98,7 +122,7 @@ Unit Rax86int;
        { register allocator }
        rautils,itx86int,
        { codegen }
-       cgbase,procinfo,paramgr
+       procinfo,paramgr
        ;
 
     type
@@ -113,15 +137,12 @@ Unit Rax86int;
        firstoperator  = AS_BYTE;
        lastoperator   = AS___GOTPCREL;
 
-       _count_asmdirectives = longint(lastdirective)-longint(firstdirective);
-       _count_asmoperators  = longint(lastoperator)-longint(firstoperator);
-
-       _asmdirectives : array[0.._count_asmdirectives] of tasmkeyword =
+       _asmdirectives : array[firstdirective..lastdirective] of tasmkeyword =
        ('ALIGN','DB','DW','DD','DQ','PUBLIC','END');
 
        { problems with shl,shr,not,and,or and xor, they are }
        { context sensitive.                                 }
-       _asmoperators : array[0.._count_asmoperators] of tasmkeyword = (
+       _asmoperators : array[firstoperator..lastoperator] of tasmkeyword = (
         'BYTE','WORD','DWORD','QWORD','TBYTE','DQWORD','OWORD','XMMWORD','YWORD','YMMWORD','NEAR','FAR','HIGH',
         'LOW','OFFSET','SIZEOF','VMTOFFSET','SEG','TYPE','PTR','MOD','SHL','SHR','NOT','AND',
         'OR','XOR','WRT','GOTPCREL');
@@ -134,7 +155,7 @@ Unit Rax86int;
         '','','','','','','END',
         '','','','','','','','','','','','',
         '','','','sizeof','vmtoffset','','type','ptr','mod','shl','shr','not',
-        'and','or','xor','wrt','..gotpcrel'
+        'and','or','xor','wrt','..gotpcrel',''
       );
 
     constructor tx86intreader.create;
@@ -201,12 +222,12 @@ Unit Rax86int;
 
     function tx86intreader.is_asmoperator(const s: string):boolean;
       var
-        i : longint;
+        i : tasmtoken;
       Begin
-        for i:=0 to _count_asmoperators do
+        for i:=firstoperator to lastoperator do
          if s=_asmoperators[i] then
           begin
-            actasmtoken:=tasmtoken(longint(firstoperator)+i);
+            actasmtoken:=i;
             is_asmoperator:=true;
             exit;
           end;
@@ -216,12 +237,12 @@ Unit Rax86int;
 
     Function tx86intreader.is_asmdirective(const s: string):boolean;
       var
-        i : longint;
+        i : tasmtoken;
       Begin
-        for i:=0 to _count_asmdirectives do
+        for i:=firstdirective to lastdirective do
          if s=_asmdirectives[i] then
           begin
-            actasmtoken:=tasmtoken(longint(firstdirective)+i);
+            actasmtoken:=i;
             is_asmdirective:=true;
             exit;
           end;
@@ -250,6 +271,17 @@ Unit Rax86int;
       end;
 
 
+    function tx86intreader.is_targetdirective(const s: string): boolean;
+      begin
+        result:=false;
+      end;
+
+
+    procedure tx86intreader.handletargetdirective;
+      begin
+      end;
+
+
     Procedure tx86intreader.GetToken;
       var
         len : longint;
@@ -275,7 +307,32 @@ Unit Rax86int;
          begin
            firsttoken:=FALSE;
            len:=0;
-           while c in ['A'..'Z','a'..'z','0'..'9','_','@'] do
+
+           { directive check }
+           if c = '.' then
+            begin
+              actasmpattern:='.';
+              c:=current_scanner.asmgetchar;
+              while c in ['A'..'Z','a'..'z','0'..'9','_'] do
+                begin
+                 actasmpattern:=actasmpattern+c;
+                 c:=current_scanner.asmgetchar;
+                end;
+              { directives are case sensitive!! }
+              if is_asmdirective(actasmpattern) then
+               exit;
+              if is_targetdirective(actasmpattern) then
+                begin
+                  actasmtoken:=AS_TARGET_DIRECTIVE;
+                  exit;
+                end;
+              Message1(asmr_e_not_directive_or_local_symbol,actasmpattern);
+              exit;
+            end;
+
+           while (c in ['A'..'Z','a'..'z','0'..'9','_','@']) or
+                 { TP7 also allows $&? characters in local labels }
+                 (forcelabel and (c in ['$','&','?'])) do
             begin
               { if there is an at_sign, then this must absolutely be a label }
               if c = '@' then
@@ -328,7 +385,7 @@ Unit Rax86int;
                begin
                  actasmpattern:=c;
                  c:=current_scanner.asmgetchar;
-                 while c in  ['A'..'Z','a'..'z','0'..'9','_','@'] do
+                 while c in  ['A'..'Z','a'..'z','0'..'9','_','@','$','&','?'] do
                   begin
                     actasmpattern:=actasmpattern + c;
                     c:=current_scanner.asmgetchar;
@@ -759,15 +816,197 @@ Unit Rax86int;
                                  Parsing Helpers
 *****************************************************************************}
 
+    { Adds two references (dest:=dest+src) }
+    procedure tx86intreader.AddReferences(dest,src : tx86operand);
+
+      procedure AddRegister(reg:tregister;scalefactor:byte);
+        begin
+          if reg=NR_NO then
+            exit;
+          if (dest.opr.ref.base=NR_NO) and (scalefactor=1) then
+            begin
+              dest.opr.ref.base:=reg;
+              exit;
+            end;
+          if dest.opr.ref.index=NR_NO then
+            begin
+              dest.opr.ref.index:=reg;
+              dest.opr.ref.scalefactor:=scalefactor;
+              exit;
+            end;
+          if dest.opr.ref.index=reg then
+            begin
+              Inc(dest.opr.ref.scalefactor,scalefactor);
+              exit;
+            end;
+          Message(asmr_e_multiple_index);
+        end;
+
+      var
+        tmplocal: TOprRec;
+        segreg: TRegister;
+      begin
+        case dest.opr.typ of
+          OPR_REFERENCE:
+            begin
+              case src.opr.typ of
+                OPR_REFERENCE:
+                  begin
+                    AddRegister(src.opr.ref.base,1);
+                    AddRegister(src.opr.ref.index,src.opr.ref.scalefactor);
+                    if src.opr.ref.segment<>NR_NO then
+                      SetSegmentOverride(dest,src.opr.ref.segment);
+                    Inc(dest.opr.ref.offset,src.opr.ref.offset);
+                    Inc(dest.opr.constoffset,src.opr.constoffset);
+                    dest.haslabelref:=dest.haslabelref or src.haslabelref;
+                    dest.hasproc:=dest.hasproc or src.hasproc;
+                    dest.hasvar:=dest.hasvar or src.hasvar;
+                    if assigned(src.opr.ref.symbol) then
+                      begin
+                        if assigned(dest.opr.ref.symbol) then
+                          Message(asmr_e_cant_have_multiple_relocatable_symbols);
+                        dest.opr.ref.symbol:=src.opr.ref.symbol;
+                      end;
+                    if assigned(src.opr.ref.relsymbol) then
+                      begin
+                        if assigned(dest.opr.ref.relsymbol) then
+                          Message(asmr_e_cant_have_multiple_relocatable_symbols);
+                        dest.opr.ref.relsymbol:=src.opr.ref.relsymbol;
+                      end;
+                    if dest.opr.ref.refaddr=addr_no then
+                      dest.opr.ref.refaddr:=src.opr.ref.refaddr;
+                  end;
+                OPR_LOCAL:
+                  begin
+                    tmplocal:=src.opr;
+                    if dest.opr.ref.base<>NR_NO then
+                      begin
+                        if tmplocal.localindexreg=NR_NO then
+                          begin
+                            tmplocal.localindexreg:=dest.opr.ref.base;
+                            tmplocal.localscale:=0;
+                          end
+                        else if tmplocal.localindexreg=dest.opr.ref.base then
+                          tmplocal.localscale:=Min(tmplocal.localscale,1)+1
+                        else
+                          Message(asmr_e_multiple_index);
+                      end;
+                    if dest.opr.ref.index<>NR_NO then
+                      begin
+                        if tmplocal.localindexreg=NR_NO then
+                          begin
+                            tmplocal.localindexreg:=dest.opr.ref.index;
+                            tmplocal.localscale:=dest.opr.ref.scalefactor;
+                          end
+                        else if tmplocal.localindexreg=dest.opr.ref.index then
+                          tmplocal.localscale:=Min(tmplocal.localscale,1)+Min(dest.opr.ref.scalefactor,1)
+                        else
+                          Message(asmr_e_multiple_index);
+                      end;
+                    Inc(tmplocal.localconstoffset,dest.opr.constoffset);
+                    Inc(tmplocal.localsymofs,dest.opr.ref.offset);
+                    segreg:=dest.opr.ref.segment;
+                    dest.opr:=tmplocal;
+                    if segreg<>NR_NO then
+                      SetSegmentOverride(dest,segreg);
+                  end;
+                else
+                  internalerror(2018030701);
+              end;
+            end;
+          OPR_LOCAL:
+            begin
+              case src.opr.typ of
+                OPR_REFERENCE:
+                  begin
+                    if src.opr.ref.base<>NR_NO then
+                      begin
+                        if dest.opr.localindexreg=NR_NO then
+                          begin
+                            dest.opr.localindexreg:=src.opr.ref.base;
+                            dest.opr.localscale:=0;
+                          end
+                        else if dest.opr.localindexreg=src.opr.ref.base then
+                          dest.opr.localscale:=Min(dest.opr.localscale,1)+1
+                        else
+                          Message(asmr_e_multiple_index);
+                      end;
+                    if src.opr.ref.index<>NR_NO then
+                      begin
+                        if dest.opr.localindexreg=NR_NO then
+                          begin
+                            dest.opr.localindexreg:=src.opr.ref.index;
+                            dest.opr.localscale:=src.opr.ref.scalefactor;
+                          end
+                        else if dest.opr.localindexreg=src.opr.ref.index then
+                          dest.opr.localscale:=Min(dest.opr.localscale,1)+Min(src.opr.ref.scalefactor,1)
+                        else
+                          Message(asmr_e_multiple_index);
+                      end;
+                    Inc(dest.opr.localconstoffset,src.opr.constoffset);
+                    Inc(dest.opr.localsymofs,src.opr.ref.offset);
+                    if src.opr.ref.segment<>NR_NO then
+                      SetSegmentOverride(dest,src.opr.ref.segment);
+                  end;
+                OPR_LOCAL:
+                  Message(asmr_e_no_local_or_para_allowed);
+                else
+                  internalerror(2018030703);
+              end;
+            end;
+          else
+            internalerror(2018030702);
+        end;
+      end;
+
+
+    procedure tx86intreader.SetSegmentOverride(oper:tx86operand;seg:tregister);
+      begin
+        if not is_segment_reg(seg) then
+          Message(asmr_e_invalid_seg_override);
+{$ifdef x86_64}
+        if (seg=NR_CS) or (seg=NR_DS) or (seg=NR_SS) or (seg=NR_ES) then
+          Message1(asmr_w_segment_override_ignored_in_64bit_mode,masm_regname(seg));
+{$endif x86_64}
+        case oper.opr.typ of
+          OPR_REFERENCE:
+            begin
+              if oper.opr.ref.segment<>NR_NO then
+                begin
+                  if m_tp7 in current_settings.modeswitches then
+                    Message(asmr_w_multiple_segment_overrides)
+                  else
+                    Message(asmr_e_multiple_segment_overrides);
+                end;
+              oper.opr.ref.segment:=seg;
+            end;
+          OPR_LOCAL:
+            begin
+              if oper.opr.localsegment<>NR_NO then
+                begin
+                  if m_tp7 in current_settings.modeswitches then
+                    Message(asmr_w_multiple_segment_overrides)
+                  else
+                    Message(asmr_e_multiple_segment_overrides);
+                end;
+              oper.opr.localsegment:=seg;
+            end;
+          else
+            internalerror(2018030703);
+        end;
+      end;
+
+
     { This routine builds up a record offset after a AS_DOT
       token is encountered.
       On entry actasmtoken should be equal to AS_DOT                     }
-    Procedure tx86intreader.BuildRecordOffsetSize(const expr: string;var offset:tcgint;var size:tcgint; var mangledname: string; needvmtofs: boolean; out hastypecast: boolean);
+    Procedure tx86intreader.BuildRecordOffsetSize(const expr: string;out offset:tcgint;out size:tcgint; out mangledname: string; needvmtofs: boolean; out hastypecast: boolean);
       var
         s: string;
       Begin
         offset:=0;
         size:=0;
+        mangledname:='';
         hastypecast:=false;
         s:=expr;
         while (actasmtoken=AS_DOT) do
@@ -790,7 +1029,7 @@ Unit Rax86int;
       end;
 
 
-    Procedure tx86intreader.BuildConstSymbolExpression(needofs,isref,startingminus:boolean;var value:tcgint;var asmsym:string;var asmsymtyp:TAsmsymtype;out isseg,is_farproc_entry:boolean);
+    Procedure tx86intreader.BuildConstSymbolExpression(in_flags: tconstsymbolexpressioninputflags;out value:tcgint;out asmsym:string;out asmsymtyp:TAsmsymtype;out size:tcgint;out out_flags:tconstsymbolexpressionoutputflags);
       var
         tempstr,expr,hs,mangledname : string;
         parenlevel : longint;
@@ -810,12 +1049,12 @@ Unit Rax86int;
         value:=0;
         asmsym:='';
         asmsymtyp:=AT_DATA;
-        isseg:=false;
-        is_farproc_entry:=FALSE;
+        size:=0;
+        out_flags:=[];
         errorflag:=FALSE;
         tempstr:='';
         expr:='';
-        if startingminus then
+        if cseif_startingminus in in_flags then
           expr:='-';
         inexpression:=TRUE;
         parenlevel:=0;
@@ -823,8 +1062,32 @@ Unit Rax86int;
         needvmtofs:=FALSE;
         Repeat
           { Support ugly delphi constructs like: [ECX].1+2[EDX] }
-          if isref and (actasmtoken=AS_LBRACKET) then
+          if (cseif_isref in in_flags) and (actasmtoken=AS_LBRACKET) then
             break;
+          if (cseif_referencelike in in_flags) and
+             (actasmtoken in [AS_BYTE,AS_WORD,AS_DWORD,AS_QWORD,AS_TBYTE,AS_DQWORD,AS_OWORD,AS_XMMWORD,AS_YWORD,AS_YMMWORD]) then
+            begin
+              { Support ugly tp7 and delphi constructs like 'DD DWORD PTR 5' }
+              Consume(actasmtoken);
+              Consume(AS_PTR);
+            end;
+          if (cseif_referencelike in in_flags) and
+             (actasmtoken in [AS_LBRACKET,AS_RBRACKET]) then
+            case actasmtoken of
+              AS_LBRACKET:
+                begin
+                  Consume(AS_LBRACKET);
+                  if (length(expr)>0) and
+                     not (expr[length(expr)] in ['+','-']) then
+                    expr:=expr+'+';
+                  expr:=expr+'[';
+                end;
+              AS_RBRACKET:
+                begin
+                  Consume(AS_RBRACKET);
+                  expr:=expr+']';
+                end;
+            end;
           Case actasmtoken of
             AS_LPAREN:
               Begin
@@ -864,14 +1127,14 @@ Unit Rax86int;
             AS_STAR:
               Begin
                 Consume(AS_STAR);
-                if isref and (actasmtoken=AS_REGISTER) then
+                if (cseif_isref in in_flags) and (actasmtoken=AS_REGISTER) then
                  break;
                 expr:=expr + '*';
               end;
             AS_PLUS:
               Begin
                 Consume(AS_PLUS);
-                if isref and (actasmtoken=AS_REGISTER) then
+                if (cseif_isref in in_flags) and ((actasmtoken=AS_REGISTER) or (actasmtoken=AS_LBRACKET)) then
                  break;
                 expr:=expr + '+';
               end;
@@ -908,7 +1171,7 @@ Unit Rax86int;
 {$ifdef i8086}
             AS_SEG:
               begin
-                isseg:=true;
+                include(out_flags,cseof_isseg);
                 Consume(actasmtoken);
                 if actasmtoken<>AS_ID then
                  Message(asmr_e_seg_without_identifier);
@@ -918,7 +1181,10 @@ Unit Rax86int;
             AS_OFFSET:
               begin
                 if (actasmtoken = AS_OFFSET) then
-                  needofs:=true
+                  begin
+                    include(in_flags,cseif_needofs);
+                    include(out_flags,cseof_hasofs);
+                  end
                 else
                   needvmtofs:=true;
                 Consume(actasmtoken);
@@ -1066,8 +1332,11 @@ Unit Rax86int;
                                 Message(asmr_w_calling_overload_func);
                                hs:=tprocdef(tprocsym(sym).ProcdefList[0]).mangledname;
 {$ifdef i8086}
-                               is_farproc_entry:=is_proc_far(tprocdef(tprocsym(sym).ProcdefList[0]))
-                                    and not (po_interrupt in tprocdef(tprocsym(sym).ProcdefList[0]).procoptions);
+                               if is_proc_far(tprocdef(tprocsym(sym).ProcdefList[0]))
+                                  and not (po_interrupt in tprocdef(tprocsym(sym).ProcdefList[0]).procoptions) then
+                                 include(out_flags,cseof_is_farproc_entry)
+                               else
+                                 exclude(out_flags,cseof_is_farproc_entry);
 {$endif i8086}
                                hssymtyp:=AT_FUNCTION;
                              end;
@@ -1075,6 +1344,7 @@ Unit Rax86int;
                              begin
                                if not(ttypesym(sym).typedef.typ in [recorddef,objectdef]) then
                                 Message(asmr_e_wrong_sym_type);
+                               size:=ttypesym(sym).typedef.size;
                              end;
                            fieldvarsym :
                              begin
@@ -1104,7 +1374,7 @@ Unit Rax86int;
                           delete(expr,length(expr),1);
                        end
                       else
-                       if needofs then
+                       if (cseif_needofs in in_flags) then
                          begin
                            if (prevtok<>AS_OFFSET) then
                              Message(asmr_e_need_offset);
@@ -1117,7 +1387,7 @@ Unit Rax86int;
                        (sym.typ = fieldvarsym) and
                        not(sp_static in sym.symoptions)) then
                      begin
-                      BuildRecordOffsetSize(tempstr,l,k,hs,needvmtofs,hastypecast);
+                      BuildRecordOffsetSize(tempstr,l,size,hs,needvmtofs,hastypecast);
                       if hs <> '' then
                         hssymtyp:=AT_FUNCTION
                       else
@@ -1126,6 +1396,15 @@ Unit Rax86int;
                           expr:=expr + tempstr;
                         end
                     end
+                   else if (actasmtoken<>AS_DOT) and
+                           assigned(sym) and
+                           (sym.typ=typesym) and
+                           (ttypesym(sym).typedef.typ in [recorddef,objectdef]) then
+                     begin
+                       { just a record type (without being followed by dot)
+                         evaluates to 0. Ugly, but TP7 compatible. }
+                       expr:=expr+'0';
+                     end
                    else
                     begin
                       if (expr='') or (expr[length(expr)] in ['+','-','/','*']) then
@@ -1187,28 +1466,30 @@ Unit Rax86int;
 
     Function tx86intreader.BuildConstExpression:aint;
       var
-        l : tcgint;
+        l,size : tcgint;
         hs : string;
         hssymtyp : TAsmsymtype;
-        isseg : boolean;
-        is_farproc_entry : boolean;
+        out_flags : tconstsymbolexpressionoutputflags;
       begin
-        BuildConstSymbolExpression(false,false,false,l,hs,hssymtyp,isseg,is_farproc_entry);
+        BuildConstSymbolExpression([],l,hs,hssymtyp,size,out_flags);
         if hs<>'' then
          Message(asmr_e_relocatable_symbol_not_allowed);
         BuildConstExpression:=l;
       end;
 
 
-    Function tx86intreader.BuildRefConstExpression(startingminus:boolean):aint;
+    Function tx86intreader.BuildRefConstExpression(out size:tcgint;startingminus:boolean):aint;
       var
         l : tcgint;
         hs : string;
         hssymtyp : TAsmsymtype;
-        isseg : boolean;
-        is_farproc_entry : boolean;
+        in_flags : tconstsymbolexpressioninputflags;
+        out_flags : tconstsymbolexpressionoutputflags;
       begin
-        BuildConstSymbolExpression(false,true,startingminus,l,hs,hssymtyp,isseg,is_farproc_entry);
+        in_flags:=[cseif_isref];
+        if startingminus then
+          include(in_flags,cseif_startingminus);
+        BuildConstSymbolExpression(in_flags,l,hs,hssymtyp,size,out_flags);
         if hs<>'' then
          Message(asmr_e_relocatable_symbol_not_allowed);
         BuildRefConstExpression:=l;
@@ -1218,19 +1499,26 @@ Unit Rax86int;
     procedure tx86intreader.BuildReference(oper : tx86operand);
       var
         scale : byte;
-        k,l : tcgint;
+        k,l,size : tcgint;
         tempstr,hs : string;
         tempsymtyp : tasmsymtype;
         code : integer;
         hreg : tregister;
         GotStar,GotOffset,HadVar,
-        GotPlus,Negative : boolean;
+        GotPlus,Negative,BracketlessReference : boolean;
         hl : tasmlabel;
-        isseg: boolean;
-        is_farproc_entry,
         hastypecast: boolean;
+        tmpoper: tx86operand;
+        cse_in_flags: tconstsymbolexpressioninputflags;
+        cse_out_flags: tconstsymbolexpressionoutputflags;
       Begin
-        Consume(AS_LBRACKET);
+        if actasmtoken=AS_LBRACKET then
+          begin
+            Consume(AS_LBRACKET);
+            BracketlessReference:=false;
+          end
+        else
+          BracketlessReference:=true;
         if not(oper.opr.typ in [OPR_LOCAL,OPR_REFERENCE]) then
           oper.InitRef;
         GotStar:=false;
@@ -1254,7 +1542,9 @@ Unit Rax86int;
                    (SearchIConstant(actasmpattern,l) or
                     SearchRecordType(actasmpattern)) then
                  begin
-                   l:=BuildRefConstExpression(negative);
+                   l:=BuildRefConstExpression(size,negative);
+                   if size<>0 then
+                     oper.SetSize(size,false);
                    negative:=false;   { "l" was negated if necessary }
                    GotPlus:=(prevasmtoken=AS_PLUS);
                    GotStar:=(prevasmtoken=AS_STAR);
@@ -1479,61 +1769,70 @@ Unit Rax86int;
 
             AS_REGISTER :
               begin
-                if not((GotPlus and (not Negative)) or
-                       GotStar) then
-                  Message(asmr_e_invalid_reference_syntax);
                 hreg:=actasmregister;
                 Consume(AS_REGISTER);
-                { this register will be the index:
-                   1. just read a *
-                   2. next token is a *
-                   3. base register is already used }
-                case oper.opr.typ of
-                  OPR_LOCAL :
-                    begin
-                      if (oper.opr.localindexreg<>NR_NO) then
-                        Message(asmr_e_multiple_index);
-{$ifdef x86_64}
-                      { Locals/parameters cannot be accessed RIP-relative. Need a dedicated error message here? }
-                      if (hreg=NR_RIP) then
-                        Message(asmr_e_no_local_or_para_allowed);
-{$endif x86_64}
-                      oper.opr.localindexreg:=hreg;
-                      if scale<>0 then
+                if actasmtoken=AS_COLON then
+                  begin
+                    Consume(AS_COLON);
+                    oper.InitRefConvertLocal;
+                    SetSegmentOverride(oper,hreg);
+                  end
+                else
+                  begin
+                    if not((GotPlus and (not Negative)) or
+                           GotStar) then
+                      Message(asmr_e_invalid_reference_syntax);
+                    { this register will be the index:
+                       1. just read a *
+                       2. next token is a *
+                       3. base register is already used }
+                    case oper.opr.typ of
+                      OPR_LOCAL :
                         begin
-                          oper.opr.localscale:=scale;
-                          scale:=0;
+                          if (oper.opr.localindexreg<>NR_NO) then
+                            Message(asmr_e_multiple_index);
+{$ifdef x86_64}
+                          { Locals/parameters cannot be accessed RIP-relative. Need a dedicated error message here? }
+                          if (hreg=NR_RIP) then
+                            Message(asmr_e_no_local_or_para_allowed);
+{$endif x86_64}
+                          oper.opr.localindexreg:=hreg;
+                          if scale<>0 then
+                            begin
+                              oper.opr.localscale:=scale;
+                              scale:=0;
+                            end;
                         end;
-                    end;
-                  OPR_REFERENCE :
-                    begin
-                      if (GotStar) or
-                         (actasmtoken=AS_STAR) or
-                         (oper.opr.ref.base<>NR_NO) then
-                       begin
-                         if (oper.opr.ref.index<>NR_NO) then
-                          Message(asmr_e_multiple_index);
-                         oper.opr.ref.index:=hreg;
-                         if scale<>0 then
+                      OPR_REFERENCE :
+                        begin
+                          if (GotStar) or
+                             (actasmtoken=AS_STAR) or
+                             (oper.opr.ref.base<>NR_NO) then
                            begin
-                             oper.opr.ref.scalefactor:=scale;
-                             scale:=0;
-                           end;
-                       end
-                      else
-                        begin
-                          oper.opr.ref.base:=hreg;
+                             if (oper.opr.ref.index<>NR_NO) then
+                              Message(asmr_e_multiple_index);
+                             oper.opr.ref.index:=hreg;
+                             if scale<>0 then
+                               begin
+                                 oper.opr.ref.scalefactor:=scale;
+                                 scale:=0;
+                               end;
+                           end
+                          else
+                            begin
+                              oper.opr.ref.base:=hreg;
 {$ifdef x86_64}
-                          { non-GOT based RIP-relative accesses are also position-independent }
-                          if (oper.opr.ref.base=NR_RIP) and
-                             (oper.opr.ref.refaddr<>addr_pic) then
-                            oper.opr.ref.refaddr:=addr_pic_no_got;
+                              { non-GOT based RIP-relative accesses are also position-independent }
+                              if (oper.opr.ref.base=NR_RIP) and
+                                 (oper.opr.ref.refaddr<>addr_pic) then
+                                oper.opr.ref.refaddr:=addr_pic_no_got;
 {$endif x86_64}
+                            end;
                         end;
                     end;
-                end;
-                GotPlus:=false;
-                GotStar:=false;
+                    GotPlus:=false;
+                    GotStar:=false;
+                  end;
               end;
 
             AS_OFFSET :
@@ -1550,7 +1849,10 @@ Unit Rax86int;
               begin
                 if not GotPlus and not GotStar then
                   Message(asmr_e_invalid_reference_syntax);
-                BuildConstSymbolExpression(true,true,GotPlus and negative,l,tempstr,tempsymtyp,isseg,is_farproc_entry);
+                cse_in_flags:=[cseif_needofs,cseif_isref];
+                if GotPlus and negative then
+                  include(cse_in_flags,cseif_startingminus);
+                BuildConstSymbolExpression(cse_in_flags,l,tempstr,tempsymtyp,size,cse_out_flags);
                 { already handled by BuildConstSymbolExpression(); must be
                   handled there to avoid [reg-1+1] being interpreted as
                   [reg-(1+1)] }
@@ -1564,7 +1866,7 @@ Unit Rax86int;
                      begin
                        oper.opr.ref.symbol:=current_asmdata.RefAsmSymbol(tempstr,tempsymtyp);
 {$ifdef i8086}
-                       if isseg then
+                       if cseof_isseg in cse_out_flags then
                          begin
                            if not (oper.opr.ref.refaddr in [addr_fardataseg,addr_dgroup]) then
                              oper.opr.ref.refaddr:=addr_seg;
@@ -1616,11 +1918,42 @@ Unit Rax86int;
                 GotStar:=(prevasmtoken=AS_STAR);
               end;
 
+            AS_LBRACKET :
+              begin
+                if (GotPlus and Negative) or GotStar then
+                  Message(asmr_e_invalid_reference_syntax);
+                tmpoper:=Tx86Operand.create;
+                BuildReference(tmpoper);
+                AddReferences(oper,tmpoper);
+                tmpoper.Free;
+                GotPlus:=false;
+                GotStar:=false;
+              end;
+
             AS_RBRACKET :
               begin
-                if GotPlus or GotStar then
+                if GotPlus or GotStar or BracketlessReference then
                   Message(asmr_e_invalid_reference_syntax);
                 Consume(AS_RBRACKET);
+                if actasmtoken=AS_LBRACKET then
+                  begin
+                    tmpoper:=Tx86Operand.create;
+                    BuildReference(tmpoper);
+                    AddReferences(oper,tmpoper);
+                    tmpoper.Free;
+                  end;
+                break;
+              end;
+
+            AS_SEPARATOR,
+            AS_END,
+            AS_COMMA:
+              begin
+                if not BracketlessReference then
+                  begin
+                    Message(asmr_e_invalid_reference_syntax);
+                    RecoverConsume(true);
+                  end;
                 break;
               end;
 
@@ -1637,25 +1970,24 @@ Unit Rax86int;
 
     Procedure tx86intreader.BuildConstantOperand(oper: tx86operand);
       var
-        l : tcgint;
+        l,size : tcgint;
         tempstr : string;
         tempsymtyp : tasmsymtype;
-        isseg: boolean;
-        is_farproc_entry : boolean;
+        cse_out_flags : tconstsymbolexpressionoutputflags;
       begin
         if not (oper.opr.typ in [OPR_NONE,OPR_CONSTANT]) then
           Message(asmr_e_invalid_operand_type);
-        BuildConstSymbolExpression(true,false,false,l,tempstr,tempsymtyp,isseg,is_farproc_entry);
+        BuildConstSymbolExpression([cseif_needofs],l,tempstr,tempsymtyp,size,cse_out_flags);
 {$ifdef i8086}
         if tempstr='@DATA' then
           begin
-            if not isseg then
+            if not (cseof_isseg in cse_out_flags) then
               Message(asmr_e_CODE_or_DATA_without_SEG);
             oper.SetupData;
           end
         else if tempstr='@CODE' then
           begin
-            if not isseg then
+            if not (cseof_isseg in cse_out_flags) then
               Message(asmr_e_CODE_or_DATA_without_SEG);
             oper.SetupCode;
           end
@@ -1666,8 +1998,8 @@ Unit Rax86int;
             oper.opr.typ:=OPR_SYMBOL;
             oper.opr.symofs:=l;
             oper.opr.symbol:=current_asmdata.RefAsmSymbol(tempstr,tempsymtyp);
-            oper.opr.symseg:=isseg;
-            oper.opr.sym_farproc_entry:=is_farproc_entry;
+            oper.opr.symseg:=cseof_isseg in cse_out_flags;
+            oper.opr.sym_farproc_entry:=cseof_is_farproc_entry in cse_out_flags;
           end
         else
           if oper.opr.typ=OPR_NONE then
@@ -1733,13 +2065,8 @@ Unit Rax86int;
                         { don't allow direct access to fields of parameters, because that
                           will generate buggy code. Allow it only for explicit typecasting
                           and when the parameter is in a register (delphi compatible) }
-                        if (not oper.hastype) and
-                           (oper.opr.localsym.typ=paravarsym) and
-                           (not(po_assembler in current_procinfo.procdef.procoptions) or
-                            (tparavarsym(oper.opr.localsym).paraloc[calleeside].location^.loc<>LOC_REGISTER) or
-                            (not is_implicit_pointer_object_type(oper.opr.localsym.vardef) and
-                             not paramanager.push_addr_param(oper.opr.localsym.varspez,oper.opr.localsym.vardef,current_procinfo.procdef.proccalloption))) then
-                          Message(asmr_e_cannot_access_field_directly_for_parameters);
+                        if (not oper.hastype) then
+                          checklocalsubscript(oper.opr.localsym);
 
                         oper.opr.localforceref:=true;
                         inc(oper.opr.localsymofs,toffset);
@@ -1823,7 +2150,9 @@ Unit Rax86int;
                     else
 {$endif x86_64}
                     begin
-                      l := BuildRefConstExpression;
+                      l := BuildRefConstExpression(tsize);
+                      if tsize<>0 then
+                        oper.SetSize(tsize,false);
                       inc(oper.opr.ref.offset,l);
                       inc(oper.opr.constoffset,l);
                     end;
@@ -1915,14 +2244,18 @@ Unit Rax86int;
                       case oper.opr.typ of
                         OPR_REFERENCE :
                           begin
-                            l := BuildRefConstExpression;
+                            l := BuildRefConstExpression(tsize);
+                            if tsize<>0 then
+                              oper.SetSize(tsize,false);
                             inc(oper.opr.ref.offset,l);
                             inc(oper.opr.constoffset,l);
                           end;
 
                         OPR_LOCAL :
                           begin
-                            l := BuildRefConstExpression;
+                            l := BuildRefConstExpression(tsize);
+                            if tsize<>0 then
+                              oper.SetSize(tsize,false);
                             inc(oper.opr.localsymofs,l);
                             inc(oper.opr.localconstoffset,l);
                           end;
@@ -2009,7 +2342,7 @@ Unit Rax86int;
                  Begin
                    Consume(AS_COLON);
                    oper.InitRef;
-                   oper.opr.ref.segment:=tempreg;
+                   SetSegmentOverride(oper,tempreg);
                    BuildReference(oper);
                  end
                 else
@@ -2121,6 +2454,7 @@ Unit Rax86int;
         i:byte;
         tmp: toperand;
         di_param, si_param: ShortInt;
+        prefix_or_override_pending_concat: boolean = false;
 {$ifdef i8086}
         hsymbol: TAsmSymbol;
         hoffset: ASizeInt;
@@ -2135,22 +2469,26 @@ Unit Rax86int;
           if is_prefix(actopcode) then
             with instr do
               begin
+                if prefix_or_override_pending_concat then
+                  ConcatInstruction(curlist);
                 PrefixOp:=ActOpcode;
                 opcode:=ActOpcode;
                 condition:=ActCondition;
                 opsize:=ActOpsize;
-                ConcatInstruction(curlist);
+                prefix_or_override_pending_concat:=true;
                 consume(AS_OPCODE);
               end
           else
            if is_override(actopcode) then
              with instr do
                begin
+                 if prefix_or_override_pending_concat then
+                   ConcatInstruction(curlist);
                  OverrideOp:=ActOpcode;
                  opcode:=ActOpcode;
                  condition:=ActCondition;
                  opsize:=ActOpsize;
-                 ConcatInstruction(curlist);
+                 prefix_or_override_pending_concat:=true;
                  consume(AS_OPCODE);
                end
           else
@@ -2162,10 +2500,23 @@ Unit Rax86int;
         { opcode }
         if (actasmtoken <> AS_OPCODE) then
          begin
-           Message(asmr_e_invalid_or_missing_opcode);
-           RecoverConsume(false);
-           exit;
+           { allow a prefix or override to be used standalone, like an opcode
+             with zero operands; this is TP7 compatible and allows compiling
+             ugly code like 'seges; db $67,$66; lodsw' }
+           if prefix_or_override_pending_concat then
+             exit
+           else
+             begin
+               Message(asmr_e_invalid_or_missing_opcode);
+               RecoverConsume(false);
+               exit;
+             end;
          end;
+        if prefix_or_override_pending_concat then
+          begin
+            instr.ConcatInstruction(curlist);
+            prefix_or_override_pending_concat:=false;
+          end;
         { Fill the instr object with the current state }
         with instr do
           begin
@@ -2398,9 +2749,8 @@ Unit Rax86int;
         asmsymtyp : tasmsymtype;
         asmsym,
         expr: string;
-        value : tcgint;
-        isseg: boolean;
-        is_farproc_entry : boolean;
+        value,size : tcgint;
+        cse_out_flags : tconstsymbolexpressionoutputflags;
       Begin
         Repeat
           Case actasmtoken of
@@ -2424,25 +2774,46 @@ Unit Rax86int;
                 end;
                 ConcatString(curlist,expr);
               end;
+            AS_BYTE,
+            AS_WORD,
+            AS_DWORD,
+            AS_TBYTE,
+            AS_DQWORD,
+            AS_QWORD,
+            AS_OWORD,
+            AS_XMMWORD,
+            AS_YWORD,
+            AS_YMMWORD,
             AS_PLUS,
             AS_MINUS,
             AS_LPAREN,
             AS_NOT,
             AS_INTNUM,
+            AS_OFFSET,
+            AS_LBRACKET,
 {$ifdef i8086}
             AS_SEG,
 {$endif i8086}
             AS_ID :
               Begin
-                BuildConstSymbolExpression(false,false,false,value,asmsym,asmsymtyp,isseg,is_farproc_entry);
+                BuildConstSymbolExpression([cseif_referencelike],value,asmsym,asmsymtyp,size,cse_out_flags);
                 if asmsym<>'' then
                  begin
-                   if (not isseg) and (constsize<>sizeof(pint)) then
-                     Message1(asmr_w_const32bit_for_address,asmsym);
+                   if not (cseof_isseg in cse_out_flags) and
+{$ifdef i8086}
+                      ((constsize<>2) and (constsize<>4))
+{$else i8086}
+                      (constsize<>sizeof(pint))
+{$endif i8086}
+                      then
+                     begin
+                       Message1(asmr_w_const32bit_for_address,asmsym);
+                       constsize:=sizeof(pint);
+                     end;
 {$ifdef i8086}
                    if asmsym='@DATA' then
                      begin
-                       if not isseg then
+                       if not (cseof_isseg in cse_out_flags) then
                          Message(asmr_e_CODE_or_DATA_without_SEG);
                        if constsize<2 then
                          Message1(asmr_e_const16bit_for_segment,asmsym);
@@ -2455,7 +2826,7 @@ Unit Rax86int;
                      end
                    else if asmsym='@CODE' then
                      begin
-                       if not isseg then
+                       if not (cseof_isseg in cse_out_flags) then
                          Message(asmr_e_CODE_or_DATA_without_SEG);
                        if constsize<2 then
                          Message1(asmr_e_const16bit_for_segment,asmsym);
@@ -2463,7 +2834,7 @@ Unit Rax86int;
                        if constsize>2 then
                          ConcatConstant(curlist,0,constsize-2);
                      end
-                   else if isseg then
+                   else if cseof_isseg in cse_out_flags then
                      begin
                        if constsize<2 then
                          Message1(asmr_e_const16bit_for_segment,asmsym);
@@ -2473,7 +2844,7 @@ Unit Rax86int;
                      end
                    else
 {$endif i8086}
-                     ConcatConstSymbol(curlist,asmsym,asmsymtyp,value);
+                     ConcatConstSymbol(curlist,asmsym,asmsymtyp,value,constsize,cseof_hasofs in cse_out_flags);
                  end
                 else
                  ConcatConstant(curlist,value,constsize);
@@ -2640,6 +3011,9 @@ Unit Rax86int;
             Begin
               Consume(AS_SEPARATOR);
             end;
+
+          AS_TARGET_DIRECTIVE:
+            HandleTargetDirective;
 
           AS_END :
             break; { end assembly block }

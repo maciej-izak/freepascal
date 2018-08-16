@@ -56,6 +56,7 @@ interface
           { parts explicitely in the code generator (JM)    }
           function first_addstring: tnode; virtual;
           function first_addset: tnode; virtual;
+          function first_adddynarray : tnode; virtual;
           { only implements "muln" nodes, the rest always has to be done in }
           { the code generator for performance reasons (JM)                 }
           function first_add64bitint: tnode; virtual;
@@ -126,6 +127,7 @@ implementation
 {$ENDIF}
       globtype,systems,constexp,compinnr,
       cutils,verbose,globals,widestr,
+      tokens,
       symconst,symdef,symsym,symcpu,symtable,defutil,defcmp,
       cgbase,
       htypechk,pass_1,
@@ -154,8 +156,9 @@ implementation
               begin
                 { when a comp or currency is used, use always the
                   best float type to calculate the result }
-                if (tfloatdef(t2).floattype in [s64comp,s64currency]) or
-                  (tfloatdef(t2).floattype in [s64comp,s64currency]) then
+                if (tfloatdef(t1).floattype in [s64comp,s64currency]) or
+                  (tfloatdef(t2).floattype in [s64comp,s64currency]) or
+                  (cs_excessprecision in current_settings.localswitches) then
                   result:=pbestrealtype^
                 else
                   if floatweight[tfloatdef(t2).floattype]>floatweight[tfloatdef(t1).floattype] then
@@ -1204,6 +1207,72 @@ implementation
               inserttypeconv(n,adef);
           end;
 
+        function maybe_convert_to_insert:tnode;
+
+          function element_count(arrconstr: tarrayconstructornode):asizeint;
+            begin
+              result:=0;
+              while assigned(arrconstr) do
+                begin
+                  if arrconstr.nodetype=arrayconstructorrangen then
+                    internalerror(2018052501);
+                  inc(result);
+                  arrconstr:=tarrayconstructornode(tarrayconstructornode(arrconstr).right);
+                end;
+            end;
+
+          var
+            elem : tnode;
+            para : tcallparanode;
+            isarrconstrl,
+            isarrconstrr : boolean;
+            index : asizeint;
+          begin
+            result:=nil;
+
+            isarrconstrl:=left.nodetype=arrayconstructorn;
+            isarrconstrr:=right.nodetype=arrayconstructorn;
+
+            if not assigned(aktassignmentnode) or
+                (aktassignmentnode.right<>self) or
+                not(
+                  isarrconstrl or
+                  isarrconstrr
+                ) or
+                not(
+                  left.isequal(aktassignmentnode.left) or
+                  right.isequal(aktassignmentnode.left)
+                ) or
+                not valid_for_var(aktassignmentnode.left,false) or
+                (isarrconstrl and (element_count(tarrayconstructornode(left))>1)) or
+                (isarrconstrr and (element_count(tarrayconstructornode(right))>1)) then
+              exit;
+
+            if isarrconstrl then
+              begin
+                index:=0;
+                elem:=tarrayconstructornode(left).left;
+                tarrayconstructornode(left).left:=nil;
+              end
+            else
+              begin
+                index:=high(asizeint);
+                elem:=tarrayconstructornode(right).left;
+                tarrayconstructornode(right).left:=nil;
+              end;
+
+            { we use the fact that insert() caps the index to avoid a copy }
+            para:=ccallparanode.create(
+                    cordconstnode.create(index,sizesinttype,false),
+                    ccallparanode.create(
+                      aktassignmentnode.left.getcopy,
+                      ccallparanode.create(
+                        elem,nil)));
+
+            result:=cinlinenode.create(in_insert_x_y_z,false,para);
+            include(aktassignmentnode.flags,nf_assign_done_in_right);
+          end;
+
       begin
          result:=nil;
          rlow:=0;
@@ -1234,22 +1303,41 @@ implementation
            if not (nodetype in [equaln,unequaln]) then
              InternalError(2013091601);
 
-         { convert array constructors to sets, because there is no other operator
-           possible for array constructors }
-         if is_array_constructor(left.resultdef) then
-          begin
-            arrayconstructor_to_set(left);
-            typecheckpass(left);
-          end;
-         if is_array_constructor(right.resultdef) then
-          begin
-            arrayconstructor_to_set(right);
-            typecheckpass(right);
-          end;
-
          { allow operator overloading }
          hp:=self;
-         if isbinaryoverloaded(hp) then
+
+         if is_array_constructor(left.resultdef) or is_array_constructor(right.resultdef) then
+           begin
+             { check whether there is a suitable operator for the array constructor
+               (but only if the "+" array operator isn't used), if not fall back to sets }
+             if (
+                   (nodetype<>addn) or
+                   not (m_array_operators in current_settings.modeswitches) or
+                   (is_array_constructor(left.resultdef) and not is_dynamic_array(right.resultdef)) or
+                   (not is_dynamic_array(left.resultdef) and is_array_constructor(right.resultdef))
+                 ) and
+                 not isbinaryoverloaded(hp,[ocf_check_only]) then
+               begin
+                 if is_array_constructor(left.resultdef) then
+                   begin
+                     arrayconstructor_to_set(left);
+                     typecheckpass(left);
+                   end;
+                 if is_array_constructor(right.resultdef) then
+                   begin
+                     arrayconstructor_to_set(right);
+                     typecheckpass(right);
+                   end;
+               end;
+           end;
+
+         if is_dynamic_array(left.resultdef) and is_dynamic_array(right.resultdef) and
+             (nodetype=addn) and
+             (m_array_operators in current_settings.modeswitches) and
+             isbinaryoverloaded(hp,[ocf_check_non_overloadable,ocf_check_only]) then
+           message3(parser_w_operator_overloaded_hidden_3,left.resultdef.typename,arraytokeninfo[_PLUS].str,right.resultdef.typename);
+
+         if isbinaryoverloaded(hp,[]) then
            begin
               result:=hp;
               exit;
@@ -1309,7 +1397,12 @@ implementation
            if (right.resultdef.typ=floatdef) and
               (left.resultdef.typ=floatdef) and
               (tfloatdef(left.resultdef).floattype=tfloatdef(right.resultdef).floattype) then
-             resultrealdef:=left.resultdef
+             begin
+               if cs_excessprecision in current_settings.localswitches then
+                 resultrealdef:=pbestrealtype^
+               else
+                 resultrealdef:=left.resultdef
+             end
            { when there is a currency type then use currency, but
              only when currency is defined as float }
            else
@@ -2120,7 +2213,19 @@ implementation
               inserttypeconv_explicit(right,left.resultdef)
           end
 
-       { support dynamicarray=nil,dynamicarray<>nil }
+         { <dyn. array>+<dyn. array> ? }
+         else if (nodetype=addn) and (is_dynamic_array(ld) or is_dynamic_array(rd)) then
+           begin
+              result:=maybe_convert_to_insert;
+              if assigned(result) then
+                exit;
+              if not(is_dynamic_array(ld)) then
+                inserttypeconv(left,rd);
+              if not(is_dynamic_array(rd)) then
+                inserttypeconv(right,ld);
+           end
+
+        { support dynamicarray=nil,dynamicarray<>nil }
          else if (is_dynamic_array(ld) and (rt=niln)) or
                  (is_dynamic_array(rd) and (lt=niln)) or
                  (is_dynamic_array(ld) and is_dynamic_array(rd)) then
@@ -2345,11 +2450,49 @@ implementation
                 end;
               muln :
                 begin
+                  hp:=nil;
                   if s64currencytype.typ=floatdef then
-                    hp:=caddnode.create(slashn,getcopy,crealconstnode.create(10000.0,s64currencytype))
+                    begin
+{$ifndef VER3_0}
+                      { if left is a currency integer constant, we can get rid of the factor 10000 }
+                      { int64(...) causes a cast on currency, so it is the currency value multiplied by 10000 }
+                      if (left.nodetype=realconstn) and (is_currency(left.resultdef)) and ((int64(trealconstnode(left).value_currency) mod 10000)=0) then
+                        begin
+                          { trealconstnode expects that value_real and value_currency contain valid values }
+                          trealconstnode(left).value_currency:=trealconstnode(left).value_currency {$ifdef FPC_CURRENCY_IS_INT64}div{$else}/{$endif} 10000;
+                          trealconstnode(left).value_real:=trealconstnode(left).value_real/10000;
+                        end
+                      { or if right is an integer constant, we can get rid of its factor 10000 }
+                      else if (right.nodetype=realconstn) and (is_currency(right.resultdef)) and ((int64(trealconstnode(right).value_currency) mod 10000)=0) then
+                        begin
+                          { trealconstnode expects that value and value_currency contain valid values }
+                          trealconstnode(right).value_currency:=trealconstnode(right).value_currency {$ifdef FPC_CURRENCY_IS_INT64}div{$else}/{$endif} 10000;
+                          trealconstnode(right).value_real:=trealconstnode(right).value_real/10000;
+                        end
+                      else
+{$endif VER3_0}
+                        begin
+                          hp:=caddnode.create(slashn,getcopy,crealconstnode.create(10000.0,s64currencytype));
+                          include(hp.flags,nf_is_currency);
+                        end;
+                    end
                   else
-                    hp:=cmoddivnode.create(divn,getcopy,cordconstnode.create(10000,s64currencytype,false));
-                  include(hp.flags,nf_is_currency);
+                    begin
+{$ifndef VER3_0}
+                      { if left is a currency integer constant, we can get rid of the factor 10000 }
+                      if (left.nodetype=ordconstn) and (is_currency(left.resultdef)) and ((tordconstnode(left).value mod 10000)=0) then
+                        tordconstnode(left).value:=tordconstnode(left).value div 10000
+                      { or if right is an integer constant, we can get rid of its factor 10000 }
+                      else if (right.nodetype=ordconstn) and (is_currency(right.resultdef)) and ((tordconstnode(right).value mod 10000)=0) then
+                        tordconstnode(right).value:=tordconstnode(right).value div 10000
+                      else
+{$endif VER3_0}
+                        begin
+                          hp:=cmoddivnode.create(divn,getcopy,cordconstnode.create(10000,s64currencytype,false));
+                          include(hp.flags,nf_is_currency);
+                        end
+                    end;
+
                   result:=hp
                 end;
             end;
@@ -2729,6 +2872,104 @@ implementation
         end;
       end;
 
+    function taddnode.first_adddynarray : tnode;
+      var
+        p: tnode;
+        newstatement : tstatementnode;
+        tempnode (*,tempnode2*) : ttempcreatenode;
+        cmpfuncname: string;
+        para: tcallparanode;
+      begin
+        result:=nil;
+        { when we get here, we are sure that both the left and the right }
+        { node are both strings of the same stringtype (JM)              }
+        case nodetype of
+          addn:
+            begin
+              if (left.nodetype=arrayconstructorn) and (tarrayconstructornode(left).isempty) then
+                begin
+                  result:=right;
+                  left.free;
+                  left:=nil;
+                  right:=nil;
+                  exit;
+                end;
+              if (right.nodetype=arrayconstructorn) and (tarrayconstructornode(right).isempty) then
+                begin
+                  result:=left;
+                  left:=nil;
+                  right.free;
+                  right:=nil;
+                  exit;
+                end;
+              { create the call to the concat routine both strings as arguments }
+              if assigned(aktassignmentnode) and
+                  (aktassignmentnode.right=self) and
+                  (aktassignmentnode.left.resultdef=resultdef) and
+                  valid_for_var(aktassignmentnode.left,false) then
+                begin
+                  para:=ccallparanode.create(
+                          ctypeconvnode.create_internal(right,voidcodepointertype),
+                        ccallparanode.create(
+                          ctypeconvnode.create_internal(left,voidcodepointertype),
+                        ccallparanode.create(
+                          caddrnode.create_internal(crttinode.create(tstoreddef(resultdef),initrtti,rdt_normal)),
+                        ccallparanode.create(
+                          ctypeconvnode.create_internal(aktassignmentnode.left.getcopy,voidcodepointertype),nil)
+                        )));
+                  result:=ccallnode.createintern(
+                            'fpc_dynarray_concat',
+                            para
+                          );
+                  include(aktassignmentnode.flags,nf_assign_done_in_right);
+                  firstpass(result);
+                end
+              else
+                begin
+                  result:=internalstatements(newstatement);
+                  tempnode:=ctempcreatenode.create(resultdef,resultdef.size,tt_persistent,true);
+                  addstatement(newstatement,tempnode);
+                  { initialize the temp, since it will be passed to a
+                    var-parameter (and finalization, which is performed by the
+                    ttempcreate node and which takes care of the initialization
+                    on native targets, is a noop on managed VM targets) }
+                  if (target_info.system in systems_managed_vm) and
+                     is_managed_type(resultdef) then
+                    addstatement(newstatement,cinlinenode.create(in_setlength_x,
+                      false,
+                      ccallparanode.create(genintconstnode(0),
+                        ccallparanode.create(ctemprefnode.create(tempnode),nil))));
+                  para:=ccallparanode.create(
+                          ctypeconvnode.create_internal(right,voidcodepointertype),
+                        ccallparanode.create(
+                          ctypeconvnode.create_internal(left,voidcodepointertype),
+                        ccallparanode.create(
+                          caddrnode.create_internal(crttinode.create(tstoreddef(resultdef),initrtti,rdt_normal)),
+                        ccallparanode.create(
+                          ctypeconvnode.create_internal(ctemprefnode.create(tempnode),voidcodepointertype),nil)
+                        )));
+                  addstatement(
+                    newstatement,
+                    ccallnode.createintern(
+                      'fpc_dynarray_concat',
+                      para
+                    )
+                  );
+                  addstatement(newstatement,ctempdeletenode.create_normal_temp(tempnode));
+                  addstatement(newstatement,ctemprefnode.create(tempnode));
+                end;
+              { we reused the arguments }
+              left := nil;
+              right := nil;
+            end;
+          unequaln,equaln:
+            { nothing to do }
+            ;
+          else
+            Internalerror(2018030301);
+          end;
+      end;
+
 
     function taddnode.use_generic_mul32to64: boolean;
       begin
@@ -2744,16 +2985,20 @@ implementation
 
     function taddnode.try_make_mul32to64: boolean;
 
-      function canbe32bitint(v: tconstexprint): boolean;
+      function canbe32bitint(v: tconstexprint; out canbesignedconst, canbeunsignedconst: boolean): boolean;
         begin
           result := ((v >= int64(low(longint))) and (v <= int64(high(longint)))) or
-                    ((v >= qword(low(cardinal))) and (v <= qword(high(cardinal))))
+                    ((v >= qword(low(cardinal))) and (v <= qword(high(cardinal))));
+          canbesignedconst:=v<=int64(high(longint));
+          canbeunsignedconst:=v>=0;
         end;
 
-      function is_32bitordconst(n: tnode): boolean;
+      function is_32bitordconst(n: tnode; out canbesignedconst, canbeunsignedconst: boolean): boolean;
         begin
+          canbesignedconst:=false;
+          canbeunsignedconst:=false;
           result := (n.nodetype = ordconstn) and
-                    canbe32bitint(tordconstnode(n).value);
+                    canbe32bitint(tordconstnode(n).value, canbesignedconst, canbeunsignedconst);
         end;
 
       function is_32to64typeconv(n: tnode): boolean;
@@ -2765,40 +3010,47 @@ implementation
 
       var
         temp: tnode;
+        leftoriginallysigned,
+        canbesignedconst, canbeunsignedconst: boolean;
       begin
         result := false;
-        if is_32to64typeconv(left) and
-           (is_32bitordconst(right) or
-            is_32to64typeconv(right) and
-             ((is_signed(ttypeconvnode(left).left.resultdef) =
-               is_signed(ttypeconvnode(right).left.resultdef)) or
-              (is_signed(ttypeconvnode(left).left.resultdef) and
-               (torddef(ttypeconvnode(right).left.resultdef).ordtype in [u8bit,u16bit])))) then
+        if is_32to64typeconv(left) then
           begin
-            temp := ttypeconvnode(left).left;
-            ttypeconvnode(left).left := nil;
-            left.free;
-            left := temp;
-            if (right.nodetype = typeconvn) then
+            leftoriginallysigned:=is_signed(ttypeconvnode(left).left.resultdef);
+            if ((is_32bitordconst(right,canbesignedconst, canbeunsignedconst) and
+                 ((leftoriginallysigned and canbesignedconst) or
+                  (not leftoriginallysigned and canbeunsignedconst))) or
+                (is_32to64typeconv(right) and
+                  ((leftoriginallysigned =
+                    is_signed(ttypeconvnode(right).left.resultdef)) or
+                   (leftoriginallysigned and
+                    (torddef(ttypeconvnode(right).left.resultdef).ordtype in [u8bit,u16bit]))))) then
               begin
-                temp := ttypeconvnode(right).left;
-                ttypeconvnode(right).left := nil;
-                right.free;
-                right := temp;
+                temp := ttypeconvnode(left).left;
+                ttypeconvnode(left).left := nil;
+                left.free;
+                left := temp;
+                if (right.nodetype = typeconvn) then
+                  begin
+                    temp := ttypeconvnode(right).left;
+                    ttypeconvnode(right).left := nil;
+                    right.free;
+                    right := temp;
+                  end;
+                if (is_signed(left.resultdef)) then
+                  begin
+                    inserttypeconv_internal(left,s32inttype);
+                    inserttypeconv_internal(right,s32inttype);
+                  end
+                else
+                  begin
+                    inserttypeconv_internal(left,u32inttype);
+                    inserttypeconv_internal(right,u32inttype);
+                  end;
+                firstpass(left);
+                firstpass(right);
+                result := true;
               end;
-            if (is_signed(left.resultdef)) then
-              begin
-                inserttypeconv_internal(left,s32inttype);
-                inserttypeconv_internal(right,s32inttype);
-              end
-            else
-              begin
-                inserttypeconv_internal(left,u32inttype);
-                inserttypeconv_internal(right,u32inttype);
-              end;
-            firstpass(left);
-            firstpass(right);
-            result := true;
           end;
       end;
 
@@ -3207,6 +3459,15 @@ implementation
              exit;
            end;
 
+         { Can we optimize multiple dyn. array additions into a single call?
+           This need to be done on a complete tree to detect the multiple
+           add nodes and is therefor done before the subtrees are processed }
+         if (m_array_operators in current_settings.modeswitches) and canbemultidynarrayadd(self) then
+           begin
+             result:=genmultidynarrayadd(self);
+             exit;
+           end;
+
          { typical set tests like (s*[const. set])<>/=[] can be converted into an or'ed chain of in tests
            for var sets if const. set contains only a few elements }
          if (cs_opt_level1 in current_settings.optimizerswitches) and (nodetype in [unequaln,equaln]) and (left.resultdef.typ=setdef) and not(is_smallset(left.resultdef)) then
@@ -3570,6 +3831,11 @@ implementation
             end
 {$endif SUPPORT_MMX}
 
+         else if is_dynamic_array(ld) or is_dynamic_array(rd) then
+           begin
+             result:=first_adddynarray;
+             exit;
+           end
          { the general solution is to convert to 32 bit int }
          else
            begin

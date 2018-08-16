@@ -85,6 +85,9 @@ Unit AoptObj;
         Function IsUsed(Reg: TRegister): Boolean;
         { get all the currently used registers }
         Function GetUsedRegs: TRegSet;
+
+        { outputs  the current set }
+        Procedure Dump(var t : text);
       Private
         Typ : TRegisterType;
         UsedRegs: TRegSet;
@@ -312,12 +315,19 @@ Unit AoptObj;
           nil                                                                        }
         Function FindRegDeAlloc(Reg: TRegister; StartPai: Tai): tai_regalloc;
 
+        { allocates register reg between (and including) instructions p1 and p2
+          the type of p1 and p2 must not be in SkipInstr }
+        procedure AllocRegBetween(reg : tregister; p1,p2 : tai; var initialusedregs : TAllUsedRegs);
+
         { reg used after p? }
         function RegUsedAfterInstruction(reg: Tregister; p: tai; var AllUsedRegs: TAllUsedRegs): Boolean;
 
         { returns true if reg reaches it's end of life at p, this means it is either
           reloaded with a new value or it is deallocated afterwards }
         function RegEndOfLife(reg: TRegister;p: taicpu): boolean;
+
+        { removes p from asml, updates registers and replaces it by a valid value, if this is the case true is returned }
+        function RemoveCurrentP(var p : taicpu): boolean;
 
        { traces sucessive jumps to their final destination and sets it, e.g.
          je l1                je l3
@@ -367,7 +377,8 @@ Unit AoptObj;
       cutils,
       globals,
       verbose,
-      aoptutils;
+      aoptutils,
+      procinfo;
 
 
     function JumpTargetOp(ai: taicpu): poper; inline;
@@ -450,6 +461,18 @@ Unit AoptObj;
       Begin
         GetUsedRegs := UsedRegs;
       End;
+
+
+    procedure TUsedRegs.Dump(var t: text);
+      var
+        i: dword;
+      begin
+        write(t,Typ,' ');
+        for i:=low(TRegSet) to high(TRegSet) do
+          if i in UsedRegs then
+            write(t,i,' ');
+         writeln(t);
+      end;
 
 
     Destructor TUsedRegs.Destroy;
@@ -1131,6 +1154,120 @@ Unit AoptObj;
        End;
 
 
+    { allocates register reg between (and including) instructions p1 and p2
+      the type of p1 and p2 must not be in SkipInstr }
+    procedure TAOptObj.AllocRegBetween(reg: tregister; p1, p2: tai; var initialusedregs: TAllUsedRegs);
+      var
+        hp, start: tai;
+        removedsomething,
+        firstRemovedWasAlloc,
+        lastRemovedWasDealloc: boolean;
+      begin
+{$ifdef EXTDEBUG}
+{        if assigned(p1.optinfo) and
+           (ptaiprop(p1.optinfo)^.usedregs <> initialusedregs) then
+         internalerror(2004101010); }
+{$endif EXTDEBUG}
+        start := p1;
+       if (reg = NR_STACK_POINTER_REG) or
+          (reg = current_procinfo.framepointer) or
+           not(assigned(p1)) then
+          { this happens with registers which are loaded implicitely, outside the }
+          { current block (e.g. esi with self)                                    }
+          exit;
+        { make sure we allocate it for this instruction }
+        getnextinstruction(p2,p2);
+        lastRemovedWasDealloc := false;
+        removedSomething := false;
+        firstRemovedWasAlloc := false;
+{$ifdef allocregdebug}
+        hp := tai_comment.Create(strpnew('allocating '+std_regname(newreg(R_INTREGISTER,supreg,R_SUBWHOLE))+
+          ' from here...'));
+        insertllitem(asml,p1.previous,p1,hp);
+        hp := tai_comment.Create(strpnew('allocated '+std_regname(newreg(R_INTREGISTER,supreg,R_SUBWHOLE))+
+          ' till here...'));
+        insertllitem(asml,p2,p2.next,hp);
+{$endif allocregdebug}
+        { do it the safe way: always allocate the full super register,
+          as we do no register re-allocation in the peephole optimizer,
+          this does not hurt
+        }
+        case getregtype(reg) of
+          R_MMREGISTER:
+            reg:=newreg(R_MMREGISTER,getsupreg(reg),R_SUBMMWHOLE);
+          R_INTREGISTER:
+            reg:=newreg(R_INTREGISTER,getsupreg(reg),R_SUBWHOLE);
+          R_FPUREGISTER:
+            reg:=newreg(R_FPUREGISTER,getsupreg(reg),R_SUBWHOLE);
+          R_ADDRESSREGISTER:
+            reg:=newreg(R_ADDRESSREGISTER,getsupreg(reg),R_SUBWHOLE);
+          else
+            Internalerror(2018030701);
+        end;
+        if not(RegInUsedRegs(reg,initialusedregs)) then
+          begin
+            hp := tai_regalloc.alloc(reg,nil);
+            insertllItem(p1.previous,p1,hp);
+            IncludeRegInUsedRegs(reg,initialusedregs);
+          end;
+        while assigned(p1) and
+              (p1 <> p2) do
+          begin
+            if assigned(p1.optinfo) then
+              internalerror(2014022301); // IncludeRegInUsedRegs(reg,ptaiprop(p1.optinfo)^.usedregs);
+            p1 := tai(p1.next);
+            repeat
+              while assigned(p1) and
+                    (p1.typ in (SkipInstr-[ait_regalloc])) Do
+                p1 := tai(p1.next);
+
+              { remove all allocation/deallocation info about the register in between }
+              if assigned(p1) and
+                 (p1.typ = ait_regalloc) then
+                begin
+                  { same super register, different sub register? }
+                  if SuperRegistersEqual(reg,tai_regalloc(p1).reg) and (tai_regalloc(p1).reg<>reg) then
+                    begin
+                      if (getsubreg(tai_regalloc(p1).reg)>getsubreg(reg)) or (getsubreg(reg)=R_SUBH) then
+                        internalerror(2016101501);
+                      tai_regalloc(p1).reg:=reg;
+                    end;
+
+                  if tai_regalloc(p1).reg=reg then
+                    begin
+                      if not removedSomething then
+                        begin
+                          firstRemovedWasAlloc := tai_regalloc(p1).ratype=ra_alloc;
+                          removedSomething := true;
+                        end;
+                      lastRemovedWasDealloc := (tai_regalloc(p1).ratype=ra_dealloc);
+                      hp := tai(p1.Next);
+                      asml.Remove(p1);
+                      p1.free;
+                      p1 := hp;
+                    end
+                  else
+                    p1 := tai(p1.next);
+                end;
+            until not(assigned(p1)) or
+                  not(p1.typ in SkipInstr);
+          end;
+        if assigned(p1) then
+          begin
+            if firstRemovedWasAlloc then
+              begin
+                hp := tai_regalloc.Alloc(reg,nil);
+                insertLLItem(start.previous,start,hp);
+              end;
+            if lastRemovedWasDealloc then
+              begin
+                hp := tai_regalloc.DeAlloc(reg,nil);
+                insertLLItem(p1.previous,p1,hp);
+              end;
+          end;
+      end;
+
+
     function TAOptObj.RegUsedAfterInstruction(reg: Tregister; p: tai;var AllUsedRegs: TAllUsedRegs): Boolean;
       begin
         AllUsedRegs[getregtype(reg)].Update(tai(p.Next),true);
@@ -1149,6 +1286,20 @@ Unit AoptObj;
       begin
          Result:=assigned(FindRegDealloc(reg,tai(p.Next))) or
            RegLoadedWithNewValue(reg,p);
+      end;
+
+
+    function TAOptObj.RemoveCurrentP(var p : taicpu) : boolean;
+      var
+        hp1 : tai;
+      begin
+        result:=GetNextInstruction(p,hp1);
+        { p will be removed, update used register as we continue
+          with the next instruction after p }
+        UpdateUsedRegs(tai(p.Next));
+        AsmL.Remove(p);
+        p.Free;
+        p:=taicpu(hp1);
       end;
 
 
@@ -1343,8 +1494,11 @@ Unit AoptObj;
             UpdateUsedRegs(tai(p.next));
             if PrePeepHoleOptsCpu(p) then
               continue;
-            UpdateUsedRegs(p);
-            p:=tai(p.next);
+            if assigned(p) then
+              begin
+                UpdateUsedRegs(p);
+                p:=tai(p.next);
+              end;
           end;
       end;
 
@@ -1499,8 +1653,11 @@ Unit AoptObj;
                       end; { if is_jmp }
                   end;
               end;
-              UpdateUsedRegs(p);
-              p:=tai(p.next);
+              if assigned(p) then
+                begin
+                  UpdateUsedRegs(p);
+                  p:=tai(p.next);
+                end;
             end;
         until stoploop or not(cs_opt_level3 in current_settings.optimizerswitches);
       end;
@@ -1514,11 +1671,13 @@ Unit AoptObj;
         ClearUsedRegs;
         while (p <> BlockEnd) Do
           begin
-            UpdateUsedRegs(tai(p.next));
             if PeepHoleOptPass2Cpu(p) then
               continue;
-            UpdateUsedRegs(p);
-            p:=tai(p.next);
+            if assigned(p) then
+              begin
+                UpdateUsedRegs(p);
+                p:=tai(p.next);
+              end;
           end;
       end;
 
@@ -1534,8 +1693,11 @@ Unit AoptObj;
             UpdateUsedRegs(tai(p.next));
             if PostPeepHoleOptsCpu(p) then
               continue;
-            UpdateUsedRegs(p);
-            p:=tai(p.next);
+            if assigned(p) then
+              begin
+                UpdateUsedRegs(p);
+                p:=tai(p.next);
+              end;
           end;
       end;
 

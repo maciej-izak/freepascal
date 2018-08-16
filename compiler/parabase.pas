@@ -35,7 +35,7 @@ unit parabase;
     type
        TCGParaReference = record
           index       : tregister;
-          offset      : aint;
+          offset      : asizeint;
        end;
 
        PCGParaLocation = ^TCGParaLocation;

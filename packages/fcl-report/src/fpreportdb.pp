@@ -22,10 +22,16 @@ uses
   Classes, SysUtils, fpreport, db;
 
 Type
+
+  { TFPReportDatasetData }
+
   TFPReportDatasetData = class(TFPReportData)
   private
     FDataSet: TDataSet;
+    procedure SetDataSet(AValue: TDataSet);
   protected
+    function GetIsOpened: boolean; override;
+    Procedure Notification(AComponent: TComponent; Operation: TOperation); override;
     procedure DoGetValue(const AFieldName: string; var AValue: variant); override;
     procedure DoInitDataFields; override;
     procedure DoOpen; override;
@@ -35,8 +41,10 @@ Type
     function  DoEOF: boolean; override;
   Public
     property  DataFields;
+    Procedure StartDesigning; override;
+    Procedure EndDesigning; override;
   published
-    property  DataSet: TDataSet read FDataSet write FDataSet;
+    property  DataSet: TDataSet read FDataSet write SetDataSet;
   end;
 
 implementation
@@ -44,9 +52,34 @@ implementation
 resourcestring
   SErrNoDataSetAssigned  = 'No dataset has been assigned.';
   SErrDatasetNotOpen = 'Dataset has not been opened yet';
-
+  SErrFieldTypeMisMatch = 'Field type for field "%s" changed. Expected "%s", got "%s"';
+  SErrUnknownFieldInDataset = 'Unexpected field in dataset: "%s"';
 
 { TFPReportDatasetData }
+
+procedure TFPReportDatasetData.SetDataSet(AValue: TDataSet);
+begin
+  if FDataSet=AValue then Exit;
+  if Assigned(FDataset) then
+    FDataset.RemoveFreeNotification(Self);
+  FDataSet:=AValue;
+  if Assigned(FDataset) then
+    FDataset.FreeNotification(Self);
+end;
+
+function TFPReportDatasetData.GetIsOpened: boolean;
+begin
+  Result:=inherited GetIsOpened;
+  if Result then
+    Result:=FDataset.Active; // Can be closed because of master-detail.
+end;
+
+procedure TFPReportDatasetData.Notification(AComponent: TComponent; Operation: TOperation);
+begin
+  inherited Notification(AComponent, Operation);
+  if (Operation=opRemove) and (AComponent=FDataset) then
+    FDataset:=Nil;
+end;
 
 procedure TFPReportDatasetData.DoGetValue(const AFieldName: string; var AValue: variant);
 var
@@ -90,7 +123,7 @@ var
       ftWord:           Result := rfkInteger;
       ftBoolean:        Result := rfkBoolean;
       ftFloat:          Result := rfkFloat;
-      ftCurrency:       Result := rfkFloat;
+      ftCurrency:       Result := rfkCurrency;
       ftBCD:            Result := rfkFloat;
       ftDate:           Result := rfkDateTime;
       ftTime:           Result := rfkDateTime;
@@ -129,18 +162,33 @@ var
   end;
 
 Var
-  B : Boolean;
+  B,AllowNew : Boolean;
+  F : TFPReportDataField;
+  Rfk  : TFPReportFieldKind;
+
 begin
   inherited DoInitDataFields;
   B:=FDataset.FieldDefs.Count=0;
   if B then
     FDataset.Open;
   try
-    DataFields.Clear;
+     if (DataFields.Count>0) and (DataFields.Count<>FDataset.FieldDefs.Count) then
+       // Reset totally
+       DataFields.Clear;
+    AllowNew:=(Datafields.Count=0);
     for i := 0 to FDataSet.FieldDefs.Count-1 do
-    begin
-      DataFields.AddField(FDataset.FieldDefs[i].Name, DatabaseKindToReportKind(FDataset.FieldDefs[i].DataType));
-    end;
+      begin
+      RFK:=DatabaseKindToReportKind(FDataset.FieldDefs[i].DataType);
+      F:=Datafields.FindField(FDataset.FieldDefs[i].Name);
+      if (F=Nil) then
+        if AllowNew then
+          DataFields.AddField(FDataset.FieldDefs[i].Name, RFK)
+        else
+          Raise EReportError.CreateFmt(SErrUnknownFieldInDataset,[F.FieldName])
+      else
+        if (F.FieldKind<>RFK) then
+          Raise EReportError.CreateFmt(SErrFieldTypeMisMatch,[F.FieldName,ReportFieldKindNames[F.FieldKind],ReportFieldKindNames[RFK]]);
+      end
   finally
     if B then
       FDataset.Close;
@@ -180,6 +228,26 @@ end;
 function TFPReportDatasetData.DoEOF: boolean;
 begin
   Result := FDataSet.EOF;
+end;
+
+Type
+  TMyDataset = Class(TDataset);
+
+procedure TFPReportDatasetData.StartDesigning;
+
+begin
+  Inherited;
+  if Assigned(DataSet) then
+    // Dirty hack!!
+    TMyDataset(Dataset).SetDesigning(True,True);
+end;
+
+procedure TFPReportDatasetData.EndDesigning;
+begin
+  if Assigned(DataSet) then
+    // Dirty hack!!
+    TMyDataset(Dataset).SetDesigning(False,True);
+  Inherited;
 end;
 
 end.

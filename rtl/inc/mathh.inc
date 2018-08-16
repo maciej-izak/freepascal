@@ -102,26 +102,26 @@ procedure float_raise(i: TFPUExceptionMask);
   {$endif}
 {$endif}
 
-    function pi : ValReal;[internproc:fpc_in_pi_real];
-    function abs(d : ValReal) : ValReal;[internproc:fpc_in_abs_real];
-    function sqr(d : ValReal) : ValReal;[internproc:fpc_in_sqr_real];
-    function sqrt(d : ValReal) : ValReal;[internproc:fpc_in_sqrt_real];
-    function arctan(d : ValReal) : ValReal;[internproc:fpc_in_arctan_real];
-    function ln(d : ValReal) : ValReal;[internproc:fpc_in_ln_real];
-    function sin(d : ValReal) : ValReal;[internproc:fpc_in_sin_real];
-    function cos(d : ValReal) : ValReal;[internproc:fpc_in_cos_real];
-    function exp(d : ValReal) : ValReal;[internproc:fpc_in_exp_real];
-    function round(d : ValReal) : int64;[internproc:fpc_in_round_real];
-    function frac(d : ValReal) : ValReal;[internproc:fpc_in_frac_real];
-    function int(d : ValReal) : ValReal;[internproc:fpc_in_int_real];
-    function trunc(d : ValReal) : int64;[internproc:fpc_in_trunc_real];
+    function Pi : ValReal;[internproc:fpc_in_pi_real];
+    function Abs(d : ValReal) : ValReal;[internproc:fpc_in_abs_real];
+    function Sqr(d : ValReal) : ValReal;[internproc:fpc_in_sqr_real];
+    function Sqrt(d : ValReal) : ValReal;[internproc:fpc_in_sqrt_real];
+    function ArcTan(d : ValReal) : ValReal;[internproc:fpc_in_arctan_real];
+    function Ln(d : ValReal) : ValReal;[internproc:fpc_in_ln_real];
+    function Sin(d : ValReal) : ValReal;[internproc:fpc_in_sin_real];
+    function Cos(d : ValReal) : ValReal;[internproc:fpc_in_cos_real];
+    function Exp(d : ValReal) : ValReal;[internproc:fpc_in_exp_real];
+    function Round(d : ValReal) : int64;[internproc:fpc_in_round_real];
+    function Frac(d : ValReal) : ValReal;[internproc:fpc_in_frac_real];
+    function Int(d : ValReal) : ValReal;[internproc:fpc_in_int_real];
+    function Trunc(d : ValReal) : int64;[internproc:fpc_in_trunc_real];
 
 {$ifdef SUPPORT_EXTENDED}
     function FPower10(val: Extended; Power: Longint): Extended;
 {$endif SUPPORT_EXTENDED}
 
     type
-       real48 = array[0..5] of byte;
+       Real48 = array[0..5] of byte;
 
 {$ifdef SUPPORT_DOUBLE}
     function Real2Double(r : real48) : double;
@@ -138,18 +138,20 @@ procedure float_raise(i: TFPUExceptionMask);
 {$if defined(SUPPORT_EXTENDED) or defined(FPC_SOFT_FPUX80)}
       TExtended80Rec = packed record
       private
+      const
+        Bias = $3FFF;
         function GetExp : QWord;
         procedure SetExp(e : QWord);
         function GetSign : Boolean;
         procedure SetSign(s : Boolean);
       public
-        function Mantissa : QWord;
+        function Mantissa(IncludeHiddenBit: Boolean = False) : QWord; // unused parameter inserted to have consistent function signature
         function Fraction : Extended;
         function Exponent : Longint;
         property Sign : Boolean read GetSign write SetSign;
         property Exp : QWord read GetExp write SetExp;
         function SpecialType : TFloatSpecial;
-        // procedure BuildUp(const _Sign : Boolean; const _Mantissa : QWord; const Exponent : Longint);
+        procedure BuildUp(const _Sign : Boolean; const _Mantissa : QWord; const _Exponent : Longint);
         case byte of
           0: (Bytes : array[0..9] of Byte);
           1: (Words : array[0..4] of Word);
@@ -169,6 +171,8 @@ procedure float_raise(i: TFPUExceptionMask);
 {$ifdef SUPPORT_DOUBLE}
       TDoubleRec = packed record
       private
+      const
+        Bias = $3FF;
         function GetExp : QWord;
         procedure SetExp(e : QWord);
         function GetSign : Boolean;
@@ -176,13 +180,14 @@ procedure float_raise(i: TFPUExceptionMask);
         function GetFrac : QWord;
         procedure SetFrac(e : QWord);
       public
-        function Mantissa : QWord;
+        function Mantissa(IncludeHiddenBit: Boolean = False) : QWord;
         function Fraction : ValReal;
         function Exponent : Longint;
         property Sign : Boolean read GetSign write SetSign;
         property Exp : QWord read GetExp write SetExp;
         property Frac : QWord read Getfrac write SetFrac;
         function SpecialType : TFloatSpecial;
+        procedure BuildUp(const _Sign : Boolean; const _Mantissa : QWord; const _Exponent : Longint);
         case byte of
           0: (Bytes : array[0..7] of Byte);
           1: (Words : array[0..3] of Word);
@@ -194,6 +199,8 @@ procedure float_raise(i: TFPUExceptionMask);
 {$ifdef SUPPORT_SINGLE}
       TSingleRec = packed record
       private
+      const
+        Bias = $7F;
         function GetExp : QWord;
         procedure SetExp(e : QWord);
         function GetSign : Boolean;
@@ -201,13 +208,14 @@ procedure float_raise(i: TFPUExceptionMask);
         function GetFrac : QWord;
         procedure SetFrac(e : QWord);
       public
-        function Mantissa : QWord;
+        function Mantissa(IncludeHiddenBit: Boolean = False) : QWord;
         function Fraction : ValReal;
         function Exponent : Longint;
         property Sign : Boolean read GetSign write SetSign;
         property Exp : QWord read GetExp write SetExp;
         property Frac : QWord read Getfrac write SetFrac;
         function SpecialType : TFloatSpecial;
+        procedure BuildUp(const _Sign : Boolean; const _Mantissa : QWord; const _Exponent : Longint);
         case byte of
           0: (Bytes : array[0..3] of Byte);
           1: (Words : array[0..1] of Word);

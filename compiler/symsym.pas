@@ -80,7 +80,7 @@ interface
 
        tunitsym = class(Tstoredsym)
           module : tobject; { tmodule }
-          constructor create(const n : string;amodule : tobject);virtual;
+          constructor create(const n : string;amodule : tobject;doregister:boolean);virtual;
           constructor ppuload(ppufile:tcompilerppufile);
           destructor destroy;override;
           { do not override this routine in platform-specific subclasses,
@@ -172,11 +172,13 @@ interface
           varspez       : tvarspez;  { sets the type of access }
           varregable    : tvarregable;
           varstate      : tvarstate;
-          { Has the address of this variable potentially escaped the }
-          { block in which is was declared?                          }
-          { could also be part of tabstractnormalvarsym, but there's }
-          { one byte left here till the next 4 byte alignment        }
+          { Has the address of this variable potentially escaped the
+            block in which is was declared?
+            could also be part of tabstractnormalvarsym, but there's
+            one byte left here till the next 4 byte alignment        }
           addr_taken     : boolean;
+          { true if the variable is accessed in a different scope }
+          different_scope  : boolean;
           constructor create(st:tsymtyp;const n : string;vsp:tvarspez;def:tdef;vopts:tvaroptions;doregister:boolean);
           constructor ppuload(st:tsymtyp;ppufile:tcompilerppufile);
           procedure ppuwrite(ppufile:tcompilerppufile);override;
@@ -690,9 +692,9 @@ implementation
                                   TUNITSYM
 ****************************************************************************}
 
-    constructor tunitsym.create(const n : string;amodule : tobject);
+    constructor tunitsym.create(const n : string;amodule : tobject;doregister:boolean);
       begin
-         inherited create(unitsym,n,true);
+         inherited create(unitsym,n,doregister);
          module:=amodule;
       end;
 
@@ -1600,7 +1602,8 @@ implementation
          varstate:=vs_readwritten;
          varspez:=tvarspez(ppufile.getbyte);
          varregable:=tvarregable(ppufile.getbyte);
-         addr_taken:=boolean(ppufile.getbyte);
+         addr_taken:=ppufile.getboolean;
+         different_scope:=ppufile.getboolean;
          ppufile.getderef(vardefderef);
          ppufile.getsmallset(varoptions);
       end;
@@ -1632,7 +1635,8 @@ implementation
          oldintfcrc:=ppufile.do_crc;
          ppufile.do_crc:=false;
          ppufile.putbyte(byte(varregable));
-         ppufile.putbyte(byte(addr_taken));
+         ppufile.putboolean(addr_taken);
+         ppufile.putboolean(different_scope);
          ppufile.do_crc:=oldintfcrc;
          ppufile.putderef(vardefderef);
          ppufile.putsmallset(varoptions);
@@ -1672,7 +1676,6 @@ implementation
                 not(pi_has_assembler_block in current_procinfo.flags) and
                 not(pi_uses_exceptions in current_procinfo.flags) and
                 not(pi_has_interproclabel in current_procinfo.flags) and
-                not(vo_has_local_copy in varoptions) and
                 ((refpara and
                   (varregable <> vr_none)) or
                  (not refpara and
@@ -2133,7 +2136,7 @@ implementation
       begin
          inherited ppuload(paravarsym,ppufile);
          paranr:=ppufile.getword;
-         univpara:=boolean(ppufile.getbyte);
+         univpara:=ppufile.getboolean;
 
          { The var state of parameter symbols is fixed after writing them so
            we write them to the unit file.
@@ -2159,7 +2162,7 @@ implementation
       begin
          inherited ppuwrite(ppufile);
          ppufile.putword(paranr);
-         ppufile.putbyte(byte(univpara));
+         ppufile.putboolean(univpara);
 
          { The var state of parameter symbols is fixed after writing them so
            we write them to the unit file.
@@ -2698,8 +2701,8 @@ implementation
     constructor tmacro.ppuload(ppufile:tcompilerppufile);
       begin
          inherited ppuload(macrosym,ppufile);
-         defined:=boolean(ppufile.getbyte);
-         is_compiler_var:=boolean(ppufile.getbyte);
+         defined:=ppufile.getboolean;
+         is_compiler_var:=ppufile.getboolean;
          is_used:=false;
          buflen:= ppufile.getlongint;
          if buflen > 0 then
@@ -2721,8 +2724,8 @@ implementation
     procedure tmacro.ppuwrite(ppufile:tcompilerppufile);
       begin
          inherited ppuwrite(ppufile);
-         ppufile.putbyte(byte(defined));
-         ppufile.putbyte(byte(is_compiler_var));
+         ppufile.putboolean(defined);
+         ppufile.putboolean(is_compiler_var);
          ppufile.putlongint(buflen);
          if buflen > 0 then
            ppufile.putdata(buftext^,buflen);

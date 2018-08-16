@@ -81,6 +81,7 @@ procedure fpc_dynarray_assign(var dest : pointer; src : pointer; ti: pointer); c
 procedure fpc_dynarray_delete(var p : pointer;source,count : SizeInt;pti : pointer);compilerproc;
 procedure fpc_dynarray_insert(var p : pointer;source : SizeInt;data : pointer;count : SizeInt;pti : pointer);compilerproc;
 procedure fpc_dynarray_concat_multi(var dest : pointer; pti: pointer; const sarr:array of pointer); compilerproc;
+procedure fpc_dynarray_concat(var dest : pointer; pti: pointer; const src1,src2 : pointer); compilerproc;
 {$endif VER3_0}
 {$endif FPC_HAS_FEATURE_DYNARRAYS}
 
@@ -631,6 +632,9 @@ function fpc_mul_int64_checkoverflow(f1,f2 : int64) : int64; compilerproc;
 {$endif VER3_0}
 function fpc_mul_dword_to_qword(f1,f2 : dword) : qword; compilerproc;
 function fpc_mul_longint_to_int64(f1,f2 : longint) : int64; compilerproc;
+
+function fpc_div_currency(n,z : currency) : currency; compilerproc;
+function fpc_mod_currency(n,z : currency) : currency; compilerproc;
 
 {$ifdef FPC_INCLUDE_SOFTWARE_SHIFT_INT64}
 function fpc_shl_qword(value : qword; shift : sizeint) : qword; compilerproc;

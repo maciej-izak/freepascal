@@ -23,6 +23,7 @@ interface
 
 { Use Ansi Char for files }
 {$define FPC_ANSI_TEXTFILEREC}
+{$define FPC_STDOUT_TRUE_ALIAS}
 
 {$ifdef NO_WIDESTRINGS}
   { Do NOT use wide Char for files }
@@ -31,6 +32,7 @@ interface
 
 {$I systemh.inc}
 {$I tnyheaph.inc}
+{$I portsh.inc}
 
 const
   LineEnding = #13#10;
@@ -264,6 +266,8 @@ Procedure SysInitFPU;
 
 {$I tinyheap.inc}
 
+{$I ports.inc}
+
 procedure DebugWrite(const S: string);
 begin
   asm
@@ -366,6 +370,8 @@ var
   arg: PChar;
   doscmd   : string[129];  { Dos commandline copied from PSP, max is 128 chars +1 for terminating zero }
 begin
+  { force environment to be setup so dos_argv0 is loaded }
+  envp;
   { load commandline from psp }
   SetLength(doscmd, Mem[PrefixSeg:$80]);
   for I := 1 to length(doscmd) do
@@ -654,8 +660,10 @@ begin
   OpenStdIO(Input,fmInput,StdInputHandle);
   OpenStdIO(Output,fmOutput,StdOutputHandle);
   OpenStdIO(ErrOutput,fmOutput,StdErrorHandle);
+{$ifndef FPC_STDOUT_TRUE_ALIAS}
   OpenStdIO(StdOut,fmOutput,StdOutputHandle);
   OpenStdIO(StdErr,fmOutput,StdErrorHandle);
+{$endif FPC_STDOUT_TRUE_ALIAS}
 end;
 
 function GetProcessID: SizeUInt;

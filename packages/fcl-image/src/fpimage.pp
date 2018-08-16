@@ -2,7 +2,7 @@
     This file is part of the Free Pascal run time library.
     Copyright (c) 2003 by the Free Pascal development team
 
-    fpImage base definitions.
+    FPImage base definitions.
 
     See the file COPYING.FPC, included in this distribution,
     for details about the copyright.
@@ -13,7 +13,7 @@
 
  **********************************************************************}
 {$mode objfpc}{$h+}
-unit FPimage;
+unit FPImage;
 
 interface
 
@@ -129,6 +129,8 @@ type
       destructor destroy; override;
       procedure Assign(Source: TPersistent); override;
       // Image handlers
+      class function FindHandlerFromStream(Str:TStream): TIHData;
+      class function FindReaderFromStream(Str:TStream): TFPCustomImageReaderClass;
       class function FindHandlerFromExtension(extension:String): TIHData;
       class function FindReaderFromFileName(const filename:String): TFPCustomImageReaderClass;
       class function FindReaderFromExtension(const extension:String): TFPCustomImageReaderClass;
@@ -262,6 +264,7 @@ type
                    AReader:TFPCustomImageReaderClass);
       procedure RegisterImageWriter (const ATypeName,TheExtensions:string;
                    AWriter:TFPCustomImageWriterClass);
+      procedure UnregisterImageHandlers(const ATypeName: string; ARemoveReader: boolean = True; ARemoveWriter: boolean = True);
       property Count : integer read GetCount;
       property ImageReader [const TypeName:string] : TFPCustomImageReaderClass read GetReader;
       property ImageWriter [const TypeName:string] : TFPCustomImageWriterClass read GetWriter;

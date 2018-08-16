@@ -341,20 +341,6 @@ unit cpubase;
 *****************************************************************************}
 
     const
-      { Registers which must be saved when calling a routine declared as
-        cppdecl, cdecl, stdcall, safecall, palmossyscall. The registers
-        saved should be the ones as defined in the target ABI and / or GCC.
-
-        This value can be deduced from the CALLED_USED_REGISTERS array in the
-        GCC source.
-      }
-      saved_standard_registers : array[0..6] of tsuperregister =
-        (RS_R4,RS_R5,RS_R6,RS_R7,RS_R8,RS_R9,RS_R10);
-
-      { this is only for the generic code which is not used for this architecture }
-      saved_address_registers : array[0..0] of tsuperregister = (RS_INVALID);
-      saved_mm_registers : array[0..0] of tsuperregister = (RS_INVALID);
-
       { Required parameter alignment when calling a routine declared as
         stdcall and cdecl. The alignment value should be the one defined
         by GCC or the target ABI.
@@ -400,6 +386,8 @@ unit cpubase;
     function GenerateARMCode : boolean;
     function GenerateThumbCode : boolean;
     function GenerateThumb2Code : boolean;
+
+    function IsVFPFloatImmediate(ft : tfloattype;value : bestreal) : boolean;
 
   implementation
 
@@ -747,6 +735,33 @@ unit cpubase;
     function GenerateThumb2Code : boolean;
       begin
         Result:=(current_settings.instructionset=is_thumb) and (CPUARM_HAS_THUMB2 in cpu_capabilities[current_settings.cputype]);
+      end;
+
+
+    function IsVFPFloatImmediate(ft : tfloattype;value : bestreal) : boolean;
+      var
+        singlerec : tcompsinglerec;
+        doublerec : tcompdoublerec;
+      begin
+        Result:=false;
+        case ft of
+          s32real:
+            begin
+              singlerec.value:=value;
+              singlerec:=tcompsinglerec(NtoLE(DWord(singlerec)));
+              Result:=(singlerec.bytes[0]=0) and (singlerec.bytes[1]=0) and ((singlerec.bytes[2] and 7)=0)  and
+                (((singlerec.bytes[3] and $7e)=$40) or ((singlerec.bytes[3] and $7e)=$3e));
+            end;
+          s64real:
+            begin
+              doublerec.value:=value;
+              doublerec:=tcompdoublerec(NtoLE(QWord(doublerec)));
+              Result:=(doublerec.bytes[0]=0) and (doublerec.bytes[1]=0) and (doublerec.bytes[2]=0) and
+                      (doublerec.bytes[3]=0) and (doublerec.bytes[4]=0) and (doublerec.bytes[5]=0) and
+                      ((((doublerec.bytes[6] and $7f)=$40) and ((doublerec.bytes[7] and $c0)=0)) or
+                       (((doublerec.bytes[6] and $7f)=$3f) and ((doublerec.bytes[7] and $c0)=$c0)));
+            end;
+        end;
       end;
 
 

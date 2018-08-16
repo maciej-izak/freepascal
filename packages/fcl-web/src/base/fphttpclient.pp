@@ -55,6 +55,7 @@ Type
     FHTTPClient : TFPCustomHTTPClient;
   Protected
     Function GetProxyHeaders : String; virtual;
+    Function GetOwner: TPersistent; override;
     Property HTTPClient : TFPCustomHTTPClient Read FHTTPClient;
   Public
     Procedure Assign(Source: TPersistent); override;
@@ -71,6 +72,7 @@ Type
     FContentLength : Int64;
     FAllowRedirect: Boolean;
     FKeepConnection: Boolean;
+    FMaxChunkSize: SizeUInt;
     FMaxRedirects: Byte;
     FOnDataReceived: TDataEvent;
     FOnHeaders: TNotifyEvent;
@@ -78,6 +80,7 @@ Type
     FOnRedirect: TRedirectEvent;
     FPassword: String;
     FIOTimeout: Integer;
+    FConnectTimeout: Integer;
     FSentCookies,
     FCookies: TStrings;
     FHTTPVersion: String;
@@ -98,6 +101,7 @@ Type
     function GetCookies: TStrings;
     function GetProxy: TProxyData;
     Procedure ResetResponse;
+    procedure SetConnectTimeout(AValue: Integer);
     Procedure SetCookies(const AValue: TStrings);
     procedure SetHTTPVersion(const AValue: String);
     procedure SetKeepConnection(AValue: Boolean);
@@ -271,6 +275,7 @@ Type
   Protected
     // Timeouts
     Property IOTimeout : Integer read FIOTimeout write SetIOTimeout;
+    Property ConnectTimeout : Integer read FConnectTimeout write SetConnectTimeout;
     // Before request properties.
     // Additional headers for request. Host; and Authentication are automatically added.
     Property RequestHeaders : TStrings Read FRequestHeaders Write SetRequestHeaders;
@@ -295,6 +300,9 @@ Type
     Property AllowRedirect : Boolean Read FAllowRedirect Write FAllowRedirect;
     // Maximum number of redirects. When this number is reached, an exception is raised.
     Property MaxRedirects : Byte Read FMaxRedirects Write FMaxRedirects default DefMaxRedirects;
+    // Maximum chunk size: If chunk sizes bigger than this are encountered, an error will be raised.
+    // Set to zero to disable the check.
+    Property MaxChunkSize : SizeUInt Read FMaxChunkSize Write FMaxChunkSize;
     // Called On redirect. Dest URL can be edited.
     // If The DEST url is empty on return, the method is aborted (with redirect status).
     Property OnRedirect : TRedirectEvent Read FOnRedirect Write FOnRedirect;
@@ -327,6 +335,7 @@ Type
     Property KeepConnection;
     Property Connected;
     Property IOTimeout;
+    Property ConnectTimeout;
     Property RequestHeaders;
     Property RequestBody;
     Property ResponseHeaders;
@@ -363,7 +372,7 @@ resourcestring
   SErrInvalidProtocolVersion = 'Invalid protocol version in response: "%s"';
   SErrInvalidStatusCode = 'Invalid response status code: %s';
   SErrUnexpectedResponse = 'Unexpected response status code: %d';
-  SErrChunkTooBig = 'Chunk too big';
+  SErrChunkTooBig = 'Chunk too big: Got %d, maximum allowed size: %d';
   SErrChunkLineEndMissing = 'Chunk line end missing';
   SErrMaxRedirectsReached = 'Maximum allowed redirects reached : %d';
   //SErrRedirectAborted = 'Redirect aborted.';
@@ -455,7 +464,12 @@ function TProxyData.GetProxyHeaders: String;
 begin
   Result:='';
   if (UserName<>'') then
-   Result:='Proxy-Authorization: Basic ' + EncodeStringBase64(UserName+':'+UserName);
+    Result:='Proxy-Authorization: Basic ' + EncodeStringBase64(UserName+':'+Password);
+end;
+
+function TProxyData.GetOwner: TPersistent;
+begin
+  Result:=FHTTPClient;
 end;
 
 procedure TProxyData.Assign(Source: TPersistent);
@@ -490,6 +504,12 @@ begin
   FIOTimeout:=AValue;
   if Assigned(FSocket) then
     FSocket.IOTimeout:=AValue;
+end;
+
+procedure TFPCustomHTTPClient.SetConnectTimeout(AValue: Integer);
+begin
+  if FConnectTimeout = AValue then Exit;
+  FConnectTimeout := AValue;
 end;
 
 function TFPCustomHTTPClient.IsConnected: Boolean;
@@ -595,6 +615,8 @@ begin
   try
     if FIOTimeout<>0 then
       FSocket.IOTimeout:=FIOTimeout;
+    if FConnectTimeout<>0 then
+      FSocket.ConnectTimeout:=FConnectTimeout;
     FSocket.Connect;
   except
     FreeAndNil(FSocket);
@@ -669,7 +691,7 @@ begin
     end;
   if Assigned(FCookies) then
     begin
-    L:='Cookie:';
+    L:='Cookie: ';
     For I:=0 to FCookies.Count-1 do
       begin
       If (I>0) then
@@ -806,8 +828,6 @@ function TFPCustomHTTPClient.ReadResponseHeaders: integer;
     C : String;
 
   begin
-    If Assigned(FCookies) then
-      FCookies.Clear;
     P:=Pos(':',S);
     System.Delete(S,1,P);
     Repeat
@@ -827,6 +847,8 @@ Var
   StatusLine,S : String;
 
 begin
+  If Assigned(FCookies) then
+    FCookies.Clear;
   if not ReadString(StatusLine) then
     Exit(0);
   Result:=ParseStatusLine(StatusLine);
@@ -1038,7 +1060,7 @@ Function TFPCustomHTTPClient.ReadResponse(Stream: TStream;
 
   var
     c: char;
-    ChunkSize: Integer;
+    ChunkSize: SizeUInt;
     l: Integer;
   begin
     BufPos:=1;
@@ -1047,6 +1069,9 @@ Function TFPCustomHTTPClient.ReadResponse(Stream: TStream;
       ChunkSize:=0;
       repeat
         if ReadData(@c,1)<1 then exit;
+        // Protect from overflow
+        If ChunkSize>(High(SizeUInt) div 16) then
+          Raise EHTTPClient.CreateFmt(SErrChunkTooBig,[ChunkSize,High(SizeUInt) div 16]);
         case c of
         '0'..'9': ChunkSize:=ChunkSize*16+ord(c)-ord('0');
         'a'..'f': ChunkSize:=ChunkSize*16+ord(c)-ord('a')+10;
@@ -1054,8 +1079,8 @@ Function TFPCustomHTTPClient.ReadResponse(Stream: TStream;
         else
           break;
         end;
-        if ChunkSize>1000000 then
-          Raise EHTTPClient.Create(SErrChunkTooBig);
+        If (MaxChunkSize>0) and (ChunkSize>MaxChunkSize) then
+          Raise EHTTPClient.CreateFmt(SErrChunkTooBig,[ChunkSize,MaxChunkSize]);
       until Terminated;
       // read till line end
       while (c<>#10) and not Terminated do
@@ -1186,7 +1211,6 @@ Procedure TFPCustomHTTPClient.DoNormalRequest(const AURI: TURI;
   const AMethod: string; AStream: TStream;
   const AAllowedResponseCodes: array of Integer;
   AHeadersOnly, AIsHttps: Boolean);
-
 Var
   CHost: string;
   CPort: Word;
@@ -1207,7 +1231,6 @@ Procedure TFPCustomHTTPClient.DoKeepConnectionRequest(const AURI: TURI;
   const AMethod: string; AStream: TStream;
   const AAllowedResponseCodes: array of Integer;
   AHeadersOnly, AIsHttps: Boolean);
-
 Var
   T: Boolean;
   CHost: string;
@@ -1263,6 +1286,7 @@ begin
   inherited Create(AOwner);
   // Infinite timeout on most platforms
   FIOTimeout:=0;
+  FConnectTimeout:=3000;
   FRequestHeaders:=TStringList.Create;
   FRequestHeaders.NameValueSeparator:=':';
   FResponseHeaders:=TStringList.Create;
@@ -1285,13 +1309,18 @@ end;
 
 class procedure TFPCustomHTTPClient.AddHeader(HTTPHeaders: TStrings;
   const AHeader, AValue: String);
+
 Var
-J: Integer;
+  J: Integer;
+  S : String;
+
 begin
-  j:=IndexOfHeader(HTTPHeaders,Aheader);
+  J:=IndexOfHeader(HTTPHeaders,Aheader);
+  S:=AHeader+': '+Avalue;
   if (J<>-1) then
-    HTTPHeaders.Delete(j);
-  HTTPHeaders.Add(AHeader+': '+Avalue);
+    HTTPHeaders[j]:=S
+  else
+    HTTPHeaders.Add(S);
 end;
 
 
@@ -1302,8 +1331,8 @@ Var
   L : Integer;
   H : String;
 begin
-  H:=LowerCase(Aheader);
-  l:=Length(AHeader);
+  H:=LowerCase(Aheader)+':';
+  l:=Length(H);
   Result:=HTTPHeaders.Count-1;
   While (Result>=0) and ((LowerCase(Copy(HTTPHeaders[Result],1,l)))<>h) do
     Dec(Result);
@@ -1342,7 +1371,6 @@ begin
   FServerHTTPVersion:='';
   FBuffer:='';
 end;
-
 
 procedure TFPCustomHTTPClient.HTTPMethod(const AMethod, AURL: String;
   Stream: TStream; const AllowedResponseCodes: array of Integer);

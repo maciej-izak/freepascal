@@ -91,7 +91,7 @@ const
   nCallingConventionMismatch = 3018;
   nResultTypeMismatchExpectedButFound = 3019;
   nFunctionHeaderMismatchForwardVarName = 3020;
-  nFunctionHidesIdentifier = 3021;
+  nFunctionHidesIdentifier_NonVirtualMethod = 3021;
   nNoMethodInAncestorToOverride = 3022;
   nInheritedOnlyWorksInMethods = 3023;
   nInheritedNeedsAncestor = 3024;
@@ -99,7 +99,7 @@ const
   nExprTypeMustBeClassOrRecordTypeGot = 3026;
   nPropertyNotWritable = 3027;
   nIncompatibleTypesGotExpected = 3028;
-  nTypesAreNotRelated = 3029;
+  nTypesAreNotRelatedXY = 3029;
   nAbstractMethodsCannotBeCalledDirectly = 3030;
   nMissingParameterX = 3031;
   nCannotAccessThisMemberFromAX = 3032;
@@ -118,9 +118,9 @@ const
   nCantAccessPrivateMember = 3045;
   nMustBeInsideALoop = 3046;
   nExpectXArrayElementsButFoundY = 3047;
-  nCannotCreateADescendantOfTheSealedClass = 3048;
+  nCannotCreateADescendantOfTheSealedXY = 3048;
   nAncestorIsNotExternal = 3049;
-  nVirtualMethodXHasLowerVisibility = 3050; // FPC 3250
+  nPropertyMustHaveReadOrWrite = 3050;
   nExternalClassInstanceCannotAccessStaticX = 3051;
   nXModifierMismatchY = 3052;
   nSymbolCannotBePublished = 3053;
@@ -128,12 +128,12 @@ const
   nTypeIdentifierExpected = 3055;
   nCannotNestAnonymousX = 3056;
   nFoundCallCandidateX = 3057;
-  nSymbolXIsNotPortable = 3058;
-  nSymbolXIsExperimental = 3059;
-  nSymbolXIsNotImplemented = 3060;
-  nSymbolXBelongsToALibrary = 3061;
-  nSymbolXIsDeprecated = 3062;
-  nSymbolXIsDeprecatedY = 3063;
+  nTextAfterFinalIgnored = 3058;
+  nNoMemberIsProvidedToAccessProperty = 3059;
+  // free 3060
+  // free 3061
+  // free 3062
+  // free 3063
   nRangeCheckError = 3064;
   nHighRangeLimitLTLowRangeLimit = 3065;
   nRangeCheckEvaluatingConstantsVMinMax = 3066;
@@ -148,6 +148,42 @@ const
   nPreviousDeclMissesOverload = 3075;
   nOverloadedProcMissesOverload = 3076;
   nMethodHidesMethodOfBaseType = 3077;
+  nContextExpectedXButFoundY = 3078;
+  nContextXInvalidY = 3079;
+  // free 3080;
+  nXIsNotSupported = 3081;
+  nOperatorIsNotOverloadedAOpB = 3082;
+  nIllegalQualifierAfter = 3084;
+  nIllegalQualifierInFrontOf = 3085;
+  nIllegalQualifierWithin = 3086;
+  nMethodClassXInOtherUnitY = 3087;
+  // free 3088
+  nCannotMixMethodResolutionAndDelegationAtX = 3089;
+  nImplementsDoesNotSupportArrayProperty = 3101;
+  nImplementsDoesNotSupportIndex = 3102;
+  nImplementsUsedOnUnimplIntf = 3103;
+  nDuplicateImplementsForIntf = 3103;
+  nImplPropMustHaveReadSpec = 3104;
+  nDoesNotImplementInterface = 3105;
+  nTypeCycleFound = 3106;
+  nTypeXIsNotYetCompletelyDefined = 3107;
+  nDuplicateCaseValueXatY = 3108;
+  nMissingFieldsX = 3109;
+  nCantAssignValuesToConstVariable = 3110;
+  nIllegalAssignmentToForLoopVar = 3111;
+  nFunctionHidesIdentifier_NonProc = 3112;
+  // Note: use one of the free IDs above
+
+  // using same IDs as FPC
+  nVirtualMethodXHasLowerVisibility = 3250; // was 3050
+  nConstructingClassXWithAbstractMethodY = 4046; // was 3080
+  nNoMatchingImplForIntfMethodXFound = 5042;  // was 3088
+  nSymbolXIsDeprecated = 5043;   // was 3062
+  nSymbolXBelongsToALibrary = 5065; // was 3061
+  nSymbolXIsDeprecatedY = 5066;   // 3063
+  nSymbolXIsNotPortable = 5076; // was 3058
+  nSymbolXIsNotImplemented = 5078; // was  3060
+  nSymbolXIsExperimental = 5079;  // was 3059
 
 // resourcestring patterns of messages
 resourcestring
@@ -171,7 +207,7 @@ resourcestring
   sCallingConventionMismatch = 'Calling convention mismatch';
   sResultTypeMismatchExpectedButFound = 'Result type mismatch, expected %s, but found %s';
   sFunctionHeaderMismatchForwardVarName = 'function header "%s" doesn''t match forward : var name changes %s => %s';
-  sFunctionHidesIdentifier = 'function hides identifier at "%s"';
+  sFunctionHidesIdentifier = 'function hides identifier at "%s". Use overload or reintroduce';
   sNoMethodInAncestorToOverride = 'There is no method in an ancestor class to be overridden "%s"';
   sInheritedOnlyWorksInMethods = 'Inherited works only in methods';
   sInheritedNeedsAncestor = 'inherited needs an ancestor';
@@ -179,7 +215,7 @@ resourcestring
   sExprTypeMustBeClassOrRecordTypeGot = 'Expression type must be class or record type, got %s';
   sPropertyNotWritable = 'No member is provided to access property';
   sIncompatibleTypesGotExpected = 'Incompatible types: got "%s" expected "%s"';
-  sTypesAreNotRelated = 'Types are not related';
+  sTypesAreNotRelatedXY = 'Types are not related: "%s" and "%s"';
   sAbstractMethodsCannotBeCalledDirectly = 'Abstract methods cannot be called directly';
   sMissingParameterX = 'Missing parameter %s';
   sCannotAccessThisMemberFromAX = 'Cannot access this member from a %s';
@@ -187,7 +223,7 @@ resourcestring
   sWrongNumberOfParametersForTypeCast = 'wrong number of parameters for type cast to %s';
   sIllegalTypeConversionTo = 'Illegal type conversion: "%s" to "%s"';
   sConstantExpressionExpected = 'Constant expression expected';
-  sLeftSideOfIsOperatorExpectsAClassButGot = 'left side of is-operator expects a class, but got %s';
+  sLeftSideOfIsOperatorExpectsAClassButGot = 'left side of is-operator expects a class, but got "%s"';
   sNotReadable = 'not readable';
   sClassPropertyAccessorMustBeStatic = 'class property accessor must be static';
   sClassPropertyAccessorMustNotBeStatic = 'class property accessor must not be static';
@@ -198,8 +234,9 @@ resourcestring
   sCantAccessPrivateMember = 'Can''t access %s member %s';
   sMustBeInsideALoop = '%s must be inside a loop';
   sExpectXArrayElementsButFoundY = 'Expect %s array elements, but found %s';
-  sCannotCreateADescendantOfTheSealedClass = 'Cannot create a descendant of the sealed class "%s"';
+  sCannotCreateADescendantOfTheSealedXY = 'Cannot create a descendant of the sealed %s "%s"';
   sAncestorIsNotExternal = 'Ancestor "%s" is not external';
+  sPropertyMustHaveReadOrWrite = 'Property must have read or write accessor';
   sVirtualMethodXHasLowerVisibility = 'Virtual method "%s" has a lower visibility (%s) than parent class %s (%s)';
   sExternalClassInstanceCannotAccessStaticX = 'External class instance cannot access static %s';
   sXModifierMismatchY = '%s modifier "%s" mismatch';
@@ -208,6 +245,8 @@ resourcestring
   sTypeIdentifierExpected = 'Type identifier expected';
   sCannotNestAnonymousX = 'Cannot nest anonymous %s';
   sFoundCallCandidateX = 'Found call candidate %s';
+  sTextAfterFinalIgnored = 'Text after final ''end.''. ignored by compiler';
+  sNoMemberIsProvidedToAccessProperty = 'No member is provided to access property';
   sSymbolXIsNotPortable = 'Symbol "%s" is not portable';
   sSymbolXIsExperimental = 'Symbol "%s" is experimental';
   sSymbolXIsNotImplemented = 'Symbol "%s" is not implemented';
@@ -216,7 +255,7 @@ resourcestring
   sSymbolXIsDeprecatedY = 'Symbol "%s" is deprecated: %s';
   sRangeCheckError = 'Range check error';
   sHighRangeLimitLTLowRangeLimit = 'High range limit < low range limit';
-  sRangeCheckEvaluatingConstantsVMinMax = 'range check error while evaluating constants (%s must be between %s and %s)';
+  sRangeCheckEvaluatingConstantsVMinMax = 'range check error while evaluating constants (%s is not between %s and %s)';
   sIllegalChar = 'Illegal character';
   sOverflowInArithmeticOperation = 'Overflow in arithmetic operation';
   sDivByZero = 'Division by zero';
@@ -228,6 +267,29 @@ resourcestring
   sPreviousDeclMissesOverload = 'Previous declaration of "%s" at %s was not marked with "overload" directive';
   sOverloadedProcMissesOverload = 'Overloaded procedure misses "overload" directive. Previous declaration is at %s';
   sMethodHidesMethodOfBaseType = 'Method "%s" hides method of base type "%s" at %s';
+  sContextExpectedXButFoundY = '%s: expected "%s", but found "%s"';
+  sContextXInvalidY = '%s: invalid %s';
+  sConstructingClassXWithAbstractMethodY = 'Constructing a class "%s" with abstract method "%s"';
+  sXIsNotSupported = '%s is not supported';
+  sOperatorIsNotOverloadedAOpB = 'Operator is not overloaded: "%s" %s "%s"';
+  sIllegalQualifierAfter = 'illegal qualifier "%s" after "%s"';
+  sIllegalQualifierInFrontOf = 'illegal qualifier "%s" in front of "%s"';
+  sIllegalQualifierWithin = 'illegal qualifier "%s" within "%s"';
+  sMethodClassXInOtherUnitY = 'method class "%s" in other unit "%s"';
+  sNoMatchingImplForIntfMethodXFound = 'No matching implementation for interface method "%s" found';
+  sCannotMixMethodResolutionAndDelegationAtX = 'Cannot mix method resolution and delegation at %s';
+  sImplementsDoesNotSupportArrayProperty = '"implements" does dot support array property';
+  sImplementsDoesNotSupportIndex = '"implements" does not support "index"';
+  sImplementsUsedOnUnimplIntf = 'Implements-property used on unimplemented interface: "%"';
+  sDuplicateImplementsForIntf = 'Duplicate implements for interface "%s" at %s';
+  sImplPropMustHaveReadSpec = 'Implements-property must have read specifier';
+  sDoesNotImplementInterface = '"%s" does not implement interface "%s"';
+  sTypeCycleFound = 'Type cycle found';
+  sTypeXIsNotYetCompletelyDefined = 'type "%s" is not yet completely defined';
+  sDuplicateCaseValueXatY = 'Duplicate case value "%s", other at %s';
+  sMissingFieldsX = 'Missing fields: "%s"';
+  sCantAssignValuesToConstVariable = 'Can''t assign values to const variable';
+  sIllegalAssignmentToForLoopVar = 'Illegal assignment to for-loop variable "%s"';
 
 type
   { TResolveData - base class for data stored in TPasElement.CustomData }
@@ -249,19 +311,20 @@ type
   MaxPrecInt = int64;
   MaxPrecUInt = qword;
   MaxPrecFloat = extended;
+  MaxPrecCurrency = currency;
 const
   // Note: when FPC compares int64 with qword it converts the qword to an int64,
   //       possibly resulting in a range check error -> using a qword const instead
   HighIntAsUInt = MaxPrecUInt(High(MaxPrecInt));
 
 const
-  MinSafeIntCurrency = -922337203685477;
-  MaxSafeIntCurrency =  922337203685477;
+  MinSafeIntCurrency = -922337203685477; // .5808
+  MaxSafeIntCurrency =  922337203685477; // .5807
   MinSafeIntSingle = -16777216;
   MaxSafeIntSingle =  16777216;
   MaskUIntSingle = $3fffff;
-  MinSafeIntDouble = -$10000000000000;
-  MaxSafeIntDouble =   $fffffffffffff;
+  MinSafeIntDouble = -$10000000000000; // -4503599627370496
+  MaxSafeIntDouble =   $fffffffffffff; //  4503599627370495
   MaskUIntDouble = $fffffffffffff;
 
 type
@@ -275,6 +338,7 @@ type
     revkInt,  // TResEvalInt
     revkUInt, // TResEvalUInt
     revkFloat, // TResEvalFloat
+    revkCurrency, // TResEvalCurrency
     revkString, // TResEvalString
     revkUnicodeString, // TResEvalUTF16
     revkEnum,     // TResEvalEnum
@@ -388,6 +452,19 @@ type
     function IsInt(out Int: MaxPrecInt): boolean;
   end;
 
+  { TResEvalCurrency }
+
+  TResEvalCurrency = class(TResEvalValue)
+  public
+    Value: MaxPrecCurrency;
+    constructor Create; override;
+    constructor CreateValue(const aValue: MaxPrecCurrency);
+    function Clone: TResEvalValue; override;
+    function AsString: string; override;
+    function IsInt(out Int: MaxPrecInt): boolean;
+    function AsInt64: int64;
+  end;
+
   { TResEvalString - Kind=revkString }
 
   TResEvalString = class(TResEvalValue)
@@ -442,11 +519,11 @@ type
     ElType: TPasType; // revskEnum: TPasEnumType
     constructor Create; override;
     constructor CreateValue(const aElKind: TRESetElKind; aElType: TPasType;
-      const aRangeStart, aRangeEnd: MaxPrecInt);
+      const aRangeStart, aRangeEnd: MaxPrecInt); virtual;
     function Clone: TResEvalValue; override;
     function AsString: string; override;
     function AsDebugString: string; override;
-    function ElementAsString(El: MaxPrecInt): string;
+    function ElementAsString(El: MaxPrecInt): string; virtual;
   end;
 
   { TResEvalRangeUInt }
@@ -462,7 +539,7 @@ type
 
   { TResEvalSet - Kind=revkSetOfInt }
 
-  TResEvalSet = class(TResEvalValue)
+  TResEvalSet = class(TResEvalRangeInt)
   public
     const MaxCount = $ffff;
     type
@@ -471,17 +548,17 @@ type
       end;
       TItems = array of TItem;
   public
-    ElKind: TRESetElKind;
     Ranges: TItems; // disjunct, sorted ascending
-    ElType: TPasType; // revskEnum: TPasEnumType
     constructor Create; override;
-    constructor CreateEmpty(aSet: TResEvalSet);
+    constructor CreateEmpty(const aElKind: TRESetElKind; aElType: TPasType = nil);
+    constructor CreateEmptySameKind(aSet: TResEvalSet);
+    constructor CreateValue(const aElKind: TRESetElKind; aElType: TPasType;
+      const aRangeStart, aRangeEnd: MaxPrecInt); override;
     function Clone: TResEvalValue; override;
     function AsString: string; override;
-    function ElementAsString(El: MaxPrecInt): string;
-    function Add(RangeStart, RangeEnd: MaxPrecInt): boolean; // false if duplicate ignored
+    function Add(aRangeStart, aRangeEnd: MaxPrecInt): boolean; // false if duplicate ignored
     function IndexOfRange(Index: MaxPrecInt; FindInsertPos: boolean = false): integer;
-    function Intersects(RangeStart, RangeEnd: MaxPrecInt): integer; // returns index of first intersecting range
+    function Intersects(aRangeStart, aRangeEnd: MaxPrecInt): integer; // returns index of first intersecting range
     procedure ConsistencyCheck;
   end;
 
@@ -500,6 +577,8 @@ type
     Expr: TPrimitiveExpr; Flags: TResEvalFlags): TResEvalValue of object;
   TPasResEvalParamsHandler = function(Sender: TResExprEvaluator;
     Params: TParamsExpr; Flags: TResEvalFlags): TResEvalValue of object;
+  TPasResEvalRangeCheckElHandler = procedure(Sender: TResExprEvaluator;
+    El: TPasElement; var MsgType: TMessageType) of object;
 
   { TResExprEvaluator }
 
@@ -510,6 +589,7 @@ type
     FOnEvalIdentifier: TPasResEvalIdentHandler;
     FOnEvalParams: TPasResEvalParamsHandler;
     FOnLog: TPasResEvalLogHandler;
+    FOnRangeCheckEl: TPasResEvalRangeCheckElHandler;
   protected
     procedure LogMsg(const id: int64; MsgType: TMessageType; MsgNumber: integer;
       const Fmt: String; Args: Array of const; PosEl: TPasElement); overload;
@@ -586,6 +666,7 @@ type
     property OnLog: TPasResEvalLogHandler read FOnLog write FOnLog;
     property OnEvalIdentifier: TPasResEvalIdentHandler read FOnEvalIdentifier write FOnEvalIdentifier;
     property OnEvalParams: TPasResEvalParamsHandler read FOnEvalParams write FOnEvalParams;
+    property OnRangeCheckEl: TPasResEvalRangeCheckElHandler read FOnRangeCheckEl write FOnRangeCheckEl;
     property AllowedInts: TResEvalTypedInts read FAllowedInts write FAllowedInts;
     property DefaultStringCodePage: TSystemCodePage read FDefaultEncoding write FDefaultEncoding;
   end;
@@ -842,6 +923,45 @@ begin
     Result:=v.AsDebugString;
 end;
 
+{ TResEvalCurrency }
+
+constructor TResEvalCurrency.Create;
+begin
+  inherited Create;
+  Kind:=revkCurrency;
+end;
+
+constructor TResEvalCurrency.CreateValue(const aValue: MaxPrecCurrency);
+begin
+  Create;
+  Value:=aValue;
+end;
+
+function TResEvalCurrency.Clone: TResEvalValue;
+begin
+  Result:=inherited Clone;
+  TResEvalCurrency(Result).Value:=Value;
+end;
+
+function TResEvalCurrency.AsString: string;
+begin
+  str(Value,Result);
+end;
+
+function TResEvalCurrency.IsInt(out Int: MaxPrecInt): boolean;
+var
+  i: Int64;
+begin
+  i:=PInt64(@Value)^;
+  Result:=(i mod 10000)=0;
+  Int:=i div 10000;
+end;
+
+function TResEvalCurrency.AsInt64: int64;
+begin
+  Result:=PInt64(@Value)^;
+end;
+
 { TResEvalBool }
 
 constructor TResEvalBool.Create;
@@ -1023,7 +1143,14 @@ begin
         if Result.Element<>nil then
           Result:=Result.Clone;
         TResEvalFloat(Result).FloatValue:=-TResEvalFloat(Result).FloatValue;
-        end
+        end;
+      revkCurrency:
+        begin
+        if TResEvalCurrency(Result).Value=0 then exit;
+        if Result.Element<>nil then
+          Result:=Result.Clone;
+        TResEvalCurrency(Result).Value:=-TResEvalCurrency(Result).Value;
+        end;
       else
         begin
         if Result.Element=nil then
@@ -1134,7 +1261,7 @@ begin
         Result:=EvalBinarySymmetricaldifferenceExpr(Expr,LeftValue,RightValue);
       else
         {$IFDEF VerbosePasResolver}
-        writeln('TResExprEvaluator.EvalBinaryExpr Opcode=',OpcodeStrings[Expr.OpCode],' Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
+        writeln('TResExprEvaluator.EvalBinaryExpr Kind=',Expr.Kind,' Opcode=',OpcodeStrings[Expr.OpCode],' Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
         {$ENDIF}
         RaiseNotYetImplemented(20170530100823,Expr);
       end;
@@ -1145,10 +1272,12 @@ begin
       RaiseNotYetImplemented(20170530100827,Expr);
     end;
     {$IFDEF VerbosePasResEval}
+    {AllowWriteln}
     if Result<>nil then
       writeln('TResExprEvaluator.EvalBinaryExpr Left=',LeftValue.AsDebugString,' Opcode=',OpcodeStrings[Expr.OpCode],' Right=',RightValue.AsDebugString,' Result=',Result.AsDebugString)
     else
       writeln('TResExprEvaluator.EvalBinaryExpr Left=',LeftValue.AsDebugString,' Opcode=',OpcodeStrings[Expr.OpCode],' Right=',RightValue.AsDebugString,' Result not set');
+    {AllowWriteln-}
     {$ENDIF}
   finally
     ReleaseEvalValue(LeftValue);
@@ -1312,6 +1441,7 @@ var
   Int: MaxPrecInt;
   UInt: MaxPrecUInt;
   Flo: MaxPrecFloat;
+  aCurrency: MaxPrecCurrency;
   LeftCP, RightCP: TSystemCodePage;
   LeftSet, RightSet: TResEvalSet;
   i: Integer;
@@ -1340,6 +1470,8 @@ begin
         IntAddUInt(Int,TResEvalUInt(RightValue).UInt);
       revkFloat: // int + float
         Result:=TResEvalFloat.CreateValue(Int + TResEvalFloat(RightValue).FloatValue);
+      revkCurrency: // int + currency
+        Result:=TResEvalCurrency.CreateValue(Int + TResEvalCurrency(RightValue).Value);
       else
         {$IFDEF VerbosePasResolver}
         writeln('TResExprEvaluator.EvalBinaryAddExpr int+? Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
@@ -1360,6 +1492,8 @@ begin
         end;
       revkFloat: // uint + float
         Result:=TResEvalFloat.CreateValue(UInt + TResEvalFloat(RightValue).FloatValue);
+      revkCurrency: // uint + currency
+        Result:=TResEvalCurrency.CreateValue(UInt + TResEvalCurrency(RightValue).Value);
       else
         {$IFDEF VerbosePasResolver}
         writeln('TResExprEvaluator.EvalBinaryAddExpr uint+? Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
@@ -1377,11 +1511,32 @@ begin
         Result:=TResEvalFloat.CreateValue(Flo + TResEvalUInt(RightValue).UInt);
       revkFloat: // float + float
         Result:=TResEvalFloat.CreateValue(Flo + TResEvalFloat(RightValue).FloatValue);
+      revkCurrency: // float + Currency
+        Result:=TResEvalCurrency.CreateValue(Flo + TResEvalCurrency(RightValue).Value);
       else
         {$IFDEF VerbosePasResolver}
         writeln('TResExprEvaluator.EvalBinaryAddExpr float+? Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
         {$ENDIF}
         RaiseNotYetImplemented(20170711145637,Expr);
+      end;
+      end;
+    revkCurrency:
+      begin
+      aCurrency:=TResEvalCurrency(LeftValue).Value;
+      case RightValue.Kind of
+      revkInt: // currency + int
+        Result:=TResEvalFloat.CreateValue(aCurrency + TResEvalInt(RightValue).Int);
+      revkUInt: // currency + uint
+        Result:=TResEvalFloat.CreateValue(aCurrency + TResEvalUInt(RightValue).UInt);
+      revkFloat: // currency + float
+        Result:=TResEvalFloat.CreateValue(aCurrency + TResEvalFloat(RightValue).FloatValue);
+      revkCurrency: // currency + currency
+        Result:=TResEvalCurrency.CreateValue(aCurrency + TResEvalCurrency(RightValue).Value);
+      else
+        {$IFDEF VerbosePasResolver}
+        writeln('TResExprEvaluator.EvalBinaryAddExpr currency+? Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
+        {$ENDIF}
+        RaiseNotYetImplemented(20180421163819,Expr);
       end;
       end;
     revkString:
@@ -1485,6 +1640,7 @@ var
   Int: MaxPrecInt;
   UInt: MaxPrecUInt;
   Flo: MaxPrecFloat;
+  aCurrency: MaxPrecCurrency;
   LeftSet, RightSet: TResEvalSet;
   i: Integer;
 begin
@@ -1533,6 +1689,17 @@ begin
         on E: EOverflow do
           RaiseOverflowArithmetic(20170711151313,Expr);
       end;
+    revkCurrency:
+      // int - currency
+      try
+        {$Q+}
+        aCurrency:=MaxPrecCurrency(Int) - TResEvalCurrency(RightValue).Value;
+        {$IFNDEF OverflowCheckOn}{$Q-}{$ENDIF}
+        Result:=TResEvalCurrency.CreateValue(aCurrency);
+      except
+        on E: EOverflow do
+          RaiseOverflowArithmetic(20180421164011,Expr);
+      end;
     else
       {$IFDEF VerbosePasResolver}
       writeln('TResExprEvaluator.EvalBinarySubExpr sub int-? Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
@@ -1576,6 +1743,17 @@ begin
       except
         on E: EOverflow do
           RaiseOverflowArithmetic(20170711151428,Expr);
+      end;
+    revkCurrency:
+      // uint - currency
+      try
+        {$Q+}
+        aCurrency:=MaxPrecCurrency(UInt) - TResEvalCurrency(RightValue).Value;
+        {$IFNDEF OverflowCheckOn}{$Q-}{$ENDIF}
+        Result:=TResEvalCurrency.CreateValue(aCurrency);
+      except
+        on E: EOverflow do
+          RaiseOverflowArithmetic(20180421164005,Expr);
       end;
     else
       {$IFDEF VerbosePasResolver}
@@ -1621,11 +1799,77 @@ begin
         on E: EOverflow do
           RaiseOverflowArithmetic(20170711151552,Expr);
       end;
+    revkCurrency:
+      // float - currency
+      try
+        {$Q+}
+        aCurrency:=aCurrency - TResEvalCurrency(RightValue).Value;
+        {$IFNDEF OverflowCheckOn}{$Q-}{$ENDIF}
+        Result:=TResEvalCurrency.CreateValue(aCurrency);
+      except
+        on E: EOverflow do
+          RaiseOverflowArithmetic(20180421164054,Expr);
+      end;
     else
       {$IFDEF VerbosePasResolver}
       writeln('TResExprEvaluator.EvalBinarySubExpr sub float-? Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
       {$ENDIF}
       RaiseNotYetImplemented(20170711151600,Expr);
+    end;
+    end;
+  revkCurrency:
+    begin
+    aCurrency:=TResEvalCurrency(LeftValue).Value;
+    case RightValue.Kind of
+    revkInt:
+      // currency - int
+      try
+        {$Q+}
+        aCurrency:=aCurrency - TResEvalInt(RightValue).Int;
+        {$IFNDEF OverflowCheckOn}{$Q-}{$ENDIF}
+        Result:=TResEvalCurrency.CreateValue(aCurrency);
+      except
+        on E: EOverflow do
+          RaiseOverflowArithmetic(20180421164200,Expr);
+      end;
+    revkUInt:
+      // currency - uint
+      try
+        {$Q+}
+        aCurrency:=aCurrency - TResEvalUInt(RightValue).UInt;
+        {$IFNDEF OverflowCheckOn}{$Q-}{$ENDIF}
+        Result:=TResEvalCurrency.CreateValue(aCurrency);
+      except
+        on E: EOverflow do
+          RaiseOverflowArithmetic(20180421164218,Expr);
+      end;
+    revkFloat:
+      // currency - float
+      try
+        {$Q+}
+        aCurrency:=aCurrency - TResEvalFloat(RightValue).FloatValue;
+        {$IFNDEF OverflowCheckOn}{$Q-}{$ENDIF}
+        Result:=TResEvalCurrency.CreateValue(aCurrency);
+      except
+        on E: EOverflow do
+          RaiseOverflowArithmetic(20180421164250,Expr);
+      end;
+    revkCurrency:
+      // currency - currency
+      try
+        {$Q+}
+        aCurrency:=aCurrency - TResEvalCurrency(RightValue).Value;
+        {$IFNDEF OverflowCheckOn}{$Q-}{$ENDIF}
+        Result:=TResEvalCurrency.CreateValue(aCurrency);
+      except
+        on E: EOverflow do
+          RaiseOverflowArithmetic(20180421164258,Expr);
+      end;
+    else
+      {$IFDEF VerbosePasResolver}
+      writeln('TResExprEvaluator.EvalBinarySubExpr sub currency-? Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
+      {$ENDIF}
+      RaiseNotYetImplemented(20180421164312,Expr);
     end;
     end;
   revkSetOfInt:
@@ -1636,10 +1880,10 @@ begin
       LeftSet:=TResEvalSet(LeftValue);
       RightSet:=TResEvalSet(RightValue);
       if LeftSet.ElKind=revskNone then
-        Result:=TResEvalSet.CreateEmpty(RightSet)
+        Result:=TResEvalSet.CreateEmptySameKind(RightSet)
       else
         begin
-        Result:=TResEvalSet.CreateEmpty(LeftSet);
+        Result:=TResEvalSet.CreateEmptySameKind(LeftSet);
         // add elements, which exists only in LeftSet
         for i:=0 to length(LeftSet.Ranges)-1 do
           begin
@@ -1673,6 +1917,7 @@ var
   Int: MaxPrecInt;
   UInt: MaxPrecUInt;
   Flo: MaxPrecFloat;
+  aCurrency: MaxPrecCurrency;
   LeftSet, RightSet: TResEvalSet;
   i: Integer;
 begin
@@ -1724,6 +1969,16 @@ begin
         Result:=TResEvalFloat.CreateValue(Flo);
       except
         RaiseOverflowArithmetic(20170711164541,Expr);
+      end;
+    revkCurrency:
+      // int * currency
+      try
+        {$Q+}
+        aCurrency:=Int * TResEvalCurrency(RightValue).Value;
+        {$IFNDEF OverflowCheckOn}{$Q-}{$ENDIF}
+        Result:=TResEvalCurrency.CreateValue(aCurrency);
+      except
+        RaiseOverflowArithmetic(20180421164426,Expr);
       end;
     else
       {$IFDEF VerbosePasResolver}
@@ -1778,6 +2033,16 @@ begin
       except
         RaiseOverflowArithmetic(20170711164800,Expr);
       end;
+    revkCurrency:
+      // uint * currency
+      try
+        {$Q+}
+        aCurrency:=UInt * TResEvalCurrency(RightValue).Value;
+        {$IFNDEF OverflowCheckOn}{$Q-}{$ENDIF}
+        Result:=TResEvalCurrency.CreateValue(aCurrency);
+      except
+        RaiseOverflowArithmetic(20180421164500,Expr);
+      end;
     else
       {$IFDEF VerbosePasResolver}
       writeln('TResExprEvaluator.EvalBinaryMulExpr mul uint*? Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
@@ -1820,11 +2085,73 @@ begin
       except
         RaiseOverflowArithmetic(20170711164955,Expr);
       end;
+    revkCurrency:
+      // float * currency
+      try
+        {$Q+}
+        Flo:=Flo * TResEvalCurrency(RightValue).Value;
+        {$IFNDEF OverflowCheckOn}{$Q-}{$ENDIF}
+        Result:=TResEvalFloat.CreateValue(Flo);
+      except
+        RaiseOverflowArithmetic(20180421164542,Expr);
+      end;
     else
       {$IFDEF VerbosePasResolver}
       writeln('TResExprEvaluator.EvalBinaryMulExpr mul float*? Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
       {$ENDIF}
       RaiseNotYetImplemented(20170711165004,Expr);
+    end;
+    end;
+  revkCurrency:
+    begin
+    aCurrency:=TResEvalCurrency(LeftValue).Value;
+    case RightValue.Kind of
+    revkInt:
+      // currency * int
+      try
+        {$Q+}
+        aCurrency:=aCurrency * TResEvalInt(RightValue).Int;
+        {$IFNDEF OverflowCheckOn}{$Q-}{$ENDIF}
+        Result:=TResEvalCurrency.CreateValue(aCurrency);
+      except
+        on E: EOverflow do
+          RaiseOverflowArithmetic(20180421164636,Expr);
+      end;
+    revkUInt:
+      // currency * uint
+      try
+        {$Q+}
+        aCurrency:=aCurrency * TResEvalUInt(RightValue).UInt;
+        {$IFNDEF OverflowCheckOn}{$Q-}{$ENDIF}
+        Result:=TResEvalCurrency.CreateValue(aCurrency);
+      except
+        RaiseOverflowArithmetic(20180421164654,Expr);
+      end;
+    revkFloat:
+      // currency * float
+      try
+        {$Q+}
+        Flo:=aCurrency * TResEvalFloat(RightValue).FloatValue;
+        {$IFNDEF OverflowCheckOn}{$Q-}{$ENDIF}
+        Result:=TResEvalFloat.CreateValue(Flo);
+      except
+        RaiseOverflowArithmetic(20180421164718,Expr);
+      end;
+    revkCurrency:
+      // currency * currency
+      try
+        {$Q+}
+        aCurrency:=aCurrency * TResEvalCurrency(RightValue).Value;
+        {$IFNDEF OverflowCheckOn}{$Q-}{$ENDIF}
+        Result:=TResEvalCurrency.CreateValue(aCurrency);
+      except
+        RaiseOverflowArithmetic(20180421164806,Expr);
+      end;
+    else
+      {$IFDEF VerbosePasResolver}
+      writeln('TResExprEvaluator.EvalBinaryMulExpr mul currency*? Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
+      {$ENDIF}
+      RaiseNotYetImplemented(20180421164817,Expr);
     end;
     end;
   revkSetOfInt:
@@ -1835,10 +2162,10 @@ begin
       LeftSet:=TResEvalSet(LeftValue);
       RightSet:=TResEvalSet(RightValue);
       if LeftSet.ElKind=revskNone then
-        Result:=TResEvalSet.CreateEmpty(RightSet)
+        Result:=TResEvalSet.CreateEmptySameKind(RightSet)
       else
         begin
-        Result:=TResEvalSet.CreateEmpty(LeftSet);
+        Result:=TResEvalSet.CreateEmptySameKind(LeftSet);
         // add elements, which exists in both
         for i:=0 to length(LeftSet.Ranges)-1 do
           begin
@@ -1872,6 +2199,7 @@ var
   Int: MaxPrecInt;
   UInt: MaxPrecUInt;
   Flo: MaxPrecFloat;
+  aCurrency: MaxPrecCurrency;
 begin
   Result:=nil;
   case LeftValue.Kind of
@@ -1900,7 +2228,17 @@ begin
         RaiseMsg(20170711144525,nDivByZero,sDivByZero,[],Expr);
       end;
       Result:=TResEvalFloat.CreateValue(Flo);
-      end
+      end;
+    revkCurrency:
+      begin
+      // int / currency
+      try
+        aCurrency:=Int / TResEvalCurrency(RightValue).Value;
+      except
+        RaiseMsg(20180421164915,nDivByZero,sDivByZero,[],Expr);
+      end;
+      Result:=TResEvalCurrency.CreateValue(aCurrency);
+      end;
     else
       {$IFDEF VerbosePasResolver}
       writeln('TResExprEvaluator.EvalBinaryDivideExpr int / ? Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
@@ -1933,7 +2271,17 @@ begin
         RaiseMsg(20170711144912,nDivByZero,sDivByZero,[],Expr);
       end;
       Result:=TResEvalFloat.CreateValue(Flo);
-      end
+      end;
+    revkCurrency:
+      begin
+      // uint / currency
+      try
+        aCurrency:=UInt / TResEvalCurrency(RightValue).Value;
+      except
+        RaiseMsg(20180421164959,nDivByZero,sDivByZero,[],Expr);
+      end;
+      Result:=TResEvalCurrency.CreateValue(aCurrency);
+      end;
     else
       {$IFDEF VerbosePasResolver}
       writeln('TResExprEvaluator.EvalBinaryDivideExpr uint / ? Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
@@ -1966,12 +2314,65 @@ begin
         RaiseMsg(20170711145040,nDivByZero,sDivByZero,[],Expr);
       end;
       Result:=TResEvalFloat.CreateValue(Flo);
-      end
+      end;
+    revkCurrency:
+      begin
+      // float / currency
+      try
+        aCurrency:=Flo / TResEvalCurrency(RightValue).Value;
+      except
+        RaiseMsg(20180421165058,nDivByZero,sDivByZero,[],Expr);
+      end;
+      Result:=TResEvalCurrency.CreateValue(aCurrency);
+      end;
     else
       {$IFDEF VerbosePasResolver}
       writeln('TResExprEvaluator.EvalBinaryDivideExpr float / ? Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
       {$ENDIF}
       RaiseNotYetImplemented(20170711145050,Expr);
+    end;
+    end;
+  revkCurrency:
+    begin
+    aCurrency:=TResEvalCurrency(LeftValue).Value;
+    case RightValue.Kind of
+    revkInt:
+      // currency / int
+      if TResEvalInt(RightValue).Int=0 then
+        RaiseDivByZero(20180421165154,Expr)
+      else
+        Result:=TResEvalCurrency.CreateValue(aCurrency / TResEvalInt(RightValue).Int);
+    revkUInt:
+      // currency / uint
+      if TResEvalUInt(RightValue).UInt=0 then
+        RaiseDivByZero(20180421165205,Expr)
+      else
+        Result:=TResEvalCurrency.CreateValue(aCurrency / TResEvalUInt(RightValue).UInt);
+    revkFloat:
+      begin
+      // currency / float
+      try
+        aCurrency:=aCurrency / TResEvalFloat(RightValue).FloatValue;
+      except
+        RaiseMsg(20180421165237,nDivByZero,sDivByZero,[],Expr);
+      end;
+      Result:=TResEvalCurrency.CreateValue(aCurrency);
+      end;
+    revkCurrency:
+      begin
+      // currency / currency
+      try
+        aCurrency:=aCurrency / TResEvalCurrency(RightValue).Value;
+      except
+        RaiseMsg(20180421165252,nDivByZero,sDivByZero,[],Expr);
+      end;
+      Result:=TResEvalCurrency.CreateValue(aCurrency);
+      end;
+    else
+      {$IFDEF VerbosePasResolver}
+      writeln('TResExprEvaluator.EvalBinaryDivideExpr currency / ? Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
+      {$ENDIF}
+      RaiseNotYetImplemented(20180421165301,Expr);
     end;
     end;
   else
@@ -2315,6 +2716,8 @@ begin
         TResEvalBool(Result).B:=TResEvalInt(LeftValue).Int=TResEvalUInt(RightValue).UInt;
       revkFloat:
         TResEvalBool(Result).B:=TResEvalInt(LeftValue).Int=TResEvalFloat(RightValue).FloatValue;
+      revkCurrency:
+        TResEvalBool(Result).B:=TResEvalInt(LeftValue).Int=TResEvalCurrency(RightValue).Value;
       else
         {$IFDEF VerbosePasResolver}
         writeln('TResExprEvaluator.EvalBinaryNEqualExpr int ',Expr.OpCode,' ? Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
@@ -2333,6 +2736,8 @@ begin
         TResEvalBool(Result).B:=UInt=TResEvalUInt(RightValue).UInt;
       revkFloat:
         TResEvalBool(Result).B:=UInt=TResEvalFloat(RightValue).FloatValue;
+      revkCurrency:
+        TResEvalBool(Result).B:=UInt=TResEvalCurrency(RightValue).Value;
       else
         {$IFDEF VerbosePasResolver}
         writeln('TResExprEvaluator.EvalBinaryNEqualExpr uint ',Expr.OpCode,' ? Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
@@ -2349,12 +2754,31 @@ begin
         TResEvalBool(Result).B:=TResEvalFloat(LeftValue).FloatValue=TResEvalUInt(RightValue).UInt;
       revkFloat:
         TResEvalBool(Result).B:=TResEvalFloat(LeftValue).FloatValue=TResEvalFloat(RightValue).FloatValue;
+      revkCurrency:
+        TResEvalBool(Result).B:=TResEvalFloat(LeftValue).FloatValue=TResEvalCurrency(RightValue).Value;
       else
         {$IFDEF VerbosePasResolver}
         writeln('TResExprEvaluator.EvalBinaryNEqualExpr float ',Expr.OpCode,' ? Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
         {$ENDIF}
         Result.Free;
         RaiseNotYetImplemented(20170601122806,Expr);
+      end;
+    revkCurrency:
+      case RightValue.Kind of
+      revkInt:
+        TResEvalBool(Result).B:=TResEvalCurrency(LeftValue).Value=TResEvalInt(RightValue).Int;
+      revkUInt:
+        TResEvalBool(Result).B:=TResEvalCurrency(LeftValue).Value=TResEvalUInt(RightValue).UInt;
+      revkFloat:
+        TResEvalBool(Result).B:=TResEvalCurrency(LeftValue).Value=TResEvalFloat(RightValue).FloatValue;
+      revkCurrency:
+        TResEvalBool(Result).B:=TResEvalCurrency(LeftValue).Value=TResEvalCurrency(RightValue).Value;
+      else
+        {$IFDEF VerbosePasResolver}
+        writeln('TResExprEvaluator.EvalBinaryNEqualExpr currency ',Expr.OpCode,' ? Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
+        {$ENDIF}
+        Result.Free;
+        RaiseNotYetImplemented(20180421165438,Expr);
       end;
     revkString:
       case RightValue.Kind of
@@ -2500,6 +2924,17 @@ begin
         eopGreaterThanEqual:
           TResEvalBool(Result).B:=TResEvalInt(LeftValue).Int >= TResEvalFloat(RightValue).FloatValue;
         end;
+      revkCurrency:
+        case Expr.OpCode of
+        eopLessThan:
+          TResEvalBool(Result).B:=TResEvalInt(LeftValue).Int < TResEvalCurrency(RightValue).Value;
+        eopGreaterThan:
+          TResEvalBool(Result).B:=TResEvalInt(LeftValue).Int > TResEvalCurrency(RightValue).Value;
+        eopLessthanEqual:
+          TResEvalBool(Result).B:=TResEvalInt(LeftValue).Int <= TResEvalCurrency(RightValue).Value;
+        eopGreaterThanEqual:
+          TResEvalBool(Result).B:=TResEvalInt(LeftValue).Int >= TResEvalCurrency(RightValue).Value;
+        end;
       else
         {$IFDEF VerbosePasResolver}
         writeln('TResExprEvaluator.EvalBinaryLowerGreaterExpr int ',Expr.OpCode,' ? Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
@@ -2541,6 +2976,17 @@ begin
           TResEvalBool(Result).B:=TResEvalUInt(LeftValue).UInt <= TResEvalFloat(RightValue).FloatValue;
         eopGreaterThanEqual:
           TResEvalBool(Result).B:=TResEvalUInt(LeftValue).UInt >= TResEvalFloat(RightValue).FloatValue;
+        end;
+      revkCurrency:
+        case Expr.OpCode of
+        eopLessThan:
+          TResEvalBool(Result).B:=TResEvalUInt(LeftValue).UInt < TResEvalCurrency(RightValue).Value;
+        eopGreaterThan:
+          TResEvalBool(Result).B:=TResEvalUInt(LeftValue).UInt > TResEvalCurrency(RightValue).Value;
+        eopLessthanEqual:
+          TResEvalBool(Result).B:=TResEvalUInt(LeftValue).UInt <= TResEvalCurrency(RightValue).Value;
+        eopGreaterThanEqual:
+          TResEvalBool(Result).B:=TResEvalUInt(LeftValue).UInt >= TResEvalCurrency(RightValue).Value;
         end;
       else
         {$IFDEF VerbosePasResolver}
@@ -2584,12 +3030,76 @@ begin
         eopGreaterThanEqual:
           TResEvalBool(Result).B:=TResEvalFloat(LeftValue).FloatValue >= TResEvalFloat(RightValue).FloatValue;
         end;
+      revkCurrency:
+        case Expr.OpCode of
+        eopLessThan:
+          TResEvalBool(Result).B:=TResEvalFloat(LeftValue).FloatValue < TResEvalCurrency(RightValue).Value;
+        eopGreaterThan:
+          TResEvalBool(Result).B:=TResEvalFloat(LeftValue).FloatValue > TResEvalCurrency(RightValue).Value;
+        eopLessthanEqual:
+          TResEvalBool(Result).B:=TResEvalFloat(LeftValue).FloatValue <= TResEvalCurrency(RightValue).Value;
+        eopGreaterThanEqual:
+          TResEvalBool(Result).B:=TResEvalFloat(LeftValue).FloatValue >= TResEvalCurrency(RightValue).Value;
+        end;
       else
         {$IFDEF VerbosePasResolver}
         writeln('TResExprEvaluator.EvalBinaryLowerGreaterExpr float ',Expr.OpCode,' ? Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
         {$ENDIF}
         Result.Free;
         RaiseNotYetImplemented(20170601133421,Expr);
+      end;
+    revkCurrency:
+      case RightValue.Kind of
+      revkInt:
+        case Expr.OpCode of
+        eopLessThan:
+          TResEvalBool(Result).B:=TResEvalCurrency(LeftValue).Value < TResEvalInt(RightValue).Int;
+        eopGreaterThan:
+          TResEvalBool(Result).B:=TResEvalCurrency(LeftValue).Value > TResEvalInt(RightValue).Int;
+        eopLessthanEqual:
+          TResEvalBool(Result).B:=TResEvalCurrency(LeftValue).Value <= TResEvalInt(RightValue).Int;
+        eopGreaterThanEqual:
+          TResEvalBool(Result).B:=TResEvalCurrency(LeftValue).Value >= TResEvalInt(RightValue).Int;
+        end;
+      revkUInt:
+        case Expr.OpCode of
+        eopLessThan:
+          TResEvalBool(Result).B:=TResEvalCurrency(LeftValue).Value < TResEvalUInt(RightValue).UInt;
+        eopGreaterThan:
+          TResEvalBool(Result).B:=TResEvalCurrency(LeftValue).Value > TResEvalUInt(RightValue).UInt;
+        eopLessthanEqual:
+          TResEvalBool(Result).B:=TResEvalCurrency(LeftValue).Value <= TResEvalUInt(RightValue).UInt;
+        eopGreaterThanEqual:
+          TResEvalBool(Result).B:=TResEvalCurrency(LeftValue).Value >= TResEvalUInt(RightValue).UInt;
+        end;
+      revkFloat:
+        case Expr.OpCode of
+        eopLessThan:
+          TResEvalBool(Result).B:=TResEvalCurrency(LeftValue).Value < TResEvalFloat(RightValue).FloatValue;
+        eopGreaterThan:
+          TResEvalBool(Result).B:=TResEvalCurrency(LeftValue).Value > TResEvalFloat(RightValue).FloatValue;
+        eopLessthanEqual:
+          TResEvalBool(Result).B:=TResEvalCurrency(LeftValue).Value <= TResEvalFloat(RightValue).FloatValue;
+        eopGreaterThanEqual:
+          TResEvalBool(Result).B:=TResEvalCurrency(LeftValue).Value >= TResEvalFloat(RightValue).FloatValue;
+        end;
+      revkCurrency:
+        case Expr.OpCode of
+        eopLessThan:
+          TResEvalBool(Result).B:=TResEvalCurrency(LeftValue).Value < TResEvalCurrency(RightValue).Value;
+        eopGreaterThan:
+          TResEvalBool(Result).B:=TResEvalCurrency(LeftValue).Value > TResEvalCurrency(RightValue).Value;
+        eopLessthanEqual:
+          TResEvalBool(Result).B:=TResEvalCurrency(LeftValue).Value <= TResEvalCurrency(RightValue).Value;
+        eopGreaterThanEqual:
+          TResEvalBool(Result).B:=TResEvalCurrency(LeftValue).Value >= TResEvalCurrency(RightValue).Value;
+        end;
+      else
+        {$IFDEF VerbosePasResolver}
+        writeln('TResExprEvaluator.EvalBinaryLowerGreaterExpr currency ',Expr.OpCode,' ? Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
+        {$ENDIF}
+        Result.Free;
+        RaiseNotYetImplemented(20180421165752,Expr);
       end;
     revkString:
       case RightValue.Kind of
@@ -2777,7 +3287,7 @@ begin
         Result:=RightSet.Clone
       else
         begin
-        Result:=TResEvalSet.CreateEmpty(LeftSet);
+        Result:=TResEvalSet.CreateEmptySameKind(LeftSet);
         for i:=0 to length(LeftSet.Ranges)-1 do
           begin
           Int:=LeftSet.Ranges[i].RangeStart;
@@ -3063,6 +3573,7 @@ begin
           sRangeCheckInSetConstructor,[],El);
         end;
       Result.Add(RangeStart,RangeEnd);
+      ReleaseEvalValue(Value);
       end;
     ok:=OnlyConstElements;
   finally
@@ -3086,6 +3597,7 @@ function TResExprEvaluator.EvalBinaryPowerExpr(Expr: TBinaryExpr; LeftValue,
 var
   Int: MaxPrecInt;
   Flo: MaxPrecFloat;
+  aCurrency: MaxPrecCurrency;
 begin
   Result:=nil;
   case LeftValue.Kind of
@@ -3123,6 +3635,17 @@ begin
         Result:=TResEvalFloat.CreateValue(Flo);
       except
         RaiseOverflowArithmetic(20170816154223,Expr);
+      end;
+    revkCurrency:
+      // int^^currency
+      try
+        {$Q+}{$R+}
+        Flo:=Math.power(TResEvalInt(LeftValue).Int,TResEvalCurrency(RightValue).Value);
+        {$IFNDEF OverflowCheckOn}{$Q-}{$ENDIF}
+        {$IFNDEF RangeCheckOn}{$R-}{$ENDIF}
+        Result:=TResEvalFloat.CreateValue(Flo);
+      except
+        RaiseOverflowArithmetic(20180421165906,Expr);
       end;
     else
       {$IFDEF VerbosePasResolver}
@@ -3165,6 +3688,17 @@ begin
       except
         RaiseOverflowArithmetic(20170816154241,Expr);
       end;
+    revkCurrency:
+      // uint^^currency
+      try
+        {$Q+}{$R+}
+        Flo:=Math.power(TResEvalUInt(LeftValue).UInt,TResEvalCurrency(RightValue).Value);
+        {$IFNDEF OverflowCheckOn}{$Q-}{$ENDIF}
+        {$IFNDEF RangeCheckOn}{$R-}{$ENDIF}
+        Result:=TResEvalFloat.CreateValue(Flo);
+      except
+        RaiseOverflowArithmetic(20180421165948,Expr);
+      end;
     else
       {$IFDEF VerbosePasResolver}
       writeln('TResExprEvaluator.EvalBinaryPowerExpr uint ^^ ? Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
@@ -3206,7 +3740,65 @@ begin
       except
         RaiseOverflowArithmetic(20170816154012,Expr);
       end;
-    end
+    revkCurrency:
+      // float ^^ currency
+      try
+        {$Q+}{$R+}
+        Flo:=Math.power(TResEvalFloat(LeftValue).FloatValue,TResEvalCurrency(RightValue).Value);
+        {$IFNDEF OverflowCheckOn}{$Q-}{$ENDIF}
+        {$IFNDEF RangeCheckOn}{$R-}{$ENDIF}
+        Result:=TResEvalFloat.CreateValue(Flo);
+      except
+        RaiseOverflowArithmetic(20180421170016,Expr);
+      end;
+    end;
+  revkCurrency:
+    case RightValue.Kind of
+    revkInt:
+      // currency ^^ int
+      try
+        {$Q+}{$R+}
+        aCurrency:=Math.power(TResEvalCurrency(LeftValue).Value,TResEvalInt(RightValue).Int);
+        {$IFNDEF OverflowCheckOn}{$Q-}{$ENDIF}
+        {$IFNDEF RangeCheckOn}{$R-}{$ENDIF}
+        Result:=TResEvalCurrency.CreateValue(aCurrency);
+      except
+        RaiseOverflowArithmetic(20180421170235,Expr);
+      end;
+    revkUInt:
+      // currency ^^ uint
+      try
+        {$Q+}{$R+}
+        aCurrency:=Math.power(TResEvalCurrency(LeftValue).Value,TResEvalUInt(RightValue).UInt);
+        {$IFNDEF OverflowCheckOn}{$Q-}{$ENDIF}
+        {$IFNDEF RangeCheckOn}{$R-}{$ENDIF}
+        Result:=TResEvalCurrency.CreateValue(aCurrency);
+      except
+        RaiseOverflowArithmetic(20180421170240,Expr);
+      end;
+    revkFloat:
+      // currency ^^ float
+      try
+        {$Q+}{$R+}
+        aCurrency:=Math.power(TResEvalCurrency(LeftValue).Value,TResEvalFloat(RightValue).FloatValue);
+        {$IFNDEF OverflowCheckOn}{$Q-}{$ENDIF}
+        {$IFNDEF RangeCheckOn}{$R-}{$ENDIF}
+        Result:=TResEvalCurrency.CreateValue(aCurrency);
+      except
+        RaiseOverflowArithmetic(20180421170254,Expr);
+      end;
+    revkCurrency:
+      // currency ^^ currency
+      try
+        {$Q+}{$R+}
+        aCurrency:=Math.power(TResEvalCurrency(LeftValue).Value,TResEvalCurrency(RightValue).Value);
+        {$IFNDEF OverflowCheckOn}{$Q-}{$ENDIF}
+        {$IFNDEF RangeCheckOn}{$R-}{$ENDIF}
+        Result:=TResEvalCurrency.CreateValue(aCurrency);
+      except
+        RaiseOverflowArithmetic(20180421170311,Expr);
+      end;
+    end;
   else
     {$IFDEF VerbosePasResolver}
     writeln('TResExprEvaluator.EvalBinaryPowerExpr ^^ ?- Left=',LeftValue.AsDebugString,' Right=',RightValue.AsDebugString);
@@ -3282,7 +3874,7 @@ function TResExprEvaluator.EvalPrimitiveExprString(Expr: TPrimitiveExpr
       // switch to unicodestring
       h:=TResEvalString(Result).S;
       Result.Free;
-      Result:=nil;
+      Result:=nil; // in case of exception in GetUnicodeStr
       Result:=TResEvalUTF16.CreateValue(GetUnicodeStr(h,Expr));
       end;
     if Result.Kind=revkString then
@@ -3355,13 +3947,21 @@ begin
           'A'..'F': u:=u*16+ord(c)-ord('A')+10;
           else break;
           end;
-          if u>$ffff then
+          if u>$10FFFF then
             RangeError(20170523115712);
           inc(p);
         until false;
         if p=StartP then
           RaiseInternalError(20170207164956);
-        AddHash(u);
+        if u>$ffff then
+          begin
+          // split into two
+          dec(u,$10000);
+          AddHash($D800+(u shr 10));
+          AddHash($DC00+(u and $3ff));
+          end
+        else
+          AddHash(u);
         end
       else
         begin
@@ -3790,6 +4390,8 @@ end;
 procedure TResExprEvaluator.EmitRangeCheckConst(id: int64; const aValue,
   MinVal, MaxVal: String; PosEl: TPasElement; MsgType: TMessageType);
 begin
+  if Assigned(OnRangeCheckEl) then
+    OnRangeCheckEl(Self,PosEl,MsgType);
   LogMsg(id,MsgType,nRangeCheckEvaluatingConstantsVMinMax,
     sRangeCheckEvaluatingConstantsVMinMax,[aValue,MinVal,MaxVal],PosEl);
 end;
@@ -3999,6 +4601,13 @@ begin
           str(TResEvalFloat(Value).FloatValue:Format1,ValStr)
         else
           str(TResEvalFloat(Value).FloatValue:Format1:Format2,ValStr);
+      revkCurrency:
+        if Format1<0 then
+          str(TResEvalCurrency(Value).Value,ValStr)
+        else if Format2<0 then
+          str(TResEvalCurrency(Value).Value:Format1,ValStr)
+        else
+          str(TResEvalCurrency(Value).Value:Format1:Format2,ValStr);
       revkEnum:
         begin
         ValStr:=TResEvalEnum(Value).AsString;
@@ -4319,10 +4928,10 @@ procedure TResolveData.SetElement(AValue: TPasElement);
 begin
   if FElement=AValue then Exit;
   if Element<>nil then
-    Element.Release;
+    Element.Release{$IFDEF CheckPasTreeRefCount}(ClassName+'.SetElement'){$ENDIF};
   FElement:=AValue;
   if Element<>nil then
-    Element.AddRef;
+    Element.AddRef{$IFDEF CheckPasTreeRefCount}(ClassName+'.SetElement'){$ENDIF};
 end;
 
 constructor TResolveData.Create;
@@ -4684,12 +5293,27 @@ begin
   Kind:=revkSetOfInt;
 end;
 
-constructor TResEvalSet.CreateEmpty(aSet: TResEvalSet);
+constructor TResEvalSet.CreateEmpty(const aElKind: TRESetElKind;
+  aElType: TPasType);
+begin
+  Create;
+  ElKind:=aElKind;
+  ElType:=aElType;
+end;
+
+constructor TResEvalSet.CreateEmptySameKind(aSet: TResEvalSet);
 begin
   Create;
   IdentEl:=aSet.IdentEl;
   ElKind:=aSet.ElKind;
   ElType:=aSet.ElType;
+end;
+
+constructor TResEvalSet.CreateValue(const aElKind: TRESetElKind;
+  aElType: TPasType; const aRangeStart, aRangeEnd: MaxPrecInt);
+begin
+  inherited CreateValue(aElKind, aElType, aRangeStart, aRangeEnd);
+  Add(aRangeStart,aRangeEnd);
 end;
 
 function TResEvalSet.Clone: TResEvalValue;
@@ -4721,43 +5345,7 @@ begin
   Result:=Result+']';
 end;
 
-function TResEvalSet.ElementAsString(El: MaxPrecInt): string;
-var
-  EnumType: TPasEnumType;
-  EnumValue: TPasEnumValue;
-begin
-  case ElKind of
-    revskEnum:
-      begin
-      {$IFDEF VerbosePasResEval}
-      if not (ElType is TPasEnumType) then
-        writeln('TResEvalSet.ElementAsString ',ElKind,' expected TPasEnumType, but got ',GetObjName(ElType));
-      {$ENDIF}
-      EnumType:=ElType as TPasEnumType;
-      //writeln('TResEvalSet.ElementAsString EnumType=',GetObjName(EnumType),' Values.Count=',EnumType.Values.Count,' El=',El);
-      if (El>=0) and (El<EnumType.Values.Count) then
-        begin
-        EnumValue:=TPasEnumValue(EnumType.Values[El]);
-        Result:=EnumValue.Name;
-        end
-      else
-        Result:=ElType.Name+'('+IntToStr(El)+')';
-      end;
-    revskInt: Result:=IntToStr(El);
-    revskChar:
-      if El<=$ff then
-        Result:=Chr(El)
-      else
-        Result:=String(WideChar(El));
-    revskBool:
-      if El=0 then
-        Result:='false'
-      else
-        Result:='true';
-  end;
-end;
-
-function TResEvalSet.Add(RangeStart, RangeEnd: MaxPrecInt): boolean;
+function TResEvalSet.Add(aRangeStart, aRangeEnd: MaxPrecInt): boolean;
 
   {$IF FPC_FULLVERSION<30101}
   procedure Insert(const Item: TItem; var Items: TItems; Index: integer);
@@ -4787,9 +5375,9 @@ var
 begin
   Result:=false;
   {$IFDEF VerbosePasResEval}
-  writeln('TResEvalSetInt.Add ',RangeStart,'..',RangeEnd);
+  writeln('TResEvalSetInt.Add ',aRangeStart,'..',aRangeEnd);
   {$ENDIF}
-  if RangeStart>RangeEnd then
+  if aRangeStart>aRangeEnd then
     raise Exception.Create('');
   if ElKind=revskNone then
     raise Exception.Create('');
@@ -4798,68 +5386,75 @@ begin
   if l=0 then
     begin
     // first range
+    RangeStart:=aRangeStart;
+    RangeEnd:=aRangeEnd;
     SetLength(Ranges,1);
-    Ranges[0].RangeStart:=RangeStart;
-    Ranges[0].RangeEnd:=RangeEnd;
+    Ranges[0].RangeStart:=aRangeStart;
+    Ranges[0].RangeEnd:=aRangeEnd;
     exit(true);
     end;
+  if RangeStart>aRangeStart then
+    RangeStart:=aRangeStart;
+  if RangeEnd<aRangeEnd then
+    RangeEnd:=aRangeEnd;
+
   // find insert position
-  StartIndex:=IndexOfRange(RangeStart,true);
-  if (StartIndex>0) and (Ranges[StartIndex-1].RangeEnd=RangeStart-1) then
+  StartIndex:=IndexOfRange(aRangeStart,true);
+  if (StartIndex>0) and (Ranges[StartIndex-1].RangeEnd=aRangeStart-1) then
     dec(StartIndex);
   if StartIndex=l then
     begin
     // add new range
-    Item.RangeStart:=RangeStart;
-    Item.RangeEnd:=RangeEnd;
+    Item.RangeStart:=aRangeStart;
+    Item.RangeEnd:=aRangeEnd;
     Insert(Item,Ranges,StartIndex);
     Result:=true;
     end
   else
     begin
     // StartIndex is now the first affected range
-    EndIndex:=IndexOfRange(RangeEnd,true);
+    EndIndex:=IndexOfRange(aRangeEnd,true);
     if (EndIndex>StartIndex) then
-      if (EndIndex=l) or (Ranges[EndIndex].RangeStart>RangeEnd+1) then
+      if (EndIndex=l) or (Ranges[EndIndex].RangeStart>aRangeEnd+1) then
         dec(EndIndex);
     // EndIndex is now the last affected range
     if StartIndex>EndIndex then
       raise Exception.Create('');
     if StartIndex=EndIndex then
       begin
-      if (Ranges[StartIndex].RangeStart>RangeEnd) then
+      if (Ranges[StartIndex].RangeStart>aRangeEnd) then
         begin
         // range in front
-        if (Ranges[StartIndex].RangeStart>RangeEnd+1) then
+        if (Ranges[StartIndex].RangeStart>aRangeEnd+1) then
           begin
           // insert new range
-          Item.RangeStart:=RangeStart;
-          Item.RangeEnd:=RangeEnd;
+          Item.RangeStart:=aRangeStart;
+          Item.RangeEnd:=aRangeEnd;
           Insert(Item,Ranges,StartIndex);
           Result:=true;
           end
         else
           begin
           // enlarge range at its start
-          Ranges[StartIndex].RangeStart:=RangeStart;
+          Ranges[StartIndex].RangeStart:=aRangeStart;
           Result:=true;
           end;
         end
-      else if Ranges[StartIndex].RangeEnd<RangeStart then
+      else if Ranges[StartIndex].RangeEnd<aRangeStart then
         begin
         // range behind
-        if Ranges[StartIndex].RangeEnd+1<RangeStart then
+        if Ranges[StartIndex].RangeEnd+1<aRangeStart then
           begin
           // insert new range
-          Item.RangeStart:=RangeStart;
-          Item.RangeEnd:=RangeEnd;
+          Item.RangeStart:=aRangeStart;
+          Item.RangeEnd:=aRangeEnd;
           Insert(Item,Ranges,StartIndex+1);
           Result:=true;
           end
         else
           begin
           // enlarge range at its end
-          Ranges[StartIndex].RangeEnd:=RangeEnd;
+          Ranges[StartIndex].RangeEnd:=aRangeEnd;
           Result:=true;
           end;
         end
@@ -4867,21 +5462,21 @@ begin
         begin
         // intersection -> enlarge to union range
         Result:=false;
-        if (Ranges[StartIndex].RangeStart>RangeStart) then
-          Ranges[StartIndex].RangeStart:=RangeStart;
-        if (Ranges[StartIndex].RangeEnd<RangeEnd) then
-          Ranges[StartIndex].RangeEnd:=RangeEnd;
+        if (Ranges[StartIndex].RangeStart>aRangeStart) then
+          Ranges[StartIndex].RangeStart:=aRangeStart;
+        if (Ranges[StartIndex].RangeEnd<aRangeEnd) then
+          Ranges[StartIndex].RangeEnd:=aRangeEnd;
         end;
       end
     else
       begin
       // multiple ranges are merged to one
       Result:=false;
-      if Ranges[StartIndex].RangeStart>RangeStart then
-        Ranges[StartIndex].RangeStart:=RangeStart;
-      if RangeEnd<Ranges[EndIndex].RangeEnd then
-        RangeEnd:=Ranges[EndIndex].RangeEnd;
-      Ranges[StartIndex].RangeEnd:=RangeEnd;
+      if Ranges[StartIndex].RangeStart>aRangeStart then
+        Ranges[StartIndex].RangeStart:=aRangeStart;
+      if aRangeEnd<Ranges[EndIndex].RangeEnd then
+        aRangeEnd:=Ranges[EndIndex].RangeEnd;
+      Ranges[StartIndex].RangeEnd:=aRangeEnd;
       Delete(Ranges,StartIndex+1,EndIndex-StartIndex);
       end;
     end;
@@ -4919,12 +5514,12 @@ begin
     exit(m);
 end;
 
-function TResEvalSet.Intersects(RangeStart, RangeEnd: MaxPrecInt): integer;
+function TResEvalSet.Intersects(aRangeStart, aRangeEnd: MaxPrecInt): integer;
 var
   Index: Integer;
 begin
-  Index:=IndexOfRange(RangeStart,true);
-  if (Index=length(Ranges)) or (Ranges[Index].RangeStart>RangeEnd) then
+  Index:=IndexOfRange(aRangeStart,true);
+  if (Index=length(Ranges)) or (Ranges[Index].RangeStart>aRangeEnd) then
     Result:=-1
   else
     Result:=Index;
@@ -4948,6 +5543,10 @@ begin
       E('');
     if (i>0) and (Ranges[i-1].RangeEnd+1>=Ranges[i].RangeStart) then
       E('missing gap');
+    if RangeStart>Ranges[i].RangeStart then
+      E('wrong RangeStart='+IntToStr(RangeStart));
+    if RangeEnd<Ranges[i].RangeEnd then
+      E('wrong RangeEnd='+IntToStr(RangeEnd));
     end;
 end;
 

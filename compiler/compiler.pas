@@ -225,7 +225,7 @@ function Compile(const cmd:TCmdStr):longint;
 
 {$maxfpuregisters 0}
 
-  procedure writepathlist(w:longint;l:TSearchPathList);
+  procedure writecmdstrlist(w:longint;l:TCmdStrList);
   var
     hp : TCmdStrListItem;
   begin
@@ -252,7 +252,8 @@ begin
        SetExceptionMask([exInvalidOp, exDenormalized, exZeroDivide,
                          exOverflow, exUnderflow, exPrecision]);
 
-       starttime:=getrealtime;
+       GetLocalTime(startsystime);
+       starttime := getrealtime(startsystime);
 
        { Initialize the compiler }
        InitCompiler(cmd);
@@ -262,10 +263,11 @@ begin
        Message1(general_d_sourceos,source_info.name);
        Message1(general_i_targetos,target_info.name);
        Message1(general_t_exepath,exepath);
-       WritePathList(general_t_unitpath,unitsearchpath);
-       WritePathList(general_t_includepath,includesearchpath);
-       WritePathList(general_t_librarypath,librarysearchpath);
-       WritePathList(general_t_objectpath,objectsearchpath);
+       WriteCmdStrList(general_t_unitpath,unitsearchpath);
+       WriteCmdStrList(general_t_includepath,includesearchpath);
+       WriteCmdStrList(general_t_librarypath,librarysearchpath);
+       WriteCmdStrList(general_t_objectpath,objectsearchpath);
+       WriteCmdStrList(general_t_unitscope,namespacelist);
 
        { Compile the program }
   {$ifdef PREPROCWRITE}

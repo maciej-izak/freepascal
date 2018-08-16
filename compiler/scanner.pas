@@ -2439,6 +2439,36 @@ type
                hs:=gettimestr;
              'DATE':
                hs:=getdatestr;
+             'DATEYEAR':
+               begin
+                 hs:=tostr(startsystime.Year);
+                 macroIsString:=false;
+               end;
+             'DATEMONTH':
+               begin
+                 hs:=tostr(startsystime.Month);
+                 macroIsString:=false;
+               end;
+             'DATEDAY':
+               begin
+                 hs:=tostr(startsystime.Day);
+                 macroIsString:=false;
+               end;
+             'TIMEHOUR':
+               begin
+                 hs:=tostr(startsystime.Hour);
+                 macroIsString:=false;
+               end;
+             'TIMEMINUTE':
+               begin
+                 hs:=tostr(startsystime.Minute);
+                 macroIsString:=false;
+               end;
+             'TIMESECOND':
+               begin
+                 hs:=tostr(startsystime.Second);
+                 macroIsString:=false;
+               end;
              'FILE':
                hs:=current_module.sourcefiles.get_file_name(current_filepos.fileindex);
              'LINE':
@@ -2494,6 +2524,9 @@ type
               if (not found) then
                found:=findincludefile(path,ChangeFileExt(name,pasext),foundfile);
             end;
+           { if the name ends in dot, try without the dot }
+           if (not found) and (ExtractFileExt(name)=ExtensionSeparator) and (Length(name)>=2) then
+             found:=findincludefile(path,Copy(name,1,Length(name)-1),foundfile);
            if current_scanner.inputfilecount<max_include_nesting then
              begin
                inc(current_scanner.inputfilecount);
@@ -4548,7 +4581,11 @@ type
                    if found=3 then
                     found:=4
                    else
-                    found:=1;
+                    begin
+                      if found=4 then
+                        inc_comment_level;
+                      found:=1;
+                    end;
                  end;
                ')' :
                  begin
@@ -5070,7 +5107,7 @@ type
                              begin
                                readchar; { read leading $ }
                                asciinr:='$';
-                               while (upcase(c) in ['A'..'F','0'..'9']) and (length(asciinr)<=5) do
+                               while (upcase(c) in ['A'..'F','0'..'9']) and (length(asciinr)<=7) do
                                  begin
                                    asciinr:=asciinr+c;
                                    readchar;
@@ -5080,7 +5117,7 @@ type
                              begin
                                readchar; { read leading $ }
                                asciinr:='&';
-                               while (upcase(c) in ['0'..'7']) and (length(asciinr)<=7) do
+                               while (upcase(c) in ['0'..'7']) and (length(asciinr)<=8) do
                                  begin
                                    asciinr:=asciinr+c;
                                    readchar;
@@ -5090,7 +5127,7 @@ type
                              begin
                                readchar; { read leading $ }
                                asciinr:='%';
-                               while (upcase(c) in ['0','1']) and (length(asciinr)<=17) do
+                               while (upcase(c) in ['0','1']) and (length(asciinr)<=22) do
                                  begin
                                    asciinr:=asciinr+c;
                                    readchar;
@@ -5099,7 +5136,7 @@ type
                            else
                              begin
                                asciinr:='';
-                               while (c in ['0'..'9']) and (length(asciinr)<=5) do
+                               while (c in ['0'..'9']) and (length(asciinr)<=8) do
                                  begin
                                    asciinr:=asciinr+c;
                                    readchar;
@@ -5111,7 +5148,7 @@ type
                            Message(scan_e_illegal_char_const)
                          else if (m<0) or (m>255) or (length(asciinr)>3) then
                            begin
-                              if (m>=0) and (m<=65535) then
+                              if (m>=0) and (m<=$10FFFF) then
                                 begin
                                   if not iswidestring then
                                    begin
@@ -5122,7 +5159,15 @@ type
                                      iswidestring:=true;
                                      len:=0;
                                    end;
-                                  concatwidestringchar(patternw,tcompilerwidechar(m));
+                                  if m<=$FFFF then
+                                    concatwidestringchar(patternw,tcompilerwidechar(m))
+                                  else
+                                    begin
+                                      { split into surrogate pair }
+                                      dec(m,$10000);
+                                      concatwidestringchar(patternw,tcompilerwidechar((m shr 10) + $D800));
+                                      concatwidestringchar(patternw,tcompilerwidechar((m and $3FF) + $DC00));
+                                    end;
                                 end
                               else
                                 Message(scan_e_illegal_char_const)

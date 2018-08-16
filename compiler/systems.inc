@@ -178,7 +178,8 @@
              system_arm_aros,           { 91 }
              system_wasm_wasm32,        { 92 }
              system_sparc64_linux,      { 93 }
-             system_sparc64_solaris     { 94 }
+             system_sparc64_solaris,    { 94 }
+             system_arm_netbsd          { 95 }
        );
 
      type
@@ -294,6 +295,7 @@
 
        tdbg = (dbg_none
             ,dbg_stabs,dbg_stabx,dbg_dwarf2,dbg_dwarf3,dbg_dwarf4,dbg_jasmin
+            ,dbg_codeview
        );
 
        tscripttype = (script_none

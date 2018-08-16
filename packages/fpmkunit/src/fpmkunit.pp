@@ -157,7 +157,7 @@ Type
   TLogEvent = Procedure (Level : TVerboseLevel; Const Msg : String) of Object;
   TNotifyProcEvent = procedure(Sender: TObject);
 
-  TRunMode = (rmCompile,rmBuild,rmInstall,rmArchive,rmClean,rmDistClean,rmManifest,rmZipInstall,rmPkgList,rmUnInstall);
+  TRunMode = (rmCompile,rmBuild,rmInstall,rmArchive,rmClean,rmDistClean,rmManifest,rmZipInstall,rmPkgList,rmUnInstall,rmInfo);
 
   TBuildMode = (bmOneByOne, bmBuildUnit{, bmSkipImplicitUnits});
   TBuildModes = set of TBuildMode;
@@ -178,9 +178,9 @@ Const
   AllBSDOSes      = [FreeBSD,NetBSD,OpenBSD,Darwin,iphonesim,dragonfly];
   AllWindowsOSes  = [Win32,Win64,WinCE];
   AllAmigaLikeOSes = [Amiga,MorphOS,AROS];
-  AllLimit83fsOses = [go32v2,os2,emx,watcom,msdos,win16];
+  AllLimit83fsOses = [go32v2,os2,emx,watcom,msdos,win16,atari];
 
-  AllSmartLinkLibraryOSes = [Linux,msdos,win16]; // OSes that use .a library files for smart-linking
+  AllSmartLinkLibraryOSes = [Linux,msdos,win16,palmos]; // OSes that use .a library files for smart-linking
   AllImportLibraryOSes = AllWindowsOSes + [os2,emx,netwlibc,netware,watcom,go32v2,macos,nativent,msdos,win16];
 
   { This table is kept OS,Cpu because it is easier to maintain (PFV) }
@@ -193,7 +193,7 @@ Const
     { os2 }     ( false, true,  false, false, false, false, false, false, false, false, false, false, false, false, false, false),
     { freebsd } ( false, true,  true,  false, false, true,  false, false, false, false, false, false, false, false, false, false),
     { beos }    ( false, true,  false, false, false, false, false, false, false, false, false, false, false, false, false, false),
-    { netbsd }  ( false, true,  true,  true,  true,  true,  false, false, false, false, false, false, false, false, false, false),
+    { netbsd }  ( false, true,  true,  true,  true,  true,  true,  false, false, false, false, false, false, false, false, false),
     { amiga }   ( false, false, true,  true,  false, false, false, false, false, false, false, false, false, false, false, false),
     { atari }   ( false, false, true,  false, false, false, false, false, false, false, false, false, false, false, false, false),
     { solaris } ( false, true,  false, false, true,  true,  false, false, false, false, false, false, false, false, false, false),
@@ -606,6 +606,7 @@ Type
     FCommands : TCommands;
     FDirectory: String;
     FExtension: String;
+    FExeName : String;
     FTargetSourceFileName : String;
     FFileType: TFileType;
     FOptions: TStrings;
@@ -620,6 +621,7 @@ Type
     Function GetUnitFileName : String; virtual;
     function GetUnitLibFileName(AOS: TOS): String; virtual;
     Function GetObjectFileName : String; virtual;
+    Function GetBinFileBase: String;
     function GetRSTFileName : String; Virtual;
     function GetRSJFileName : String; Virtual;
     function GetImportLibFileName(AOS : TOS) : String; Virtual;
@@ -634,6 +636,7 @@ Type
     Function  GetOutputFileName (AOs : TOS) : String; Virtual;
     Function HaveOptions : Boolean;
     procedure SetName(const AValue: String);override;
+    procedure SetExeName(const AValue: String);
     procedure SetXML(const AValue: string);
     Procedure GetCleanFiles(List : TStrings; const APrefixU, APrefixB : String; ACPU:TCPU; AOS : TOS); virtual;
     Procedure GetInstallFiles(List : TStrings; const APrefixU, APrefixB : String; ACPU:TCPU; AOS : TOS); virtual;
@@ -1289,6 +1292,7 @@ Type
     Procedure Archive; virtual;
     Procedure Manifest; virtual;
     Procedure PkgList; virtual;
+    Procedure Info;
     procedure AddAutoPackageVariantsToPackage(APackage: TPackage); virtual;
   Public
     Constructor Create(AOwner : TComponent); virtual;
@@ -2622,7 +2626,7 @@ begin
     Result:=LibraryName+DLLExt
   else if aOS in [darwin,macos,iphonesim] then
     Result:=LibraryName+DyLibExt
-  else  
+  else
     Result:=LibraryName+SharedLibExt;
 end;
 
@@ -5193,6 +5197,8 @@ begin
       FRunMode:=rmPkgList
     else if CheckCommand(I,'u','uninstall') then
       FRunMode:=rmUnInstall
+    else if CheckCommand(I,'in','info') then
+      FRunMode:=rmInfo
     else if CheckOption(I,'h','help') then
       Usage('',[])
     else if Checkoption(I,'C','cpu') then
@@ -5382,6 +5388,28 @@ begin
     halt(0);
 end;
 
+procedure TCustomInstaller.Info;
+Var Cpu : TCpu;
+    OS  : TOS;
+  
+begin
+  Write('CPU_TARGET=');
+  for cpu:=succ(low(cpu)) to high(tcpu) do // skip NONE
+    begin
+       write(cputostring(cpu));
+       if cpu<>high(tcpu) then
+       write(',');
+    end;
+  writeln;
+  Write('OS_TARGET=');
+  for OS:=succ(low(TOS)) to high(tOS) do // skip NONE
+    begin
+       write(OStostring(os));
+       if os<>high(tos) then
+       write(',');
+    end;
+  writeln;
+end;
 
 procedure TCustomInstaller.Compile(Force: Boolean);
 begin
@@ -5484,6 +5512,7 @@ begin
       rmManifest : Manifest;
       rmPkgList : PkgList;
       rmUnInstall : UnInstall;
+      rmInfo      : Info;
     end;
   except
     On E : Exception do
@@ -7413,7 +7442,7 @@ begin
           begin
             ProcessCompileTarget;
           end;
-        ttSharedLibrary,  
+        ttSharedLibrary,
         ttProgram:
           begin // do nothing, are compiled later
           end;
@@ -8548,20 +8577,29 @@ begin
 end;
 
 
+function TTarget.GetBinFileBase: String;
+begin
+  if FExeName <> '' then
+    Result := FExeName
+  else
+    Result:=Name;
+end;
+
+
 function TTarget.GetProgramFileName(AOS : TOS): String;
 begin
-  result := AddProgramExtension(Name, AOS);
+    result := AddProgramExtension(GetBinFileBase, AOS);
 end;
 
 
 function TTarget.GetProgramDebugFileName(AOS: TOS): String;
 begin
-  result := Name + DbgExt;
+  result := GetBinFileBase + DbgExt;
 end;
 
 function TTarget.GetLibraryFileName(AOS : TOS): String;
 begin
-  result := AddLibraryExtension(Name, AOS);
+  result := AddLibraryExtension(GetBinFileBase, AOS);
   if aOS in AllUnixOSes then
     Result:='lib'+Result;
 end;
@@ -8569,7 +8607,7 @@ end;
 
 function TTarget.GetLibraryDebugFileName(AOS: TOS): String;
 begin
-  result := Name + DbgExt;
+  result := GetBinFileBase + DbgExt;
 end;
 
 
@@ -8600,6 +8638,18 @@ begin
   inherited SetName(Copy(N,1,Length(N)-Length(E)));
   FExtension:=E;
   FDirectory:=D;
+end;
+
+procedure TTarget.SetExeName(const AValue: String);
+Var
+  N,E : String;
+begin
+  N:=FixPath(AValue, False);
+  E:=ExtractFileExt(N);
+  N:=ExtractFileName(N);
+  FExeName:=Copy(N,1,Length(N)-Length(E));
+  { Use exact AValue for -o option }
+  Options.Add('-o'+AValue);
 end;
 
 procedure TTarget.SetXML(const AValue: string);
@@ -9302,4 +9352,5 @@ Finalization
   FreeAndNil(Defaults);
   FreeAndNil(GPluginManager);
 end.
+
 

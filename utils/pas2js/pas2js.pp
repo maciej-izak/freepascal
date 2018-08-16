@@ -1,4 +1,4 @@
-{ Author: Mattias Gaertner  2017  mattias@freepascal.org
+{ Author: Mattias Gaertner  2018  mattias@freepascal.org
 
   Abstract:
     Command line interface for the pas2js compiler.
@@ -11,8 +11,8 @@ uses
   {$IFDEF UNIX}
   cthreads, cwstring,
   {$ENDIF}
-  Pas2jsFileUtils, Classes, SysUtils, CustApp,
-  Pas2jsCompiler;
+  Classes, SysUtils, CustApp,
+  Pas2jsFileUtils, Pas2jsLogger, Pas2jsCompiler;
 
 Type
 
@@ -44,6 +44,14 @@ begin
       Compiler.Run(ParamStr(0),GetCurrentDirUTF8,ParamList);
     except
       on E: ECompilerTerminate do ;
+      on E: Exception do
+      begin
+        {AllowWriteln}
+        writeln(E.Message);
+        {AllowWriteln-}
+        if ExitCode=0 then
+          ExitCode:=ExitCodeErrorInternal;
+      end;
     end;
   finally
     ParamList.Free;

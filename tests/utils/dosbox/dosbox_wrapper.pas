@@ -5,6 +5,7 @@ uses
 {$ifdef UseSignals}
   signals,
 {$endif def UseSignals}
+  testu, classes,
   Process;
 
 const
@@ -15,13 +16,15 @@ const
   do_exit : boolean = true;
   verbose : boolean = false;
   DosBoxProcess: TProcess = nil;
-
-  dosbox_timeout : integer = 100;  { default timeout in seconds }
+  dosbox_timeout : integer = 400;  { default timeout in seconds }
+  DosBoxExitStatus : integer = -1;
 var
   OutputFileName : String;
-  DosBoxDir: string;
+  SourceFileName : String;
+  StartDir, DosBoxDir: string;
   ExitCode: Integer = 255;
   DosBoxBinaryPath: string;
+  TmpFileList : TStringList;
 
 function GenerateTempDir: string;
 var
@@ -91,6 +94,17 @@ begin
   end;
 end;
 
+{ File names in Config entries assume that
+  executables have no suffix }
+function TargetFileExists(AName : string) : boolean;
+begin
+  result:=SysUtils.FileExists(AName);
+  if not result then
+    result:=SysUtils.FileExists(AName+'.exe');
+  if not result then
+    result:=SysUtils.FileExists(AName+'.EXE');
+end;
+
 procedure CopyFile(ASrcFileName, ADestFileName: string);
 var
   SrcF, DestF: File;
@@ -98,33 +112,198 @@ var
   Buf: array [0..4095] of Byte;
   BytesRead: Integer;
 begin
-  if verbose then
-    Writeln('CopyFile ', ASrcFileName, '->', ADestFileName);
-  if not AnsiEndsText('.exe', ASrcFileName) then
+  if not AnsiEndsText('.exe', ASrcFileName) and AnsiEndsText('.EXE',ADestFileName) then
     ASrcFileName := ASrcFileName + '.exe';
+  if not FileExists(ASrcFileName) then
+    begin
+      ASrcFileName:=ASrcFileName+'.exe';
+      ADestFileName:=ADestFileName+'.exe';
+    end;
+  if verbose then
+    Writeln('CopyFile "', ASrcFileName, '" -> "', ADestFileName,'"');
   OldFileMode := FileMode;
   try
-    AssignFile(SrcF, ASrcFileName);
-    AssignFile(DestF, ADestFileName);
-    FileMode := fmOpenRead;
-    Reset(SrcF, 1);
     try
-      FileMode := fmOpenWrite;
+      AssignFile(SrcF, ASrcFileName);
+      AssignFile(DestF, ADestFileName);
+      FileMode := fmOpenRead;
+      Reset(SrcF, 1);
       try
-        Rewrite(DestF, 1);
-        repeat
-          BlockRead(SrcF, Buf, SizeOf(Buf), BytesRead);
-          BlockWrite(DestF, Buf, BytesRead);
-        until BytesRead < SizeOf(Buf);
+        FileMode := fmOpenWrite;
+        try
+          Rewrite(DestF, 1);
+          repeat
+            BlockRead(SrcF, Buf, SizeOf(Buf), BytesRead);
+            BlockWrite(DestF, Buf, BytesRead);
+          until BytesRead < SizeOf(Buf);
+        finally
+          CloseFile(DestF);
+        end;
       finally
-        CloseFile(DestF);
+        CloseFile(SrcF);
       end;
     finally
-      CloseFile(SrcF);
+      FileMode := OldFileMode;
     end;
-  finally
-    FileMode := OldFileMode;
+  except
+   on E : Exception do
+     writeln('Error: '+ E.ClassName + #13#10 + E.Message );
   end;
+end;
+
+function ForceExtension(Const HStr,ext:String):String;
+{
+  Return a filename which certainly has the extension ext
+}
+var
+  j : longint;
+begin
+  j:=length(Hstr);
+  while (j>0) and (Hstr[j]<>'.') do
+    dec(j);
+  if j=0 then
+    j:=length(Hstr)+1;
+  if Ext<>'' then
+   begin
+     if Ext[1]='.' then
+       ForceExtension:=Copy(Hstr,1,j-1)+Ext
+     else
+       ForceExtension:=Copy(Hstr,1,j-1)+'.'+Ext
+   end
+  else
+   ForceExtension:=Copy(Hstr,1,j-1);
+end;
+
+procedure CopyNeededFiles;
+var
+  Config : TConfig;
+  LocalFile, RemoteFile, s: string;
+  LocalPath: string;
+  i       : integer;
+  FileList   : TStringList;
+  RelativeToConfigMarker : TObject;
+
+  function SplitPath(const s:string):string;
+  var
+    i : longint;
+  begin
+    i:=Length(s);
+    while (i>0) and not(s[i] in ['/','\'{$IFDEF MACOS},':'{$ENDIF}]) do
+     dec(i);
+    SplitPath:=Copy(s,1,i);
+  end;
+
+  function BuildFileList: TStringList;
+    var
+      dfl, fl  : string;
+    begin
+      fl:=Trim(Config.Files);
+      dfl:=Trim(Config.DelFiles);
+      if (fl='') and (dfl='') and (Config.ConfigFileSrc='') then
+        begin
+          Result:=nil;
+          exit;
+        end;
+      Result:=TStringList.Create;
+      while fl<>'' do
+        begin
+          LocalFile:=Trim(GetToken(fl, [' ',',',';']));
+          Result.Add(LocalFile);
+          if verbose then
+            writeln('Adding file ',LocalFile,' from Config.Files');
+        end;
+
+      if Config.ConfigFileSrc<>'' then
+        begin
+          if Config.ConfigFileSrc=Config.ConfigFileDst then
+            Result.AddObject(Config.ConfigFileSrc,RelativeToConfigMarker)
+          else
+            Result.AddObject(Config.ConfigFileSrc+'='+Config.ConfigFileDst,RelativeToConfigMarker);
+          if verbose then
+            writeln('Adding config file Src=',Config.ConfigFileSrc,' Dst=',Config.ConfigFileDst);
+        end;
+      while dfl <> '' do
+        begin
+          LocalFile:=Trim(GetToken(dfl, [' ',',',';']));
+          Result.Add(LocalFile);
+          if verbose then
+            writeln('Adding file ',LocalFile,' from Config.DelFiles');
+        end;
+     end;
+
+var
+  ddir : string;
+  param1_dir : string;
+begin
+  param1_dir:=ExtractFilePath(ParamStr(1));
+  if not IsAbsolute(SourceFileName) and not TargetFileExists(SourceFileName) then
+    begin
+      ddir:=GetEnvironmentVariable('BASEDIR');
+      if ddir='' then
+        GetDir(0,ddir);
+      // writeln('Start ddir=',ddir);
+      while (ddir<>'') do
+        begin
+          if TargetFileExists(ddir+DirectorySeparator+SourceFileName) then
+            begin
+              SourceFileName:=ddir+DirectorySeparator+SourceFileName;
+              break;
+            end
+          else
+            begin
+              if ddir=splitpath(ddir) then
+                break
+              else
+                ddir:=splitpath(ddir);
+              if ddir[length(ddir)]=DirectorySeparator then
+                ddir:=copy(ddir,1,length(ddir)-1);
+              // writeln('Next ddir=',ddir);
+            end;
+        end;
+    end;
+  if not TargetFileExists(SourceFileName) then
+    begin
+      writeln('File ',SourceFileName,' not found');
+      exit;
+    end
+  else if verbose then
+    writeln('Analyzing source file ',SourceFileName);
+  if not GetConfig(SourceFileName,config) then
+    exit;
+
+  RelativeToConfigMarker:=TObject.Create;
+  FileList:=BuildFileList;
+  TmpFileList:=TStringList.Create;
+  if assigned(FileList) then
+    begin
+      LocalPath:=SplitPath(SourceFileName);
+      if (Length(LocalPath) > 0) and (LocalPath[Length(LocalPath)]<>DirectorySeparator) then
+        LocalPath:=LocalPath+DirectorySeparator;
+      for i:=0 to FileList.count-1 do
+        begin
+          if FileList.Names[i]<>'' then
+            begin
+              LocalFile:=FileList.Names[i];
+              RemoteFile:=FileList.ValueFromIndex[i];
+            end
+          else
+            begin
+              LocalFile:=FileList[i];
+              RemoteFile:=LocalFile;
+            end;
+          if FileList.Objects[i]=RelativeToConfigMarker then
+            s:='config/'+LocalFile
+          else
+            s:=LocalPath+LocalFile;
+          if not TargetFileExists(s) then
+            if TargetFileExists(param1_dir+DirectorySeparator+LocalFile) then
+              s:=param1_dir+DirectorySeparator+LocalFile;
+          CopyFile(s,DosBoxDir+RemoteFile);
+          TmpFileList.Add(RemoteFile);
+        end;
+      FileList.Free;
+    end;
+  RelativeToConfigMarker.Free;
 end;
 
 { On modified dosbox executable it is possible to get
@@ -187,15 +366,18 @@ begin
     CloseFile(F);
   except
     Writeln('Unable to read exitcode value');
+    if (DosBoxExitStatus <> 0) then
+      Writeln('DosBox exit status = ',DosBoxExitStatus);
     ReadExitCode:=127*256;
   end;
 end;
 
-procedure ExecuteDosBox(const ADosBoxBinaryPath, ADosBoxDir: string);
+function ExecuteDosBox(const ADosBoxBinaryPath, ADosBoxDir: string) : Integer;
 var
   Time: Integer = 0;
 begin
   DosBoxProcess := TProcess.Create(nil);
+  result:=-1;
   try
     DosBoxProcess.Executable := ADosBoxBinaryPath;
     DosBoxProcess.Parameters.Add('-conf');
@@ -216,6 +398,7 @@ begin
       Sleep(100);
     end;
   finally
+    result:=DosBoxProcess.ExitStatus;
     DosBoxProcess.Free;
     DosBoxProcess:=nil;
     EchoOutput;
@@ -223,20 +406,75 @@ begin
 end;
 
 
-procedure DeleteIfExists(const AFileName: string);
+function DeleteIfExists(const AFileName: string) : boolean;
 begin
+  result:=false;
   if FileExists(AFileName) then
-    DeleteFile(AFileName);
+    result:=DeleteFile(AFileName);
+  if not result and FileExists(AFileName+'.exe') then
+    result:=DeleteFile(AFileName+'.exe');
+  if not result and FileExists(AFileName+'.EXE') then
+    result:=DeleteFile(AFileName+'.EXE');
+end;
+
+{ RemoveDir, with removal of files or subdirectories inside first.
+  ADirName is supposed to finish with DirectorySeparator }
+function RemoveDir(const ADirName: string) : boolean;
+var
+  Info : TSearchRec;
+begin
+  Result:=true;
+  If FindFirst (AdirName+'*',faAnyFile and faDirectory,Info)=0 then
+    begin
+      repeat
+        with Info do
+          begin
+           If (Attr and faDirectory) = faDirectory then
+             begin
+               { Skip present and parent directory }
+               if (Name<>'..') and (Name<>'.') then
+                 if not RemoveDir(ADirName+Name+DirectorySeparator) then
+                   begin
+                     writeln('Failed to remove dir '+ADirName+Name+DirectorySeparator);
+                     result:=false;
+                     FindClose(Info);
+                     exit;
+                   end;
+             end
+          else
+            if not DeleteFile(ADirName+Name) then
+              begin
+                writeln('Failed to remove file '+ADirName+Name);
+                result:=false;
+                FindClose(Info);
+                exit;
+              end;
+        end;
+    Until FindNext(info)<>0;
+    end;
+  FindClose(Info);
+  RemoveDir:=SysUtils.RemoveDir(ADirName);
 end;
 
 procedure Cleanup(const ADosBoxDir: string);
+var
+   i : longint;
 begin
   DeleteIfExists(ADosBoxDir + 'dosbox.conf');
   DeleteIfExists(ADosBoxDir + 'EXITCODE.TXT');
   DeleteIfExists(ADosBoxDir + 'EXITCODE.EXE');
   DeleteIfExists(ADosBoxDir + 'CWSDPMI.EXE');
   DeleteIfExists(ADosBoxDir + 'TEST.EXE');
-  RmDir(ADosBoxDir);
+  if Assigned(TmpFileList) then
+    begin
+      for i:=0 to TmpFileList.count-1 do
+        if TmpFileList[i]<>'' then
+          DeleteIfExists(ADosBoxDir + TmpFileList[i]);
+    end;
+  TmpFileList.Free;
+  ChDir(StartDir);
+  if not RemoveDir(ADosBoxDir) then
+    writeln('Failed to remove dir ',ADosBoxDir);
 end;
 
 
@@ -313,7 +551,7 @@ begin
     end;
   if ParamCount = 0 then
   begin
-    Writeln('Usage: ' + ParamStr(0) + ' <executable>');
+    Writeln('Usage: ' + ParamStr(0) + ' <executable> (-Ssourcename)');
     Writeln('Set DOSBOX_NO_TEMPDIR env variable to 1 to avoid using a temporary directory');
     Writeln('Set DOSBOX_NO_HIDE to avoid running dosbox in an hidden window');
     Writeln('Set DOSBOX_NO_EXIT to avoid exiting dosbox after test has been run');
@@ -333,7 +571,16 @@ begin
 
   { DosBoxDir is used inside dosbox.conf as a MOUNT parameter }
   if use_temp_dir then
-    DosBoxDir := GenerateTempDir
+    begin
+      GetDir(0,StartDir);
+      DosBoxDir := GenerateTempDir;
+      { All executable test have t.*.pp pattern }
+      if (paramcount>1) and (copy(paramstr(2),1,2)='-S') then
+        SourceFileName:=copy(paramstr(2),3,length(paramstr(2)))
+      else
+        SourceFileName:=ForceExtension(Paramstr(1),'.pp');
+      CopyNeededFiles;
+    end
   else
     begin
       Writeln('Using ',ParamStr(1));
@@ -361,7 +608,7 @@ begin
         else if verbose then
           writeln('cwsdpmi executable missing');
       end;
-    ExecuteDosBox(DosBoxBinaryPath, DosBoxDir);
+    DosBoxExitStatus:=ExecuteDosBox(DosBoxBinaryPath, DosBoxDir);
   finally
     ExitProc;
   end;

@@ -261,8 +261,9 @@ unit cgcpu;
         for reg:=RS_A0 to RS_A6 do
           begin
             { don't hardwire the frame pointer register, because it can vary between target OS }
-            if assigned(current_procinfo) and (current_procinfo.framepointer = NR_FRAME_POINTER_REG)
-               and (reg = RS_FRAME_POINTER_REG) then
+            if (assigned(current_procinfo) and (current_procinfo.framepointer = NR_FRAME_POINTER_REG)
+               and (reg = RS_FRAME_POINTER_REG))
+               or ((reg = RS_PIC_OFFSET_REG) and (tf_static_reg_based in target_info.flags)) then
               continue;
             setlength(address_regs,length(address_regs)+1);
             address_regs[length(address_regs)-1]:=reg;
@@ -301,7 +302,7 @@ unit cgcpu;
             else
               pushsize:=int_cgsize(cgpara.alignment);
 
-            reference_reset_base(ref, NR_STACK_POINTER_REG, 0, cgpara.alignment, []);
+            reference_reset_base(ref, NR_STACK_POINTER_REG, 0, ctempposinvalid ,cgpara.alignment, []);
             ref.direction := dir_dec;
             list.concat(taicpu.op_reg_ref(A_MOVE,tcgsize2opsize[pushsize],makeregsize(list,r,pushsize),ref));
           end
@@ -323,7 +324,7 @@ unit cgcpu;
             else
               pushsize:=int_cgsize(cgpara.alignment);
 
-            reference_reset_base(ref, NR_STACK_POINTER_REG, 0, cgpara.alignment, []);
+            reference_reset_base(ref, NR_STACK_POINTER_REG, 0, ctempposinvalid, cgpara.alignment, []);
             ref.direction := dir_dec;
             a_load_const_ref(list, pushsize, a, ref);
           end
@@ -364,7 +365,7 @@ unit cgcpu;
           else
             pushsize:=int_cgsize(cgpara.alignment);
 
-          reference_reset_base(ref, NR_STACK_POINTER_REG, 0, tcgsize2size[pushsize], []);
+          reference_reset_base(ref, NR_STACK_POINTER_REG, 0, ctempposinvalid, tcgsize2size[pushsize], []);
           ref.direction := dir_dec;
 
           a_load_ref_ref(list,int_cgsize(tcgsize2size[paraloc^.size]),pushsize,href,ref);
@@ -388,7 +389,7 @@ unit cgcpu;
                 ofs:=0;
                 if (cgpara.intsize<cgpara.alignment) then
                   ofs:=cgpara.alignment-cgpara.intsize;
-                reference_reset_base(href,NR_STACK_POINTER_REG,ofs,cgpara.alignment,[]);
+                reference_reset_base(href,NR_STACK_POINTER_REG,ofs,ctempposinvalid,cgpara.alignment,[]);
                 g_concatcopy(list,r,href,cgpara.intsize);
               end
             else
@@ -435,6 +436,9 @@ unit cgcpu;
          { NOTE: we don't have to fixup scaling in this function, because the memnode
            won't generate scaling on CPUs which don't support it }
 
+         if (tf_static_reg_based in target_info.flags) and assigned(ref.symbol) and (ref.base=NR_NO) then
+           fullyresolve:=true;
+
          { first, deal with the symbol, if we have an index or base register.
            in theory, the '020+ could deal with these, but it's better to avoid
            long displacements on most members of the 68k family anyway }
@@ -444,6 +448,14 @@ unit cgcpu;
 
              hreg:=getaddressregister(list);
              reference_reset_symbol(href,ref.symbol,ref.offset,ref.alignment,ref.volatility);
+             if (tf_static_reg_based in target_info.flags) and (ref.base=NR_NO) then
+               begin
+                 if ref.symbol.typ in [AT_DATA,AT_DATA_FORCEINDIRECT,AT_DATA_NOINDIRECT] then
+                   href.base:=NR_PIC_OFFSET_REG
+                 else
+                   href.base:=NR_PC;
+               end;
+
              list.concat(taicpu.op_ref_reg(A_LEA,S_L,href,hreg));
              ref.offset:=0;
              ref.symbol:=nil;
@@ -473,7 +485,7 @@ unit cgcpu;
                begin
                  //list.concat(tai_comment.create(strpnew('fixref: base is dX, resolving with reverse regs')));
 
-                 reference_reset_base(href,ref.index,0,ref.alignment,ref.volatility);
+                 reference_reset_base(href,ref.index,0,ref.temppos,ref.alignment,ref.volatility);
                  href.index:=ref.base;
                  { we can fold in an 8 bit offset "for free" }
                  if isvalue8bit(ref.offset) then
@@ -511,7 +523,7 @@ unit cgcpu;
 
                  if isvalue16bit(ref.offset) then
                    begin
-                     reference_reset_base(href,ref.base,ref.offset,ref.alignment,ref.volatility);
+                     reference_reset_base(href,ref.base,ref.offset,ref.temppos,ref.alignment,ref.volatility);
                      list.concat(taicpu.op_ref_reg(A_LEA,S_L,href,hreg));
                    end
                  else
@@ -535,6 +547,13 @@ unit cgcpu;
              //list.concat(tai_comment.create(strpnew('fixref: fully resolve to register')));
              if hreg=NR_NO then
                hreg:=getaddressregister(list);
+             if (tf_static_reg_based in target_info.flags) and (ref.base=NR_NO) then
+               begin
+                 if ref.symbol.typ in [AT_DATA,AT_DATA_FORCEINDIRECT,AT_DATA_NOINDIRECT] then
+                   ref.base:=NR_PIC_OFFSET_REG
+                 else
+                   ref.base:=NR_PC;
+               end;
              list.concat(taicpu.op_ref_reg(A_LEA,S_L,ref,hreg));
              ref.base:=hreg;
              ref.index:=NR_NO;
@@ -597,13 +616,15 @@ unit cgcpu;
     procedure tcg68k.a_call_name(list : TAsmList;const s : string; weak: boolean);
       var
         sym: tasmsymbol;
+      const
+        jmp_inst: array[boolean] of tasmop = ( A_JSR, A_BSR );
       begin
         if not(weak) then
           sym:=current_asmdata.RefAsmSymbol(s,AT_FUNCTION)
         else
           sym:=current_asmdata.WeakRefAsmSymbol(s,AT_FUNCTION);
 
-        list.concat(taicpu.op_sym(A_JSR,S_NO,sym));
+        list.concat(taicpu.op_sym(jmp_inst[tf_code_small in target_info.flags],S_NO,sym));
       end;
 
 
@@ -616,13 +637,13 @@ unit cgcpu;
         if isaddressregister(reg) then
           begin
             { if we have an address register, we can jump to the address directly }
-            reference_reset_base(tmpref,reg,0,4,[]);
+            reference_reset_base(tmpref,reg,0,ctempposinvalid,4,[]);
           end
         else
           begin
             { if we have a data register, we need to move it to an address register first }
             tmpreg:=getaddressregister(list);
-            reference_reset_base(tmpref,tmpreg,0,4,[]);
+            reference_reset_base(tmpref,tmpreg,0,ctempposinvalid,4,[]);
             instr:=taicpu.op_reg_reg(A_MOVE,S_L,reg,tmpreg);
             add_move_instruction(instr);
             list.concat(instr);
@@ -791,7 +812,7 @@ unit cgcpu;
         tmpref:=ref;
         inc(tmpref.offset,tcgsize2size[tosize]-1);
         a_loadaddr_ref_reg(list,tmpref,tmpreg2);
-        reference_reset_base(tmpref,tmpreg2,0,1,ref.volatility);
+        reference_reset_base(tmpref,tmpreg2,0,ctempposinvalid,1,ref.volatility);
         tmpref.direction:=dir_none;
 
         tmpreg:=getintregister(list,tosize);
@@ -970,7 +991,7 @@ unit cgcpu;
 
         tmpreg2:=getaddressregister(list);
         a_loadaddr_ref_reg(list,ref,tmpreg2);
-        reference_reset_base(tmpref,tmpreg2,0,1,ref.volatility);
+        reference_reset_base(tmpref,tmpreg2,0,ctempposinvalid,1,ref.volatility);
         tmpref.direction:=dir_inc;
 
         if isaddressregister(register) then
@@ -1063,7 +1084,7 @@ unit cgcpu;
         if use_push(cgpara) and (current_settings.fputype in [fpu_68881,fpu_coldfire]) then
           begin
             cgpara.check_simple_location;
-            reference_reset_base(ref, NR_STACK_POINTER_REG, 0, cgpara.alignment, []);
+            reference_reset_base(ref, NR_STACK_POINTER_REG, 0, ctempposinvalid, cgpara.alignment, []);
             ref.direction := dir_dec;
             list.concat(taicpu.op_reg_ref(A_FMOVE,tcgsize2opsize[cgpara.location^.size],reg,ref));
           end
@@ -1097,7 +1118,7 @@ unit cgcpu;
             begin
               //list.concat(tai_comment.create(strpnew('a_loadfpu_ref_cgpara copy')));
               cgpara.check_simple_location;
-              reference_reset_base(href, NR_STACK_POINTER_REG, 0, cgpara.alignment, []);
+              reference_reset_base(href, NR_STACK_POINTER_REG, 0, ctempposinvalid, cgpara.alignment, []);
               href.direction := dir_dec;
               case size of
                 OS_F64:
@@ -1717,12 +1738,12 @@ unit cgcpu;
          hregister := getintregister(list,OS_INT);
 
          iregister:=getaddressregister(list);
-         reference_reset_base(srcref,iregister,0,source.alignment,source.volatility);
+         reference_reset_base(srcref,iregister,0,source.temppos,source.alignment,source.volatility);
          srcrefp:=srcref;
          srcrefp.direction := dir_inc;
 
          jregister:=getaddressregister(list);
-         reference_reset_base(dstref,jregister,0,dest.alignment,dest.volatility);
+         reference_reset_base(dstref,jregister,0,dest.temppos,dest.alignment,dest.volatility);
          dstrefp:=dstref;
          dstrefp.direction := dir_inc;
 
@@ -1879,7 +1900,7 @@ unit cgcpu;
 
                     hregister:=NR_A1;
                     cg.a_reg_alloc(list,hregister);
-                    reference_reset_base(ref,NR_STACK_POINTER_REG,0,4,[]);
+                    reference_reset_base(ref,NR_STACK_POINTER_REG,0,ctempposinvalid,4,[]);
                     list.concat(taicpu.op_ref_reg(A_MOVE,S_L,ref,hregister));
 
                     { instead of using a postincrement above (which also writes the     }
@@ -1894,11 +1915,11 @@ unit cgcpu;
                        list.concat(taicpu.op_const_reg(A_ADDQ,S_L,parasize,r))
                     else { nope ... }
                        begin
-                         reference_reset_base(ref2,NR_STACK_POINTER_REG,parasize,4,[]);
+                         reference_reset_base(ref2,NR_STACK_POINTER_REG,parasize,ctempposinvalid,4,[]);
                          list.concat(taicpu.op_ref_reg(A_LEA,S_NO,ref2,r));
                        end;
 
-                    reference_reset_base(ref,hregister,0,4,[]);
+                    reference_reset_base(ref,hregister,0,ctempposinvalid,4,[]);
                     list.concat(taicpu.op_ref(A_JMP,S_NO,ref));
                   end;
               end
@@ -1942,6 +1963,9 @@ unit cgcpu;
         size : longint;
         fsize : longint;
         r : integer;
+        regs_to_save_int,
+        regs_to_save_address,
+        regs_to_save_fpu: tcpuregisterarray;
       begin
         { The code generated by the section below, particularly the movem.l
           instruction is known to cause an issue when compiled by some GNU 
@@ -1953,33 +1977,36 @@ unit cgcpu;
         addrregs:=[];
         fpuregs:=[];
 
+        regs_to_save_int:=paramanager.get_saved_registers_int(current_procinfo.procdef.proccalloption);
+        regs_to_save_address:=paramanager.get_saved_registers_address(current_procinfo.procdef.proccalloption);
+        regs_to_save_fpu:=paramanager.get_saved_registers_fpu(current_procinfo.procdef.proccalloption);
         { calculate temp. size }
         size:=0;
         fsize:=0;
         hreg:=NR_NO;
         hfreg:=NR_NO;
-        for r:=low(saved_standard_registers) to high(saved_standard_registers) do
-          if saved_standard_registers[r] in rg[R_INTREGISTER].used_in_proc then
+        for r:=low(regs_to_save_int) to high(regs_to_save_int) do
+          if regs_to_save_int[r] in rg[R_INTREGISTER].used_in_proc then
             begin
-              hreg:=newreg(R_INTREGISTER,saved_address_registers[r],R_SUBWHOLE);
+              hreg:=newreg(R_INTREGISTER,regs_to_save_int[r],R_SUBWHOLE);
               inc(size,sizeof(aint));
-              dataregs:=dataregs + [saved_standard_registers[r]];
+              dataregs:=dataregs + [regs_to_save_int[r]];
             end;
         if uses_registers(R_ADDRESSREGISTER) then
-          for r:=low(saved_address_registers) to high(saved_address_registers) do
-            if saved_address_registers[r] in rg[R_ADDRESSREGISTER].used_in_proc then
+          for r:=low(regs_to_save_address) to high(regs_to_save_address) do
+            if regs_to_save_address[r] in rg[R_ADDRESSREGISTER].used_in_proc then
               begin
-                hreg:=newreg(R_ADDRESSREGISTER,saved_address_registers[r],R_SUBWHOLE);
+                hreg:=newreg(R_ADDRESSREGISTER,regs_to_save_address[r],R_SUBWHOLE);
                 inc(size,sizeof(aint));
-                addrregs:=addrregs + [saved_address_registers[r]];
+                addrregs:=addrregs + [regs_to_save_address[r]];
               end;
         if uses_registers(R_FPUREGISTER) then
-          for r:=low(saved_fpu_registers) to high(saved_fpu_registers) do
-            if saved_fpu_registers[r] in rg[R_FPUREGISTER].used_in_proc then
+          for r:=low(regs_to_save_fpu) to high(regs_to_save_fpu) do
+            if regs_to_save_fpu[r] in rg[R_FPUREGISTER].used_in_proc then
               begin
-                hfreg:=newreg(R_FPUREGISTER,saved_fpu_registers[r],R_SUBNONE);
+                hfreg:=newreg(R_FPUREGISTER,regs_to_save_fpu[r],R_SUBNONE);
                 inc(fsize,fpuregsize);
-                fpuregs:=fpuregs + [saved_fpu_registers[r]];
+                fpuregs:=fpuregs + [regs_to_save_fpu[r]];
               end;
 
         { 68k has no MM registers }
@@ -1998,7 +2025,7 @@ unit cgcpu;
               begin
                 list.concat(taicpu.op_reg_reg(A_MOVE,S_L,href.base,NR_A0));
                 list.concat(taicpu.op_const_reg(A_ADDA,S_L,href.offset,NR_A0));
-                reference_reset_base(href,NR_A0,0,sizeof(pint),[]);
+                reference_reset_base(href,NR_A0,0,ctempposinvalid,sizeof(pint),[]);
               end;
 
             if size > 0 then
@@ -2031,6 +2058,9 @@ unit cgcpu;
         hfreg   : tregister;
         size    : longint;
         fsize   : longint;
+        regs_to_save_int,
+        regs_to_save_address,
+        regs_to_save_fpu: tcpuregisterarray;
       begin
         { see the remark about buggy GNU AS versions in g_save_registers() (KB) }
         dataregs:=[];
@@ -2039,41 +2069,44 @@ unit cgcpu;
 
         if not(pi_has_saved_regs in current_procinfo.flags) then
           exit;
+        regs_to_save_int:=paramanager.get_saved_registers_int(current_procinfo.procdef.proccalloption);
+        regs_to_save_address:=paramanager.get_saved_registers_address(current_procinfo.procdef.proccalloption);
+        regs_to_save_fpu:=paramanager.get_saved_registers_fpu(current_procinfo.procdef.proccalloption);
         { Copy registers from temp }
         size:=0;
         fsize:=0;
         hreg:=NR_NO;
         hfreg:=NR_NO;
-        for r:=low(saved_standard_registers) to high(saved_standard_registers) do
-          if saved_standard_registers[r] in rg[R_INTREGISTER].used_in_proc then
+        for r:=low(regs_to_save_int) to high(regs_to_save_int) do
+          if regs_to_save_int[r] in rg[R_INTREGISTER].used_in_proc then
             begin
               inc(size,sizeof(aint));
-              hreg:=newreg(R_INTREGISTER,saved_standard_registers[r],R_SUBWHOLE);
+              hreg:=newreg(R_INTREGISTER,regs_to_save_int[r],R_SUBWHOLE);
               { Allocate register so the optimizer does not remove the load }
               a_reg_alloc(list,hreg);
-              dataregs:=dataregs + [saved_standard_registers[r]];
+              dataregs:=dataregs + [regs_to_save_int[r]];
             end;
 
         if uses_registers(R_ADDRESSREGISTER) then
-          for r:=low(saved_address_registers) to high(saved_address_registers) do
-            if saved_address_registers[r] in rg[R_ADDRESSREGISTER].used_in_proc then
+          for r:=low(regs_to_save_address) to high(regs_to_save_address) do
+            if regs_to_save_address[r] in rg[R_ADDRESSREGISTER].used_in_proc then
               begin
                 inc(size,sizeof(aint));
-                hreg:=newreg(R_ADDRESSREGISTER,saved_address_registers[r],R_SUBWHOLE);
+                hreg:=newreg(R_ADDRESSREGISTER,regs_to_save_address[r],R_SUBWHOLE);
                 { Allocate register so the optimizer does not remove the load }
                 a_reg_alloc(list,hreg);
-                addrregs:=addrregs + [saved_address_registers[r]];
+                addrregs:=addrregs + [regs_to_save_address[r]];
               end;
 
         if uses_registers(R_FPUREGISTER) then
-          for r:=low(saved_fpu_registers) to high(saved_fpu_registers) do
-            if saved_fpu_registers[r] in rg[R_FPUREGISTER].used_in_proc then
+          for r:=low(regs_to_save_fpu) to high(regs_to_save_fpu) do
+            if regs_to_save_fpu[r] in rg[R_FPUREGISTER].used_in_proc then
               begin
                 inc(fsize,fpuregsize);
-                hfreg:=newreg(R_FPUREGISTER,saved_fpu_registers[r],R_SUBNONE);
+                hfreg:=newreg(R_FPUREGISTER,regs_to_save_fpu[r],R_SUBNONE);
                 { Allocate register so the optimizer does not remove the load }
                 a_reg_alloc(list,hfreg);
-                fpuregs:=fpuregs + [saved_fpu_registers[r]];
+                fpuregs:=fpuregs + [regs_to_save_fpu[r]];
               end;
 
         { 68k has no MM registers }
@@ -2086,7 +2119,7 @@ unit cgcpu;
           begin
             list.concat(taicpu.op_reg_reg(A_MOVE,S_L,href.base,NR_A0));
             list.concat(taicpu.op_const_reg(A_ADDA,S_L,href.offset,NR_A0));
-            reference_reset_base(href,NR_A0,0,sizeof(pint),[]);
+            reference_reset_base(href,NR_A0,0,ctempposinvalid,sizeof(pint),[]);
           end;
 
         if size > 0 then
@@ -2253,7 +2286,7 @@ unit cgcpu;
                   begin
                     { offset in the wrapper needs to be adjusted for the stored
                       return address }
-                    reference_reset_base(href,reference.index,reference.offset+sizeof(pint),sizeof(pint),[]);
+                    reference_reset_base(href,reference.index,reference.offset+sizeof(pint),ctempposinvalid,sizeof(pint),[]);
                     { plain 68k could use SUBI on href directly, but this way it works on Coldfire too
                       and it's probably smaller code for the majority of cases (if ioffset small, the
                       load will use MOVEQ) (KB) }

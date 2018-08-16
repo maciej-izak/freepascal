@@ -788,3 +788,12 @@ begin
   with Installer do
 {$include fcl-report/fpmake.pp}
 end;
+
+procedure add_webidl(const ADirectory: string);
+begin
+  with Installer do
+{$include webidl/fpmake.pp}
+end;
+
+
+{$include ide/fpmake.pp}

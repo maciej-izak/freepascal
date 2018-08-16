@@ -232,6 +232,7 @@ interface
 {$if defined(arm) or defined(aarch64)}
        ,top_conditioncode
        ,top_shifterop
+       ,top_realconst
 {$endif defined(arm) or defined(aarch64)}
 {$ifdef m68k}
        { m68k only }
@@ -270,6 +271,9 @@ interface
         localsym : pointer;
         localsymderef : tderef;
         localsymofs : longint;
+{$ifdef x86}
+        localsegment,
+{$endif x86}
         localindexreg : tregister;
         localscale : byte;
         localgetoffset,
@@ -354,7 +358,9 @@ interface
           available on the specified CPU; this represents directives such as
           NASM's 'CPU 686' or MASM/TASM's '.686p'. Might not be supported by
           all assemblers. }
-        asd_cpu
+        asd_cpu,
+        { for the OMF object format }
+        asd_omf_linnum_line
       );
 
       TAsmSehDirective=(
@@ -362,7 +368,8 @@ interface
           ash_endprologue,ash_handler,ash_handlerdata,
           ash_eh,ash_32,ash_no32,
           ash_setframe,ash_stackalloc,ash_pushreg,
-          ash_savereg,ash_savexmm,ash_pushframe
+          ash_savereg,ash_savexmm,ash_pushframe,
+          ash_pushnv,ash_savenv
         );
 
       TSymbolPairKind = (spk_set, spk_thumb_set, spk_localentry);
@@ -391,14 +398,17 @@ interface
         { ARM }
         'thumb_func',
         'code',
-        'cpu'
+        'cpu',
+        { for the OMF object format }
+        'omf_line'
       );
       sehdirectivestr : array[TAsmSehDirective] of string[16]=(
         '.seh_proc','.seh_endproc',
         '.seh_endprologue','.seh_handler','.seh_handlerdata',
         '.seh_eh','.seh_32','seh_no32',
         '.seh_setframe','.seh_stackalloc','.seh_pushreg',
-        '.seh_savereg','.seh_savexmm','.seh_pushframe'
+        '.seh_savereg','.seh_savexmm','.seh_pushframe',
+        '.pushnv','.savenv'
       );
       symbolpairkindstr: array[TSymbolPairKind] of string[11]=(
         '.set', '.thumb_set', '.localentry'
@@ -426,6 +436,7 @@ interface
         {$if defined(arm) or defined(aarch64)}
             top_shifterop : (shifterop : pshifterop);
             top_conditioncode : (cc : TAsmCond);
+            top_realconst : (val_real:bestreal);
         {$endif defined(arm) or defined(aarch64)}
         {$ifdef m68k}
             top_regset : (dataregset,addrregset,fpuregset: tcpuregisterset);
@@ -625,6 +636,10 @@ interface
 {$ifdef i8086}
           constructor Create_sym_near(_sym:tasmsymbol);
           constructor Create_sym_far(_sym:tasmsymbol);
+          constructor Createname_near(const name:string;ofs:asizeint);
+          constructor Createname_far(const name:string;ofs:asizeint);
+          constructor Createname_near(const name:string;_symtyp:Tasmsymtype;ofs:asizeint);
+          constructor Createname_far(const name:string;_symtyp:Tasmsymtype;ofs:asizeint);
 {$endif i8086}
           constructor Create_type_sym(_typ:taiconst_type;_sym:tasmsymbol);
           constructor Create_sym_offset(_sym:tasmsymbol;ofs:asizeint);
@@ -1243,7 +1258,7 @@ implementation
         inherited Create;
         sym:=ppufile.getasmsymbol;
         size:=ppufile.getaint;
-        is_global:=boolean(ppufile.getbyte);
+        is_global:=ppufile.getboolean;
       end;
 
 
@@ -1252,7 +1267,7 @@ implementation
         inherited ppuwrite(ppufile);
         ppufile.putasmsymbol(sym);
         ppufile.putaint(size);
-        ppufile.putbyte(byte(is_global));
+        ppufile.putboolean(is_global);
       end;
 
 
@@ -1326,7 +1341,7 @@ implementation
         inherited ppuload(t,ppufile);
         sym:=ppufile.getasmsymbol;
         size:=ppufile.getlongint;
-        is_global:=boolean(ppufile.getbyte);
+        is_global:=ppufile.getboolean;
       end;
 
 
@@ -1335,7 +1350,7 @@ implementation
         inherited ppuwrite(ppufile);
         ppufile.putasmsymbol(sym);
         ppufile.putlongint(size);
-        ppufile.putbyte(byte(is_global));
+        ppufile.putboolean(is_global);
       end;
 
 
@@ -1619,9 +1634,38 @@ implementation
          consttype:=aitconst_ptr;
       end;
 
+
     constructor tai_const.Create_sym_far(_sym: tasmsymbol);
       begin
         self.create_sym(_sym);
+        consttype:=aitconst_farptr;
+      end;
+
+
+    constructor tai_const.Createname_near(const name:string;ofs:asizeint);
+      begin
+        self.Createname(name,ofs);
+        consttype:=aitconst_ptr;
+      end;
+
+
+    constructor tai_const.Createname_far(const name:string;ofs:asizeint);
+      begin
+        self.Createname(name,ofs);
+        consttype:=aitconst_farptr;
+      end;
+
+
+    constructor tai_const.Createname_near(const name:string;_symtyp:Tasmsymtype;ofs:asizeint);
+      begin
+        self.Createname(name,_symtyp,ofs);
+        consttype:=aitconst_ptr;
+      end;
+
+
+    constructor tai_const.Createname_far(const name:string;_symtyp:Tasmsymtype;ofs:asizeint);
+      begin
+        self.Createname(name,_symtyp,ofs);
         consttype:=aitconst_farptr;
       end;
 {$endif i8086}
@@ -2423,7 +2467,7 @@ implementation
         inherited ppuload(t,ppufile);
         temppos:=ppufile.getlongint;
         tempsize:=ppufile.getlongint;
-        allocation:=boolean(ppufile.getbyte);
+        allocation:=ppufile.getboolean;
 {$ifdef EXTDEBUG}
         problem:=nil;
 {$endif EXTDEBUG}
@@ -2435,7 +2479,7 @@ implementation
         inherited ppuwrite(ppufile);
         ppufile.putlongint(temppos);
         ppufile.putlongint(tempsize);
-        ppufile.putbyte(byte(allocation));
+        ppufile.putboolean(allocation);
       end;
 
 
@@ -2503,7 +2547,7 @@ implementation
         inherited ppuload(t,ppufile);
         ppufile.getdata(reg,sizeof(Tregister));
         ratype:=tregalloctype(ppufile.getbyte);
-        keep:=boolean(ppufile.getbyte);
+        keep:=ppufile.getboolean;
       end;
 
 
@@ -2512,7 +2556,7 @@ implementation
         inherited ppuwrite(ppufile);
         ppufile.putdata(reg,sizeof(Tregister));
         ppufile.putbyte(byte(ratype));
-        ppufile.putbyte(byte(keep));
+        ppufile.putboolean(keep);
       end;
 
 
@@ -2599,6 +2643,9 @@ implementation
                localscale:=scale;
                localgetoffset:=getoffset;
                localforceref:=forceref;
+{$ifdef x86}
+               localsegment:=NR_NO;
+{$endif x86}
              end;
            typ:=top_local;
          end;
@@ -2863,7 +2910,7 @@ implementation
 {$ifdef x86}
         ppufile.getdata(segprefix,sizeof(Tregister));
 {$endif x86}
-        is_jmp:=boolean(ppufile.getbyte);
+        is_jmp:=ppufile.getboolean;
       end;
 
 
@@ -2880,7 +2927,7 @@ implementation
 {$ifdef x86}
         ppufile.putdata(segprefix,sizeof(Tregister));
 {$endif x86}
-        ppufile.putbyte(byte(is_jmp));
+        ppufile.putboolean(is_jmp);
       end;
 
 
@@ -2953,6 +3000,9 @@ implementation
                 begin
                   ppufile.getderef(localsymderef);
                   localsymofs:=ppufile.getaint;
+{$ifdef x86}
+                  localsegment:=tregister(ppufile.getlongint);
+{$endif x86}
                   localindexreg:=tregister(ppufile.getlongint);
                   localscale:=ppufile.getbyte;
                   localgetoffset:=(ppufile.getbyte<>0);
@@ -2992,6 +3042,9 @@ implementation
                 begin
                   ppufile.putderef(localsymderef);
                   ppufile.putaint(localsymofs);
+{$ifdef x86}
+                  ppufile.putlongint(longint(localsegment));
+{$endif x86}
                   ppufile.putlongint(longint(localindexreg));
                   ppufile.putbyte(localscale);
                   ppufile.putbyte(byte(localgetoffset));
@@ -3067,7 +3120,7 @@ implementation
         aligntype:=ppufile.getbyte;
         fillsize:=0;
         fillop:=ppufile.getbyte;
-        use_op:=boolean(ppufile.getbyte);
+        use_op:=ppufile.getboolean;
       end;
 
 
@@ -3076,7 +3129,7 @@ implementation
         inherited ppuwrite(ppufile);
         ppufile.putbyte(aligntype);
         ppufile.putbyte(fillop);
-        ppufile.putbyte(byte(use_op));
+        ppufile.putboolean(use_op);
       end;
 
 
@@ -3097,7 +3150,9 @@ implementation
         sd_reg,        { pushreg }
         sd_regoffset,  { savereg }
         sd_regoffset,  { savexmm }
-        sd_none        { pushframe }
+        sd_none,       { pushframe }
+        sd_reg,        { pushnv }
+        sd_none        { savenv }
       );
 
     constructor tai_seh_directive.create(_kind:TAsmSehDirective);

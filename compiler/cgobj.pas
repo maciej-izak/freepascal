@@ -312,6 +312,7 @@ unit cgobj;
           procedure a_op_reg_ref(list : TAsmList; Op: TOpCG; size: TCGSize; reg: TRegister; const ref: TReference); virtual;
           procedure a_op_ref_reg(list : TAsmList; Op: TOpCG; size: TCGSize; const ref: TReference; reg: TRegister); virtual;
           procedure a_op_reg_loc(list : TAsmList; Op: TOpCG; reg: tregister; const loc: tlocation);
+          procedure a_op_loc_reg(list : TAsmList; Op: TOpCG; size: TCGSize; const loc: tlocation; reg: tregister);
           procedure a_op_ref_loc(list : TAsmList; Op: TOpCG; const ref: TReference; const loc: tlocation);
 
           { trinary operations for processors that support them, 'emulated' }
@@ -592,7 +593,7 @@ implementation
 {$endif cpu8bitalu or cpu16bitalu}
         fillchar(rg,sizeof(rg),0);
         add_reg_instruction_hook:=@add_reg_instruction;
-        executionweight:=1;
+        executionweight:=100;
       end;
 
 
@@ -964,7 +965,7 @@ implementation
               a_load_reg_reg(list,size,cgpara.location^.size,r,cgpara.location^.register);
             LOC_REFERENCE,LOC_CREFERENCE:
               begin
-                 reference_reset_base(ref,cgpara.location^.reference.index,cgpara.location^.reference.offset,cgpara.alignment,[]);
+                 reference_reset_base(ref,cgpara.location^.reference.index,cgpara.location^.reference.offset,ctempposinvalid,cgpara.alignment,[]);
                  a_load_reg_ref(list,size,cgpara.location^.size,r,ref);
               end;
             LOC_MMREGISTER,LOC_CMMREGISTER:
@@ -995,7 +996,7 @@ implementation
               a_load_const_reg(list,cgpara.location^.size,a,cgpara.location^.register);
             LOC_REFERENCE,LOC_CREFERENCE:
               begin
-                 reference_reset_base(ref,cgpara.location^.reference.index,cgpara.location^.reference.offset,cgpara.alignment,[]);
+                 reference_reset_base(ref,cgpara.location^.reference.index,cgpara.location^.reference.offset,ctempposinvalid,cgpara.alignment,[]);
                  a_load_const_ref(list,cgpara.location^.size,a,ref);
               end
             else
@@ -1124,7 +1125,7 @@ implementation
                 begin
                    if assigned(location^.next) then
                      internalerror(2010052906);
-                   reference_reset_base(ref,location^.reference.index,location^.reference.offset,newalignment(cgpara.alignment,cgpara.intsize-sizeleft),[]);
+                   reference_reset_base(ref,location^.reference.index,location^.reference.offset,ctempposinvalid,newalignment(cgpara.alignment,cgpara.intsize-sizeleft),[]);
                    if (size <> OS_NO) and
                       (tcgsize2size[size] <= sizeof(aint)) then
                      a_load_ref_ref(list,size,location^.size,tmpref,ref)
@@ -1340,7 +1341,7 @@ implementation
             a_loadfpu_reg_ref(list,paraloc.size,paraloc.size,paraloc.register,ref);
           LOC_REFERENCE :
             begin
-              reference_reset_base(href,paraloc.reference.index,paraloc.reference.offset,align,[]);
+              reference_reset_base(href,paraloc.reference.index,paraloc.reference.offset,ctempposinvalid,align,[]);
               { use concatcopy, because it can also be a float which fails when
                 load_ref_ref is used. Don't copy data when the references are equal }
               if not((href.base=ref.base) and (href.offset=ref.offset)) then
@@ -1408,7 +1409,7 @@ implementation
              end;
            LOC_REFERENCE :
              begin
-               reference_reset_base(href,paraloc.reference.index,paraloc.reference.offset,align,[]);
+               reference_reset_base(href,paraloc.reference.index,paraloc.reference.offset,ctempposinvalid,align,[]);
                case getregtype(reg) of
                  R_ADDRESSREGISTER,
                  R_INTREGISTER :
@@ -1837,7 +1838,7 @@ implementation
             LOC_REFERENCE,LOC_CREFERENCE:
               begin
                 cgpara.check_simple_location;
-                reference_reset_base(ref,cgpara.location^.reference.index,cgpara.location^.reference.offset,cgpara.alignment,[]);
+                reference_reset_base(ref,cgpara.location^.reference.index,cgpara.location^.reference.offset,ctempposinvalid,cgpara.alignment,[]);
                 a_loadfpu_reg_ref(list,size,size,r,ref);
               end;
             LOC_REGISTER,LOC_CREGISTER:
@@ -1878,7 +1879,7 @@ implementation
           LOC_REFERENCE,LOC_CREFERENCE:
             begin
               cgpara.check_simple_location;
-              reference_reset_base(href,cgpara.location^.reference.index,cgpara.location^.reference.offset,cgpara.alignment,[]);
+              reference_reset_base(href,cgpara.location^.reference.index,cgpara.location^.reference.offset,ctempposinvalid,cgpara.alignment,[]);
               { concatcopy should choose the best way to copy the data }
               g_concatcopy(list,ref,href,tcgsize2size[size]);
             end;
@@ -1992,6 +1993,22 @@ implementation
             a_op_reg_ref(list,op,loc.size,reg,loc.reference);
           else
             internalerror(200109061);
+        end;
+      end;
+
+
+    procedure tcg.a_op_loc_reg(list : TAsmList; Op : TOpCG; size: TCGSize; const loc : tlocation; reg : tregister);
+
+      begin
+        case loc.loc of
+          LOC_REGISTER, LOC_CREGISTER:
+            a_op_reg_reg(list,op,size,loc.register,reg);
+          LOC_REFERENCE, LOC_CREFERENCE:
+            a_op_ref_reg(list,op,size,loc.reference,reg);
+          LOC_CONSTANT:
+            a_op_const_reg(list,op,size,loc.value,reg);
+          else
+            internalerror(2018031101);
         end;
       end;
 
@@ -2276,7 +2293,7 @@ implementation
             a_loadmm_reg_reg(list,size,cgpara.location^.size,reg,cgpara.location^.register,shuffle);
           LOC_REFERENCE,LOC_CREFERENCE:
             begin
-              reference_reset_base(href,cgpara.location^.reference.index,cgpara.location^.reference.offset,cgpara.alignment,[]);
+              reference_reset_base(href,cgpara.location^.reference.index,cgpara.location^.reference.offset,ctempposinvalid,cgpara.alignment,[]);
               a_loadmm_reg_ref(list,size,cgpara.location^.size,reg,href,shuffle);
             end;
           LOC_REGISTER,LOC_CREGISTER:
@@ -2317,7 +2334,7 @@ implementation
                     begin
                       if not(cgpara.location^.next^.size in [OS_32,OS_S32]) then
                         internalerror(2009112911);
-                      reference_reset_base(href,cgpara.location^.next^.reference.index,cgpara.location^.next^.reference.offset,cgpara.alignment,[]);
+                      reference_reset_base(href,cgpara.location^.next^.reference.index,cgpara.location^.next^.reference.offset,ctempposinvalid,cgpara.alignment,[]);
                       a_load_reg_ref(list,OS_32,cgpara.location^.next^.size,tmpreg,href);
                     end;
                 end
@@ -2506,15 +2523,21 @@ implementation
         href : treference;
         size : longint;
         r : integer;
+        regs_to_save_int,
+        regs_to_save_address,
+        regs_to_save_mm : tcpuregisterarray;
       begin
+        regs_to_save_int:=paramanager.get_saved_registers_int(current_procinfo.procdef.proccalloption);
+        regs_to_save_address:=paramanager.get_saved_registers_address(current_procinfo.procdef.proccalloption);
+        regs_to_save_mm:=paramanager.get_saved_registers_mm(current_procinfo.procdef.proccalloption);
         { calculate temp. size }
         size:=0;
-        for r:=low(saved_standard_registers) to high(saved_standard_registers) do
-          if saved_standard_registers[r] in rg[R_INTREGISTER].used_in_proc then
+        for r:=low(regs_to_save_int) to high(regs_to_save_int) do
+          if regs_to_save_int[r] in rg[R_INTREGISTER].used_in_proc then
             inc(size,sizeof(aint));
         if uses_registers(R_ADDRESSREGISTER) then
-          for r:=low(saved_address_registers) to high(saved_address_registers) do
-            if saved_address_registers[r] in rg[R_ADDRESSREGISTER].used_in_proc then
+          for r:=low(regs_to_save_int) to high(regs_to_save_int) do
+            if regs_to_save_int[r] in rg[R_ADDRESSREGISTER].used_in_proc then
               inc(size,sizeof(aint));
 
         { mm registers }
@@ -2525,8 +2548,8 @@ implementation
               of the temp is smaller than needed for an OS_VECTOR }
             inc(size,tcgsize2size[OS_VECTOR]);
 
-            for r:=low(saved_mm_registers) to high(saved_mm_registers) do
-              if saved_mm_registers[r] in rg[R_MMREGISTER].used_in_proc then
+            for r:=low(regs_to_save_mm) to high(regs_to_save_mm) do
+              if regs_to_save_mm[r] in rg[R_MMREGISTER].used_in_proc then
                 inc(size,tcgsize2size[OS_VECTOR]);
           end;
 
@@ -2537,25 +2560,25 @@ implementation
 
             { Copy registers to temp }
             href:=current_procinfo.save_regs_ref;
-            for r:=low(saved_standard_registers) to high(saved_standard_registers) do
+            for r:=low(regs_to_save_int) to high(regs_to_save_int) do
               begin
-                if saved_standard_registers[r] in rg[R_INTREGISTER].used_in_proc then
+                if regs_to_save_int[r] in rg[R_INTREGISTER].used_in_proc then
                   begin
-                    a_load_reg_ref(list,OS_ADDR,OS_ADDR,newreg(R_INTREGISTER,saved_standard_registers[r],R_SUBWHOLE),href);
+                    a_load_reg_ref(list,OS_ADDR,OS_ADDR,newreg(R_INTREGISTER,regs_to_save_int[r],R_SUBWHOLE),href);
                     inc(href.offset,sizeof(aint));
                   end;
-                include(rg[R_INTREGISTER].preserved_by_proc,saved_standard_registers[r]);
+                include(rg[R_INTREGISTER].preserved_by_proc,regs_to_save_int[r]);
               end;
 
             if uses_registers(R_ADDRESSREGISTER) then
-              for r:=low(saved_address_registers) to high(saved_address_registers) do
+              for r:=low(regs_to_save_address) to high(regs_to_save_address) do
                 begin
-                  if saved_address_registers[r] in rg[R_ADDRESSREGISTER].used_in_proc then
+                  if regs_to_save_address[r] in rg[R_ADDRESSREGISTER].used_in_proc then
                     begin
-                      a_load_reg_ref(list,OS_ADDR,OS_ADDR,newreg(R_ADDRESSREGISTER,saved_address_registers[r],R_SUBWHOLE),href);
+                      a_load_reg_ref(list,OS_ADDR,OS_ADDR,newreg(R_ADDRESSREGISTER,regs_to_save_address[r],R_SUBWHOLE),href);
                       inc(href.offset,sizeof(aint));
                     end;
-                  include(rg[R_ADDRESSREGISTER].preserved_by_proc,saved_address_registers[r]);
+                  include(rg[R_ADDRESSREGISTER].preserved_by_proc,regs_to_save_address[r]);
                 end;
 
             if uses_registers(R_MMREGISTER) then
@@ -2563,20 +2586,20 @@ implementation
                 if (href.offset mod tcgsize2size[OS_VECTOR])<>0 then
                   inc(href.offset,tcgsize2size[OS_VECTOR]-(href.offset mod tcgsize2size[OS_VECTOR]));
 
-                for r:=low(saved_mm_registers) to high(saved_mm_registers) do
+                for r:=low(regs_to_save_mm) to high(regs_to_save_mm) do
                   begin
                     { the array has to be declared even if no MM registers are saved
                       (such as with SSE on i386), and since 0-element arrays don't
                       exist, they contain a single RS_INVALID element in that case
                     }
-                    if saved_mm_registers[r]<>RS_INVALID then
+                    if regs_to_save_mm[r]<>RS_INVALID then
                       begin
-                        if saved_mm_registers[r] in rg[R_MMREGISTER].used_in_proc then
+                        if regs_to_save_mm[r] in rg[R_MMREGISTER].used_in_proc then
                           begin
-                            a_loadmm_reg_ref(list,OS_VECTOR,OS_VECTOR,newreg(R_MMREGISTER,saved_mm_registers[r],R_SUBMMWHOLE),href,nil);
+                            a_loadmm_reg_ref(list,OS_VECTOR,OS_VECTOR,newreg(R_MMREGISTER,regs_to_save_mm[r],R_SUBMMWHOLE),href,nil);
                             inc(href.offset,tcgsize2size[OS_VECTOR]);
                           end;
-                        include(rg[R_MMREGISTER].preserved_by_proc,saved_mm_registers[r]);
+                        include(rg[R_MMREGISTER].preserved_by_proc,regs_to_save_mm[r]);
                       end;
                   end;
               end;
@@ -2589,15 +2612,21 @@ implementation
         href     : treference;
         r        : integer;
         hreg     : tregister;
+        regs_to_save_int,
+        regs_to_save_address,
+        regs_to_save_mm : tcpuregisterarray;
       begin
         if not(pi_has_saved_regs in current_procinfo.flags) then
           exit;
+        regs_to_save_int:=paramanager.get_saved_registers_int(current_procinfo.procdef.proccalloption);
+        regs_to_save_address:=paramanager.get_saved_registers_address(current_procinfo.procdef.proccalloption);
+        regs_to_save_mm:=paramanager.get_saved_registers_mm(current_procinfo.procdef.proccalloption);
         { Copy registers from temp }
         href:=current_procinfo.save_regs_ref;
-        for r:=low(saved_standard_registers) to high(saved_standard_registers) do
-          if saved_standard_registers[r] in rg[R_INTREGISTER].used_in_proc then
+        for r:=low(regs_to_save_int) to high(regs_to_save_int) do
+          if regs_to_save_int[r] in rg[R_INTREGISTER].used_in_proc then
             begin
-              hreg:=newreg(R_INTREGISTER,saved_standard_registers[r],R_SUBWHOLE);
+              hreg:=newreg(R_INTREGISTER,regs_to_save_int[r],R_SUBWHOLE);
               { Allocate register so the optimizer does not remove the load }
               a_reg_alloc(list,hreg);
               a_load_ref_reg(list,OS_ADDR,OS_ADDR,href,hreg);
@@ -2605,10 +2634,10 @@ implementation
             end;
 
         if uses_registers(R_ADDRESSREGISTER) then
-          for r:=low(saved_address_registers) to high(saved_address_registers) do
-            if saved_address_registers[r] in rg[R_ADDRESSREGISTER].used_in_proc then
+          for r:=low(regs_to_save_address) to high(regs_to_save_address) do
+            if regs_to_save_address[r] in rg[R_ADDRESSREGISTER].used_in_proc then
               begin
-                hreg:=newreg(R_ADDRESSREGISTER,saved_address_registers[r],R_SUBWHOLE);
+                hreg:=newreg(R_ADDRESSREGISTER,regs_to_save_address[r],R_SUBWHOLE);
                 { Allocate register so the optimizer does not remove the load }
                 a_reg_alloc(list,hreg);
                 a_load_ref_reg(list,OS_ADDR,OS_ADDR,href,hreg);
@@ -2620,11 +2649,11 @@ implementation
             if (href.offset mod tcgsize2size[OS_VECTOR])<>0 then
               inc(href.offset,tcgsize2size[OS_VECTOR]-(href.offset mod tcgsize2size[OS_VECTOR]));
 
-            for r:=low(saved_mm_registers) to high(saved_mm_registers) do
+            for r:=low(regs_to_save_mm) to high(regs_to_save_mm) do
               begin
-                if saved_mm_registers[r] in rg[R_MMREGISTER].used_in_proc then
+                if regs_to_save_mm[r] in rg[R_MMREGISTER].used_in_proc then
                   begin
-                    hreg:=newreg(R_MMREGISTER,saved_mm_registers[r],R_SUBMMWHOLE);
+                    hreg:=newreg(R_MMREGISTER,regs_to_save_mm[r],R_SUBMMWHOLE);
                     { Allocate register so the optimizer does not remove the load }
                     a_reg_alloc(list,hreg);
                     a_loadmm_ref_reg(list,OS_VECTOR,OS_VECTOR,href,hreg,nil);
@@ -2664,7 +2693,7 @@ implementation
                   begin
                     { offset in the wrapper needs to be adjusted for the stored
                       return address }
-                    reference_reset_base(href,reference.index,reference.offset+sizeof(pint),sizeof(pint),[]);
+                    reference_reset_base(href,reference.index,reference.offset+sizeof(pint),ctempposinvalid,sizeof(pint),[]);
                     a_op_const_ref(list,OP_SUB,size,ioffset,href);
                   end
                 else

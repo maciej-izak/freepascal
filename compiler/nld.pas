@@ -121,6 +121,7 @@ interface
           function docompare(p: tnode): boolean; override;
           procedure force_type(def:tdef);
           procedure insert_typeconvs;
+          function isempty : boolean;
        end;
        tarrayconstructornodeclass = class of tarrayconstructornode;
 
@@ -312,7 +313,7 @@ implementation
                     (symtable.symtablelevel<>current_procinfo.procdef.localst.symtablelevel) or
                     (current_procinfo.procdef.proctypeoption=potype_unitfinalize)
                   ) then
-                 make_not_regable(self,[ra_addr_taken]);
+                 make_not_regable(self,[ra_different_scope]);
                resultdef:=tabstractvarsym(symtableentry).vardef;
                if vo_is_thread_var in tstaticvarsym(symtableentry).varoptions then
                  result:=handle_threadvar_access;
@@ -334,7 +335,7 @@ implementation
                    exclude(tprocdef(symtable.defowner).procoptions,po_inline);
                    { reference in nested procedures, variable needs to be in memory }
                    { and behaves as if its address escapes its parent block         }
-                   make_not_regable(self,[ra_addr_taken]);
+                   make_not_regable(self,[ra_different_scope]);
                  end;
                resultdef:=tabstractvarsym(symtableentry).vardef;
                { self for objects is passed as var-parameter on the caller
@@ -594,6 +595,14 @@ implementation
         set_varstate(left,vs_written,[]);
         if codegenerror then
           exit;
+
+        { just in case the typecheckpass of right optimized something here }
+        if nf_assign_done_in_right in flags then
+          begin
+            result:=right;
+            right:=nil;
+            exit;
+          end;
 
         { tp procvar support, when we don't expect a procvar
           then we need to call the procvar }
@@ -1016,6 +1025,12 @@ implementation
       end;
 
 
+    function tarrayconstructornode.isempty:boolean;
+      begin
+        result:=not(assigned(left)) and not(assigned(right));
+      end;
+
+
     function tarrayconstructornode.pass_typecheck:tnode;
       var
         hdef  : tdef;
@@ -1215,8 +1230,8 @@ implementation
         inherited ppuload(t,ppufile);
         ppufile.getderef(typedefderef);
         ppufile.getderef(typesymderef);
-        allowed:=boolean(ppufile.getbyte);
-        helperallowed:=boolean(ppufile.getbyte);
+        allowed:=ppufile.getboolean;
+        helperallowed:=ppufile.getboolean;
       end;
 
 
@@ -1225,8 +1240,8 @@ implementation
         inherited ppuwrite(ppufile);
         ppufile.putderef(typedefderef);
         ppufile.putderef(typesymderef);
-        ppufile.putbyte(byte(allowed));
-        ppufile.putbyte(byte(helperallowed));
+        ppufile.putboolean(allowed);
+        ppufile.putboolean(helperallowed);
       end;
 
 

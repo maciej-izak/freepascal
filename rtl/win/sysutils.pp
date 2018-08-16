@@ -4,7 +4,7 @@
     Copyright (c) 1999-2000 by Florian Klaempfl
     member of the Free Pascal development team
 
-    Sysutils unit for win32
+    SysUtils unit for win32
 
     See the file COPYING.FPC, included in this distribution,
     for details about the copyright.
@@ -14,7 +14,7 @@
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
  **********************************************************************}
-unit sysutils;
+unit SysUtils;
 interface
 
 {$MODE objfpc}
@@ -357,8 +357,6 @@ end;
 
 Procedure FileClose (Handle : THandle);
 begin
-  if Handle<=4 then
-   exit;
   CloseHandle(Handle);
 end;
 
@@ -744,39 +742,22 @@ end;
 function ConvertEraString(Count ,Year,Month,Day : integer) : string;
   var
     ASystemTime: TSystemTime;
-    buf: array[0..100] of char;
+    wbuf: array[0..100] of WideChar;
     ALCID : LCID;
-    PriLangID : Word;
-    SubLangID : Word;
 begin
   Result := ''; if (Count<=0) then exit;
   DateTimeToSystemTime(EncodeDate(Year,Month,Day),ASystemTime);
 
   ALCID := GetThreadLocale;
 //  ALCID := SysLocale.DefaultLCID;
-  if GetDateFormatA(ALCID , DATE_USE_ALT_CALENDAR
-      , @ASystemTime, PChar('gg')
-      , @buf, SizeOf(buf)) > 0 then
+  if GetDateFormatW(ALCID , DATE_USE_ALT_CALENDAR
+      , @ASystemTime, PWChar('gg')
+      , @wbuf, SizeOf(wbuf)) > 0 then
   begin
-    Result := buf;
     if Count = 1 then
-    begin
-      PriLangID := ALCID and $3FF;
-      SubLangID := (ALCID and $FFFF) shr 10;
-      case PriLangID of
-        LANG_JAPANESE:
-          begin
-            Result := Copy(WideString(Result),1,1);
-          end;
-        LANG_CHINESE:
-          if (SubLangID = SUBLANG_CHINESE_TRADITIONAL) then
-          begin
-            Result := Copy(WideString(Result),1,1);
-          end;
-      end;
-    end;
+      wbuf[1] := #0;
+    Result := string(WideString(wbuf));
   end;
-// if Result = '' then Result := StringOfChar('G',Count);
 end;
 
 function ConvertEraYearString(Count ,Year,Month,Day : integer) : string;

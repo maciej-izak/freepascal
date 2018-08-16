@@ -256,13 +256,8 @@ Unit raavrgas;
                   { don't allow direct access to fields of parameters, because that
                     will generate buggy code. Allow it only for explicit typecasting }
                   if hasdot and
-                     (not oper.hastype) and
-                     (oper.opr.localsym.typ=paravarsym) and
-                     (not(po_assembler in current_procinfo.procdef.procoptions) or
-                      (tparavarsym(oper.opr.localsym).paraloc[calleeside].location^.loc<>LOC_REGISTER) or
-                      (not is_implicit_pointer_object_type(oper.opr.localsym.vardef) and
-                       not paramanager.push_addr_param(oper.opr.localsym.varspez,oper.opr.localsym.vardef,current_procinfo.procdef.proccalloption))) then
-                    Message(asmr_e_cannot_access_field_directly_for_parameters);
+                     (not oper.hastype) then
+                     checklocalsubscript(oper.opr.localsym);
                   inc(oper.opr.localsymofs,l)
                 end;
               OPR_CONSTANT :
@@ -348,7 +343,8 @@ Unit raavrgas;
 
           AS_INTNUM,
           AS_MINUS,
-          AS_PLUS:
+          AS_PLUS,
+          AS_NOT:
             Begin
               if (actasmtoken=AS_MINUS) and
                  (actopcode in [A_LD,A_ST]) then
@@ -378,7 +374,8 @@ Unit raavrgas;
                   oper.opr.ref.offset:=BuildConstExpression(True,False);
 
                   { absolute memory addresss? }
-                  if (actopcode in [A_LDS,A_STS]) and (actasmtoken<>AS_COMMA) then
+                  if ((actopcode = A_LDS) and (actasmtoken <> AS_SEPARATOR)) or
+                     ((actopcode = A_STS) and (actasmtoken <> AS_COMMA)) then
                     begin
                       if not(MaybeBuildReference) then
                         Message(asmr_e_invalid_reference_syntax);
@@ -521,7 +518,7 @@ Unit raavrgas;
                 begin
                   oper.opr.typ:=OPR_REFERENCE;
 
-                  reference_reset_base(oper.opr.ref,tempreg,0,1,[]);
+                  reference_reset_base(oper.opr.ref,tempreg,0,ctempposinvalid,1,[]);
 
                   { add a constant expression? }
                   if actasmtoken=AS_PLUS then

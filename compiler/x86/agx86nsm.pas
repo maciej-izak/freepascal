@@ -35,9 +35,24 @@ interface
       { TX86NasmAssembler }
 
       TX86NasmAssembler = class(texternalassembler)
+      strict private
+        type
+
+          { TX86NasmSection }
+
+          TX86NasmSection=class(TFPHashObject)
+          end;
+
+          { TX86NasmGroup }
+
+          TX86NasmGroup=class(TFPHashObject)
+            Sections: TFPHashObjectList;
+            constructor Create(HashObjectList:TFPHashObjectList;const s:TSymStr);
+            destructor Destroy;override;
+          end;
       private
-        FSectionsUsed: TFPHashList;
-        FSectionsInDGROUP: TFPHashList;
+        FSections: TFPHashObjectList;
+        FGroups: TFPHashObjectList;
         using_relative : boolean;
         function CodeSectionName(const aname:string): string;
         procedure WriteReference(var ref : treference);
@@ -45,6 +60,9 @@ interface
         procedure WriteOper_jmp(const o:toper; ai : taicpu);
         procedure WriteSection(atype:TAsmSectiontype;const aname:string;alignment : longint);
         procedure ResetSectionsList;
+        procedure AddGroup(const grpname: string);
+        procedure AddSegmentToGroup(const grpname,segname: string);
+        procedure WriteGroup(data:TObject;arg:pointer);
         procedure WriteGroups;
       protected
         function single2str(d: single): string; override;
@@ -82,37 +100,38 @@ interface
         {$i r8086nasm.inc}
 {$endif}
       );
+      { nasm 2.13 expects lowercase cpu names }
       nasm_cpu_name : array[tcputype] of string = (
 {$if defined(x86_64)}
-        'IA64',        // cpu_none,
-        'X64',         // cpu_athlon64,
-        'IA64',        // cpu_core_i,
-        'IA64',        // cpu_core_avx,
-        'IA64'         // cpu_core_avx2
+        'ia64',        // cpu_none,
+        'x64',         // cpu_athlon64,
+        'ia64',        // cpu_core_i,
+        'ia64',        // cpu_core_avx,
+        'ia64'         // cpu_core_avx2
 {$elseif defined(i386)}
-        'IA64',     // cpu_none,
+        'ia64',     // cpu_none,
         '386',      // cpu_386,
         '486',      // cpu_486,
-        'PENTIUM',  // cpu_Pentium,
-        'P2',       // cpu_Pentium2,
-        'P3',       // cpu_Pentium3,
-        'P4',       // cpu_Pentium4,
-        'P4',       // cpu_PentiumM,
-        'IA64',     // cpu_core_i,
-        'IA64',     // cpu_core_avx,
-        'IA64'      // cpu_core_avx2
+        'pentium',  // cpu_Pentium,
+        'p2',       // cpu_Pentium2,
+        'p3',       // cpu_Pentium3,
+        'p4',       // cpu_Pentium4,
+        'p4',       // cpu_PentiumM,
+        'ia64',     // cpu_core_i,
+        'ia64',     // cpu_core_avx,
+        'ia64'      // cpu_core_avx2
 {$elseif defined(i8086)}
-        'IA64',    // cpu_none
+        'ia64',    // cpu_none
         '8086',    // cpu_8086
         '186',     // cpu_186
         '286',     // cpu_286
         '386',     // cpu_386
         '486',     // cpu_486
-        'PENTIUM', // cpu_Pentium
-        'P2',      // cpu_Pentium2
-        'P3',      // cpu_Pentium3
-        'P4',      // cpu_Pentium4
-        'P4'       // cpu_PentiumM
+        'pentium', // cpu_Pentium
+        'p2',      // cpu_Pentium2
+        'p3',      // cpu_Pentium3
+        'p4',      // cpu_Pentium4
+        'p4'       // cpu_PentiumM
 {$endif}
       );
 
@@ -181,8 +200,8 @@ interface
 
     destructor TX86NasmAssembler.Destroy;
       begin
-        FSectionsUsed.Free;
-        FSectionsInDGROUP.Free;
+        FSections.Free;
+        FGroups.Free;
         inherited Destroy;
       end;
 
@@ -252,6 +271,26 @@ interface
          PadTabs:=s+#9#9
         else
          PadTabs:=s+#9;
+      end;
+
+
+
+{****************************************************************************
+                       TX86NasmAssembler.TX86NasmGroup
+ ****************************************************************************}
+
+
+    constructor TX86NasmAssembler.TX86NasmGroup.Create(HashObjectList: TFPHashObjectList; const s: TSymStr);
+      begin
+        inherited;
+        Sections:=TFPHashObjectList.Create;
+      end;
+
+
+    destructor TX86NasmAssembler.TX86NasmGroup.Destroy;
+      begin
+        Sections.Free;
+        inherited Destroy;
       end;
 
 
@@ -372,7 +411,7 @@ interface
                 begin
                   writer.AsmWrite('DGROUP');
                   { Make sure GROUP DGROUP is generated }
-                  FSectionsInDGROUP.Add('',Pointer(self));
+                  AddGroup('DGROUP');
                 end
               else if o.ref^.refaddr=addr_fardataseg then
                 begin
@@ -520,7 +559,7 @@ interface
           '.heap'
         );
       var
-        secname: string;
+        secname,secgroup: string;
       begin
         writer.AsmLn;
         writer.AsmWrite('SECTION ');
@@ -545,7 +584,7 @@ interface
               secname:=omf_secnames[atype];
             writer.AsmWrite(secname);
             { first use of this section in the object file? }
-            if FSectionsUsed.FindIndexOf(secname)=-1 then
+            if FSections.Find(secname)=nil then
               begin
                 { yes -> write the section attributes as well }
                 if atype=sec_stack then
@@ -556,9 +595,10 @@ interface
                   writer.AsmWrite(' use16');
                 writer.AsmWrite(' class='+omf_segclass(atype)+
                   ' align='+tostr(omf_sectiontype2align(atype)));
-                FSectionsUsed.Add(secname,Pointer(self));
-                if section_belongs_to_dgroup(atype) then
-                  FSectionsInDGROUP.Add(secname,Pointer(self));
+                TX86NasmSection.Create(FSections,secname);
+                secgroup:=omf_section_primary_group(atype,aname);
+                if secgroup<>'' then
+                  AddSegmentToGroup(secgroup,secname);
               end;
           end
         else if secnames[atype]='.text' then
@@ -584,10 +624,38 @@ interface
 
     procedure TX86NasmAssembler.ResetSectionsList;
       begin
-        FSectionsUsed.Free;
-        FSectionsUsed:=TFPHashList.Create;
-        FSectionsInDGROUP.Free;
-        FSectionsInDGROUP:=TFPHashList.Create;
+        FSections.Free;
+        FSections:=TFPHashObjectList.Create;
+        FGroups.Free;
+        FGroups:=TFPHashObjectList.Create;
+      end;
+
+    procedure TX86NasmAssembler.AddGroup(const grpname: string);
+      begin
+        if FGroups.Find(grpname)=nil then
+          TX86NasmGroup.Create(FGroups,grpname);
+      end;
+
+    procedure TX86NasmAssembler.AddSegmentToGroup(const grpname, segname: string);
+      var
+        grp: TX86NasmGroup;
+      begin
+        grp:=TX86NasmGroup(FGroups.Find(grpname));
+        if grp=nil then
+          grp:=TX86NasmGroup.Create(FGroups,grpname);
+        TX86NasmSection.Create(grp.Sections,segname);
+      end;
+
+    procedure TX86NasmAssembler.WriteGroup(data: TObject; arg: pointer);
+      var
+        grp: TX86NasmGroup;
+        i: Integer;
+      begin
+        grp:=TX86NasmGroup(data);
+        writer.AsmWrite('GROUP '+grp.Name);
+        for i:=0 to grp.Sections.Count-1 do
+          writer.AsmWrite(' '+grp.Sections.NameOfIndex(i));
+        writer.AsmLn;
       end;
 
     procedure TX86NasmAssembler.WriteGroups;
@@ -602,13 +670,7 @@ interface
             if current_settings.x86memorymodel=mm_huge then
               WriteSection(sec_data,'',2);
             writer.AsmLn;
-            if FSectionsInDGROUP.Count>0 then
-              begin
-                writer.AsmWrite('GROUP DGROUP');
-                for i:=0 to FSectionsInDGROUP.Count-1 do
-                  writer.AsmWrite(' '+FSectionsInDGROUP.NameOfIndex(i));
-                writer.AsmLn;
-              end;
+            FGroups.ForEachCall(@WriteGroup,nil);
           end;
 {$endif i8086}
       end;
@@ -782,12 +844,18 @@ interface
                  aitconst_fardataseg:
                    writer.AsmWriteLn(#9'DW'#9+current_module.modulename^+'_DATA');
 {$endif i8086}
+{$ifdef x86_64}
+                 aitconst_rva_symbol,
+                 aitconst_secrel32_symbol: ;
+{$endif x86_64}
+{$ifdef i386}
+                 aitconst_rva_symbol,
+                 aitconst_secrel32_symbol,
+{$endif i386}
                  aitconst_64bit,
                  aitconst_32bit,
                  aitconst_16bit,
                  aitconst_8bit,
-                 aitconst_rva_symbol,
-                 aitconst_secrel32_symbol,
                  aitconst_16bit_unaligned,
                  aitconst_32bit_unaligned,
                  aitconst_64bit_unaligned:
@@ -1086,6 +1154,27 @@ interface
                          internalerror(2017111001);
                      end;
                    end
+                  else if (fixed_opcode=A_SEGCS) or (fixed_opcode=A_SEGDS) or
+                          (fixed_opcode=A_SEGSS) or (fixed_opcode=A_SEGES) or
+                          (fixed_opcode=A_SEGFS) or (fixed_opcode=A_SEGGS) then
+                    begin
+                      case fixed_opcode of
+                        A_SEGCS:
+                          writer.AsmWrite(#9#9'cs');
+                        A_SEGDS:
+                          writer.AsmWrite(#9#9'ds');
+                        A_SEGSS:
+                          writer.AsmWrite(#9#9'ss');
+                        A_SEGES:
+                          writer.AsmWrite(#9#9'es');
+                        A_SEGFS:
+                          writer.AsmWrite(#9#9'fs');
+                        A_SEGGS:
+                          writer.AsmWrite(#9#9'gs');
+                        else
+                          internalerror(2018020101);
+                      end;
+                    end
                   else
                     writer.AsmWrite(#9#9+prefix+std_op2str[fixed_opcode]+cond2str[taicpu(hp).condition]);
                   if taicpu(hp).ops<>0 then
@@ -1197,6 +1286,10 @@ interface
                            end;
                        end;
                    end;
+{$ifdef OMFOBJSUPPORT}
+                 asd_omf_linnum_line :
+                   writer.AsmWriteLn('; OMF LINNUM Line '+tai_directive(hp).name);
+{$endif OMFOBJSUPPORT}
                  else
                    internalerror(200509191);
                end;

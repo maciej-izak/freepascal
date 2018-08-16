@@ -7,7 +7,7 @@ main=rtl
 
 [target]
 loaders= prt0
-units=$(SYSTEMUNIT) uuchar objpas iso7185 strings \
+units=$(SYSTEMUNIT) si_prc uuchar objpas iso7185 strings \
        ctypes \
        charset cpall \
        sysconst \
@@ -108,7 +108,9 @@ $(PRT0)$(OEXT) : $(CPU_TARGET)/$(PRT0).as
 #
 
 $(SYSTEMUNIT)$(PPUEXT) : $(SYSTEMUNIT).pp $(SYSDEPS)
-        $(COMPILER) -Us -Sg $(SYSTEMUNIT).pp
+        $(COMPILER) $(FPC_SYSTEM_OPT) -Us -Sg @rtl.cfg $(SYSTEMUNIT).pp
+
+si_prc$(PPUEXT): si_prc.pp palmos.inc $(SYSTEMUNIT)$(PPUEXT)
 
 uuchar$(PPUEXT): $(SYSTEMUNIT)$(PPUEXT) $(INC)/uuchar.pp
 

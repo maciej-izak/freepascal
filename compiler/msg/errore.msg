@@ -1,6 +1,6 @@
 #
 #   This file is part of the Free Pascal Compiler
-#   Copyright (c) 1999-2013 by the Free Pascal Development team
+#   Copyright (c) 1999-2018 by the Free Pascal Development team
 #
 #   English (default) Language File for Free Pascal
 #
@@ -53,7 +53,7 @@
 #
 # General
 #
-# 01026 is the last used one
+# 01027 is the last used one
 #
 # BeginOfTeX
 % \section{General compiler messages}
@@ -138,11 +138,15 @@ general_f_oserror=01025_F_Operating system error: $1
 % During compilation an operating system error happened which allows no further compilation.
 general_e_exception_raised=01026_E_Compilation raised exception internally
 % Compilation was aborted, due to an exception generation.
+general_t_unitscope=01027_T_Using unit scope: $1
+% When the \var{-vt} switch is used, this line tells you what unit scopes (namespaces)
+% the compiler is using when looking up units. You can add a unit scope with the
+% \var{-FN} option.
 % \end{description}
 #
 # Scanner
 #
-# 02104 is the last used one
+# 02105 is the last used one
 #
 % \section{Scanner messages.}
 % This section lists the messages that the scanner emits. The scanner takes
@@ -427,11 +431,12 @@ scan_w_setpeosversion_not_support=02103_W_SETPEOSVERSION is not supported by the
 % The \var{\{\$SETPEOSVERSION\}} directive is not supported by the target OS.
 scan_w_setpesubsysversion_not_support=02104_W_SETPESUBSYSVERSION is not supported by the target OS
 % The \var{\{\$SETPESUBSYSVERSION\}} directive is not supported by the target OS.
+scan_n_changecputype=02105_N_Changed CPU type to be consistent with specified controller
 % \end{description}
 #
 # Parser
 #
-# 03346 is the last used one
+# 03348 is the last used one
 #
 % \section{Parser messages}
 % This section lists all parser messages. The parser takes care of the
@@ -837,7 +842,7 @@ parser_f_assembler_reader_not_supported=03127_F_Selected assembler reader not su
 % The selected assembler reader (with \var{\{\$ASMMODE xxx\}} is not
 % supported. The compiler can be compiled with or without support for a
 % particular assembler reader.
-parser_e_proc_dir_conflict=03128_E_Procedure directive "$1" has conflicts with other directives
+parser_e_proc_dir_conflict=03128_E_Procedure directive "$1" cannot be used with $2
 % You specified a procedure directive that conflicts with other directives.
 % For instance \var{cdecl} and \var{pascal} are mutually exclusive.
 parser_e_call_convention_dont_match_forward=03129_E_Calling convention doesn't match forward
@@ -1570,13 +1575,20 @@ parser_e_cannot_use_hardfloat_in_a_softfloat_environment=03345_E_The HardFloat d
 parser_e_invalid_internal_function_index=03346_E_Index $1 is not a valid internal function index
 % The index specified for the \var{compilerproc} directive is not an index that's recognized
 % by the compiler.
+parser_w_operator_overloaded_hidden_3=03347_W_Operator overload hidden by internal operator: "$1" $2 "$3"
+% An operator overload is defined for the specified overload, but the internal overload by the compiler
+% takes precedence. This only happens for operators that had been overloadable before (e.g. dynamic array + dynamic array),
+% but aren't anymore due to an internal operator being defined while this behavior is controllable by a modeswitch
+% (in case of dynamic arrays that is the modeswitch \var{ArrayOperators}).
+parser_e_threadvar_must_be_class=03348_E_Thread variables inside classes or records must be class variables
+% A \var{threadvar} section inside a class or record was started without it being prefixed by \var{class}.
 %
 %
 % \end{description}
 %
 # Type Checking
 #
-# 04123 is the last used one
+# 04124 is the last used one
 #
 % \section{Type checking errors}
 % This section lists all errors that can occur when type checking is
@@ -2009,6 +2021,9 @@ type_w_instance_abstract_class=04122_W_Creating an instance of abstract class "$
 type_e_function_reference_kind=04123_E_Subroutine references cannot be declared as "of object" or "is nested", they can always refer to any kind of subroutine
 % Subroutine references can refer to any kind of subroutine and hence do not
 % require specialisation for methods or nested subroutines.
+type_e_seg_procvardef_wrong_memory_model=04124_E_Procedure variables in that memory model do not store segment information
+type_w_empty_constant_range_set=04125_W_The first value of a set constructur range is greater then the second value, so the range describes an empty set.
+% If a set is constructed like this: \var{s:=[9..7];]}, then an empty set is generated. As this is something normally not desired, the compiler warns about it.
 % \end{description}
 #
 # Symtable
@@ -2477,13 +2492,17 @@ cg_e_function_not_support_by_selected_instruction_set=06056_E_The function used,
 cg_f_max_units_reached=06057_F_Maximum number of units ($1) reached for the current target
 % Depending of target architecture, the number of units is limited. This limit
 % has been reached. A unit counts only if it contains initialization or finalization count.
+cg_n_no_inline=06058_N_Call to subroutine "$1" marked as inline is not inlined
+% The directive inline is only a hint to the compiler. Sometimes the compiler ignores this hint, a subroutine
+% marked as inline is not inlined. In this case, this hint is given. Compiling with \var{-vd} might result in more information why
+% the directive inline is ignored.
 %
 % \end{description}
 # EndOfTeX
 #
 # Assembler reader
 #
-# 07137 is the last used one
+# 07141 is the last used one
 #
 asmr_d_start_reading=07000_DL_Starting $1 styled assembler parsing
 % This informs you that an assembler block is being parsed
@@ -2652,7 +2671,7 @@ asmr_w_32bit_const_for_address=07079_W_32bit constant created for address
 asmr_n_align_is_target_specific=07080_N_.align is target specific, use .balign or .p2align
 % Using the .align directive is platform specific, and its meaning will vary
 % from one platform to another.
-asmr_e_cannot_access_field_directly_for_parameters=07081_E_Can't access fields directly for parameters
+asmr_e_cannot_access_field_directly_for_parameters=07081_E_Cannot directly access fields of pointer-based parameters
 % You should load the parameter first into a register and then access the
 % fields using that register.
 asmr_e_cannot_access_object_field_directly=07082_E_Can't access fields of objects/classes directly
@@ -2819,10 +2838,13 @@ asmr_w_pop_cs_not_portable=07136_W_Instruction "POP CS" is not portable (it only
 % The 'pop cs' instruction doesn't work on any CPU, except 8086 and 8088.
 asmr_e_public_must_be_used_before_label_definition=07137_E_Label $1 can only be declared public before it's defined
 asmr_e_local_label_cannot_be_declared_public=07138_E_Local label $1 cannot be declared public
+asmr_e_multiple_segment_overrides=07139_E_Cannot use multiple segment overrides
+asmr_w_multiple_segment_overrides=07140_W_Multiple segment overrides (only the last one will take effect)
+asmr_w_segment_override_ignored_in_64bit_mode=07141_W_Segment base $1 will be generated, but is ignored by the CPU in 64-bit mode
 #
 # Assembler/binary writers
 #
-# 08032 is the last used one
+# 08033 is the last used one
 #
 asmw_f_too_many_asm_files=08000_F_Too many assembler files
 % With smartlinking enabled, there are too many assembler
@@ -2876,6 +2898,7 @@ asmw_e_32bit_not_supported=08029_E_Asm: 32 Bit references not supported
 asmw_f_code_segment_too_large=08030_F_Code segment too large
 asmw_f_data_segment_too_large=08031_F_Data segment too large
 asmw_e_instruction_not_supported_by_cpu=08032_E_Instruction not supported by the selected instruction set
+asmw_e_brxx_out_of_range=08033_E_Asm: conditional branch destination is out of range
 #
 # Executing linker/assembler
 #
@@ -3130,8 +3153,13 @@ unit_f_ppu_invalid_entry=10016_F_Invalid PPU-File entry: $1
 % newer version of the compiler.
 unit_f_ppu_dbx_count_problem=10017_F_PPU Dbx count problem
 % There is an inconsistency in the debugging information of the unit.
-unit_e_illegal_unit_name=10018_E_Illegal unit name: $1
+unit_e_illegal_unit_name=10018_E_Illegal unit name: $1 (expecting $2)
 % The name of the unit does not match the file name.
+% There might to two reasons: either there is a spelling mistake in the unit name
+% or there is a unit with a 8.3 name where the 8 characters are equal to first 8 characters of
+% the name of a unit with a longer name. However, this unit is not found. Example: Program contains
+% \var{uses mytestunit;}, the unit file or source of mytestunit are not available but there is a source
+% with the name \var{mytestun}. Then compiler tries to compile and use that one, however the expected unit name does not match.
 unit_f_too_much_units=10019_F_Too much units
 % \fpc has a limit of 1024 units in a program. You can change this behavior
 % by changing the \var{maxunits} constant in the \file{fmodule.pas} file of the
@@ -3300,7 +3328,7 @@ cg_f_internal_type_does_not_match=10066_F_Internal type "$1" does not look as ex
 #
 #  Options
 #
-# 11060 is the last used one
+# 11061 is the last used one
 #
 option_usage=11000_O_$1 [options] <inputfile> [options]
 # BeginOfTeX
@@ -3455,6 +3483,7 @@ option_invalid_target_architecture=11059_E_Unsupported target architecture -P$1,
 option_features_only_for_system_unit=11060_E_Feature switches are only supported while compiling the system unit.
 % To selected a certain feature, the system unit must be compiled with this feature enabled. All other units inherited the features set by the
 % system unit through the ppu of the system unit.
+option_debug_info_requires_external_linker=11061_N_The selected debug format is not supported by the internal linker, switching to external linking
 %\end{description}
 # EndOfTeX
 
@@ -3633,7 +3662,7 @@ package_u_ppl_filename=13029_U_PPL filename $1
 #
 option_logo=11023_[
 Free Pascal Compiler version $FPCFULLVERSION [$FPCDATE] for $FPCCPU
-Copyright (c) 1993-2017 by Florian Klaempfl and others
+Copyright (c) 1993-2018 by Florian Klaempfl and others
 ]
 
 #
@@ -3715,9 +3744,11 @@ new features, etc.):
 #  The third character represents the indentation level.
 #
 option_help_pages=11025_[
+# It is also possible to insert comments in that section
 F*0*_Only options valid for the default or selected platform are listed.
 **0*_Put + after a boolean switch option to enable it, - to disable it.
 **1@<x>_Read compiler options from <x> in addition to the default fpc.cfg
+# Assembler related options
 **1a_The compiler does not delete the generated assembler file
 **2a5_Don't generate Big Obj COFF files for GNU Binutils older than 2.25 (Windows, NativeNT)
 **2al_List sourcecode lines in assembler file
@@ -3726,6 +3757,7 @@ F*0*_Only options valid for the default or selected platform are listed.
 *L2ap_Use pipes instead of creating temporary assembler files
 **2ar_List register allocation/release info in assembler file
 **2at_List temp allocation/release info in assembler file
+# Choice of assembler used
 **1A<x>_Output format:
 **2Adefault_Use default assembler
 3*2Aas_Assemble using GNU AS
@@ -3753,7 +3785,7 @@ F*0*_Only options valid for the default or selected platform are listed.
 4*2Apecoff_PE-COFF (Win64) using internal writer
 4*2Aelf_ELF (Linux-64bit) using internal writer
 4*2Ayasm_Assemble using Yasm (experimental)
-4*2Anasm_Assemble  using Nasm (experimental)
+4*2Anasm_Assemble using Nasm (experimental)
 4*2Anasmwin64_Assemble Win64 object file using Nasm (experimental)
 4*2Anasmelf_Assemble Linux-64bit object file using Nasm (experimental)
 4*2Anasmdarwin_Assemble darwin macho64 object file using Nasm (experimental)
@@ -3764,6 +3796,7 @@ F*0*_Only options valid for the default or selected platform are listed.
 A*2Aas_Assemble using GNU AS
 P*2Aas_Assemble using GNU AS
 S*2Aas_Assemble using GNU AS
+# Used only internally by IDE
 **1b_Generate browser info
 **2bl_Generate local symbol info
 **1B_Build all modules
@@ -3837,6 +3870,7 @@ J*2Cv_Var/out parameter copy-out checking
 **2FL<x>_Use <x> as dynamic linker
 **2Fm<x>_Load unicode conversion table from <x>.txt in the compiler dir
 **2FM<x>_Set the directory where to search for unicode binary files
+**2FN<x>_Add <x> to list of default unit scopes (namespaces)
 **2Fo<x>_Add <x> to object path
 **2Fr<x>_Load error message file <x>
 **2FR<x>_Set resource (.res) linker to <x>
@@ -3848,11 +3882,13 @@ J*2Cv_Var/out parameter copy-out checking
 *g2gc_Generate checks for pointers (experimental, only available on some targets, might generate false positive)
 *g2gh_Use heaptrace unit (for memory leak/corruption debugging)
 *g2gl_Use line info unit (show more info with backtraces)
+*g2gm_Generate Microsoft CodeView debug information (experimental)
 *g2go<x>_Set debug information options
 *g3godwarfsets_ Enable DWARF 'set' type debug information (breaks gdb < 6.5)
 *g3gostabsabsincludes_ Store absolute/full include file paths in Stabs
 *g3godwarfmethodclassprefix_ Prefix method names in DWARF with class name
 *g3godwarfcpp_ Simulate C++ debug information in DWARF
+*g3godwarfomflinnum_ Generate line number information in OMF LINNUM records in MS LINK format in addition to the DWARF debug information (Open Watcom Debugger/Linker compatibility)
 *g2gp_Preserve case in stabs symbol names
 *g2gs_Generate Stabs debug information
 *g2gt_Trash local variables (to detect uninitialized uses; multiple 't' changes the trashing value)
@@ -3949,6 +3985,7 @@ F*2P<x>_Set target CPU (aarch64,arm,avr,i386,i8086,jvm,m68k,mips,mipsel,powerpc,
 **2st_Generate script to link on target
 **2sr_Skip register allocation phase (use with -alr)
 **1T<x>_Target operating system:
+# i386 targets
 3*2Tandroid_Android
 3*2Taros_AROS
 3*2Tbeos_BeOS
@@ -3958,7 +3995,7 @@ F*2P<x>_Set target CPU (aarch64,arm,avr,i386,i8086,jvm,m68k,mips,mipsel,powerpc,
 3*2Tfreebsd_FreeBSD
 3*2Tgo32v2_Version 2 of DJ Delorie DOS extender
 3*2Thaiku_Haiku
-3*2Tiphonesim_ iPhoneSimulator from iOS SDK 3.2+ (older versions: -Tdarwin)
+3*2Tiphonesim_iPhoneSimulator from iOS SDK 3.2+ (older versions: -Tdarwin)
 3*2Tlinux_Linux
 3*2Tnativent_Native NT API (experimental)
 3*2Tnetbsd_NetBSD
@@ -3972,54 +4009,79 @@ F*2P<x>_Set target CPU (aarch64,arm,avr,i386,i8086,jvm,m68k,mips,mipsel,powerpc,
 3*2Twdosx_WDOSX DOS extender
 3*2Twin32_Windows 32 Bit
 3*2Twince_Windows CE
+# x86_64 targets
+4*2Taros_AROS
 4*2Tdarwin_Darwin/Mac OS X
+4*2Tdragonfly_DragonFly BSD
+4*2Tembedded_Embedded
 4*2Tfreebsd_FreeBSD
-4*2Tiphonesim_ iPhoneSimulator
+4*2Tiphonesim_iPhoneSimulator
 4*2Tlinux_Linux
 4*2Tnetbsd_NetBSD
 4*2Topenbsd_OpenBSD
 4*2Tsolaris_Solaris
 4*2Twin64_Win64 (64 bit Windows systems)
+# m68k targets
 6*2Tamiga_Commodore Amiga
 6*2Tatari_Atari ST/STe/TT
+6*2Tembedded_Embedded
 6*2Tlinux_Linux
 6*2Tnetbsd_NetBSD
 6*2Tmacos_Mac OS
 6*2Tpalmos_PalmOS
+# i8086 targets
+8*2Tembedded_Embedded
 8*2Tmsdos_MS-DOS (and compatible)
 8*2Twin16_Windows 16 Bit
+# arm targets
 A*2Tandroid_Android
+A*2Taros_AROS
 A*2Tdarwin_Darwin/iPhoneOS/iOS
 A*2Tembedded_Embedded
 A*2Tgba_Game Boy Advance
 A*2Tlinux_Linux
 A*2Tnds_Nintendo DS
+A*2Tnetbsd_NetBSD
+A*2Tpalmos_PalmOS
 A*2Tsymbian_Symbian
 A*2Twince_Windows CE
+# aarch64 targets
 a*2Tdarwin_Darwin/iOS
 a*2Tlinux_Linux
+# jvm targets
 J*2Tandroid_Android
 J*2Tjava_Java
+# mipsel targets
 m*2Tandroid_Android
 m*2Tembedded_Embedded
 m*2Tlinux_Linux
+# mipseb targets
 M*2Tembedded_Embedded
 M*2Tlinux_Linux
+# powerpc targets
 P*2Taix_AIX
 P*2Tamiga_AmigaOS
 P*2Tdarwin_Darwin/Mac OS X
+P*2Tembedded_Embedded
 P*2Tlinux_Linux
 P*2Tmacos_Mac OS (classic)
 P*2Tmorphos_MorphOS
 P*2Tnetbsd_NetBSD
 P*2Twii_Wii
+# powerpc64 targets
 p*2Taix_AIX
 p*2Tdarwin_Darwin/Mac OS X
+p*2Tembedded_Embedded
 p*2Tlinux_Linux
-S*2Tsolaris_Solaris
+# sparc targets
 S*2Tlinux_Linux
+S*2Tsolaris_Solaris
+# sparc64 targets
 s*2Tlinux_Linux
+# not yet ready s*2Tsolaris_Solaris
+# avr targets
 V*2Tembedded_Embedded
+# end of targets section
 **1u<x>_Undefines the symbol <x>
 **1U_Unit options:
 **2Un_Do not check where the unit name matches the file name

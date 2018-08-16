@@ -376,7 +376,7 @@ implementation
            not_a_type:=false;
          { handle unit specification like System.Writeln }
          if allowunitsym then
-           is_unit_specific:=try_consume_unitsym(srsym,srsymtable,t,true,true,is_specialize)
+           is_unit_specific:=try_consume_unitsym(srsym,srsymtable,t,true,true,is_specialize,s)
          else
            begin
              t:=_ID;
@@ -675,7 +675,7 @@ implementation
         oldparse_only: boolean;
         member_blocktype : tblock_type;
         hadgeneric,
-        fields_allowed, is_classdef, classfields: boolean;
+        fields_allowed, is_classdef, classfields, threadvarfields: boolean;
         vdoptions: tvar_dec_options;
       begin
         { empty record declaration ? }
@@ -695,6 +695,7 @@ implementation
         is_classdef:=false;
         hadgeneric:=false;
         classfields:=false;
+        threadvarfields:=false;
         member_blocktype:=bt_general;
         repeat
           case token of
@@ -713,6 +714,22 @@ implementation
                 fields_allowed:=true;
                 member_blocktype:=bt_general;
                 classfields:=is_classdef;
+                threadvarfields:=false;
+                is_classdef:=false;
+              end;
+            _THREADVAR :
+              begin
+                if not is_classdef then
+                  begin
+                    message(parser_e_threadvar_must_be_class);
+                    { for error recovery we enforce class fields }
+                    is_classdef:=true;
+                  end;
+                consume(_THREADVAR);
+                fields_allowed:=true;
+                member_blocktype:=bt_general;
+                classfields:=is_classdef;
+                threadvarfields:=true;
                 is_classdef:=false;
               end;
             _CONST:
@@ -735,6 +752,7 @@ implementation
                        fields_allowed:=true;
                        is_classdef:=false;
                        classfields:=false;
+                       threadvarfields:=false;
                        member_blocktype:=bt_general;
                      end;
                    _PROTECTED :
@@ -746,6 +764,7 @@ implementation
                        fields_allowed:=true;
                        is_classdef:=false;
                        classfields:=false;
+                       threadvarfields:=false;
                        member_blocktype:=bt_general;
                      end;
                    _PUBLIC :
@@ -755,6 +774,7 @@ implementation
                        fields_allowed:=true;
                        is_classdef:=false;
                        classfields:=false;
+                       threadvarfields:=false;
                        member_blocktype:=bt_general;
                      end;
                    _PUBLISHED :
@@ -765,6 +785,7 @@ implementation
                        fields_allowed:=true;
                        is_classdef:=false;
                        classfields:=false;
+                       threadvarfields:=false;
                        member_blocktype:=bt_general;
                      end;
                    _STRICT :
@@ -796,6 +817,7 @@ implementation
                         fields_allowed:=true;
                         is_classdef:=false;
                         classfields:=false;
+                        threadvarfields:=false;
                         member_blocktype:=bt_general;
                      end
                     else
@@ -829,6 +851,8 @@ implementation
                                   include(vdoptions,vd_class);
                                 if not (m_delphi in current_settings.modeswitches) then
                                   include(vdoptions,vd_check_generic);
+                                if threadvarfields then
+                                  include(vdoptions,vd_threadvar);
                                 read_record_fields(vdoptions,nil,nil,hadgeneric);
                               end;
                           end
@@ -857,7 +881,7 @@ implementation
                 { class modifier is only allowed for procedures, functions, }
                 { constructors, destructors, fields and properties          }
                 if (hadgeneric and not (token in [_FUNCTION,_PROCEDURE])) or
-                    (not hadgeneric and (not ((token in [_FUNCTION,_PROCEDURE,_PROPERTY,_VAR,_DESTRUCTOR,_OPERATOR]) or (token=_CONSTRUCTOR)) and
+                    (not hadgeneric and (not ((token in [_FUNCTION,_PROCEDURE,_PROPERTY,_VAR,_DESTRUCTOR,_OPERATOR,_THREADVAR]) or (token=_CONSTRUCTOR)) and
                    not((token=_ID) and (idtoken=_OPERATOR)))) then
                   Message(parser_e_procedure_or_function_expected);
 
@@ -1321,6 +1345,13 @@ implementation
                     end
                   else
                     Message1(parser_e_type_cant_be_used_in_array_index,def.typename);
+                end;
+              { generic parameter? }
+              undefineddef:
+                begin
+                  lowval:=0;
+                  highval:=1;
+                  indexdef:=def;
                 end;
               else
                 Message(sym_e_error_in_type_def);

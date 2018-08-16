@@ -388,7 +388,7 @@ interface
                 end
               else
             {$endif}
-                hlcg.reference_reset_base(location.reference,left.resultdef,left.location.register,0,location.reference.alignment,location.reference.volatility);
+                hlcg.reference_reset_base(location.reference,left.resultdef,left.location.register,0,ctempposinvalid,location.reference.alignment,location.reference.volatility);
             end;
           LOC_REFERENCE,
           LOC_CREFERENCE,
@@ -399,7 +399,7 @@ interface
           LOC_CSUBSETREF:
             begin
               hlcg.reference_reset_base(location.reference,left.resultdef,
-                hlcg.getaddressregister(current_asmdata.CurrAsmList,left.resultdef),0,location.reference.alignment,[]);
+                hlcg.getaddressregister(current_asmdata.CurrAsmList,left.resultdef),0,ctempposinvalid,location.reference.alignment,[]);
               hlcg.a_load_loc_reg(current_asmdata.CurrAsmList,left.resultdef,left.resultdef,left.location,
                 location.reference.base);
               if left.location.loc in [LOC_REFERENCE,LOC_CREFERENCE] then
@@ -548,18 +548,18 @@ interface
       begin
         if tabstractprocdef(resultdef).is_addressonly then
           begin
-            location_reset(location,LOC_REGISTER,def_cgsize(voidcodepointertype));
+            location_reset(location,LOC_REGISTER,def_cgsize(resultdef));
             { only a code pointer? (when taking the address of classtype.method
               we also only get a code pointer even though the resultdef is a
               procedure of object, and hence is_addressonly would return false)
              }
-	    if left.location.size = def_cgsize(voidcodepointertype) then
+	    if left.location.size = def_cgsize(tabstractprocdef(left.resultdef).address_type) then
               begin
                 case left.location.loc of
                   LOC_REFERENCE,LOC_CREFERENCE:
                     begin
                       { the procedure symbol is encoded in reference.symbol -> take address }
-                      location.register:=hlcg.getaddressregister(current_asmdata.CurrAsmList,voidcodepointertype);
+                      location.register:=hlcg.getaddressregister(current_asmdata.CurrAsmList,resultdef);
                       hlcg.a_loadaddr_ref_reg(current_asmdata.CurrAsmList,left.resultdef,resultdef,left.location.reference,location.register);
                     end;
                   else

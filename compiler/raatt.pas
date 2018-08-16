@@ -120,7 +120,7 @@ unit raatt;
       { globals }
       verbose,systems,
       { input }
-      scanner,
+      scanner, pbase,
       { symtable }
       symbase,symtype,symsym,symdef,symtable,
 {$ifdef x86}
@@ -794,7 +794,7 @@ unit raatt;
                  exit;
                end;
 
-             '!' :
+             '!', '~' :
                begin
                  actasmtoken:=AS_NOT;
                  c:=current_scanner.asmgetchar;
@@ -896,7 +896,7 @@ unit raatt;
                  begin
                    if constsize<>sizeof(pint) then
                     Message(asmr_w_32bit_const_for_address);
-                   ConcatConstSymbol(curlist,asmsym,asmsymtyp,value)
+                   ConcatConstSymbol(curlist,asmsym,asmsymtyp,value,constsize,true)
                  end
                 else
                  ConcatConstant(curlist,value,constsize);
@@ -1049,6 +1049,11 @@ unit raatt;
           _asmsorted:=TRUE;
         end;
        curlist:=TAsmList.Create;
+
+       { we might need to know which parameters are passed in registers }
+       if not parse_generic then
+         current_procinfo.generate_parameter_info;
+
        lasTSec:=sec_code;
        { start tokenizer }
        gettoken;
@@ -1718,7 +1723,12 @@ unit raatt;
         else
          begin
            oper.opr.typ:=OPR_CONSTANT;
-           oper.opr.val:=l;
+           { cast properly to avoid a range check error }
+{$if defined(AVR) or defined(i8086)}
+           oper.opr.val:=longint(l);
+{$else}
+           oper.opr.val:=aint(l);
+{$endif}
          end;
       end;
 

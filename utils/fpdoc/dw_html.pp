@@ -962,19 +962,25 @@ function THTMLWriter.ResolveLinkID(const Name: String; Level : Integer = 0): DOM
 var
   i: Integer;
   ThisPackage: TLinkNode;
+  s:String;
 begin
   Result:=Engine.ResolveLink(Module,Name, True);
+  // engine can return backslashes on Windows
   if Length(Result) > 0 then
-    if Copy(Result, 1, Length(CurDirectory) + 1) = CurDirectory + '/' then
+   begin
+     s:=Copy(Result, 1, Length(CurDirectory) + 1);
+    if (S= CurDirectory + '/') or (s= CurDirectory + '\') then
       Result := Copy(Result, Length(CurDirectory) + 2, Length(Result))
     else if not IsLinkAbsolute(Result) then
       Result := BaseDirectory + Result;
+   end;
 end;
 
 function THTMLWriter.ResolveLinkWithinPackage(AElement: TPasElement;
   ASubpageIndex: Integer): String;
 var
   ParentEl: TPasElement;
+  s : String;
 begin
   ParentEl := AElement;
   while Assigned(ParentEl) and not (ParentEl.ClassType = TPasPackage) do
@@ -982,7 +988,9 @@ begin
   if Assigned(ParentEl) and (TPasPackage(ParentEl) = Engine.Package) then
   begin
     Result := Allocator.GetFilename(AElement, ASubpageIndex);
-    if Copy(Result, 1, Length(CurDirectory) + 1) = CurDirectory + '/' then
+    // engine/allocator can return backslashes on Windows
+    s:=Copy(Result, 1, Length(CurDirectory) + 1);
+    if (S= CurDirectory + '/') or (s= CurDirectory + '\') then
       Result := Copy(Result, Length(CurDirectory) + 2, Length(Result))
     else
       Result := BaseDirectory + Result;
@@ -3169,6 +3177,7 @@ var
 
 begin
   isRecord:=AParent is TPasRecordType;
+  CodeEl:=nil;
   if Members.Count > 0 then
     begin
     wt:=False;
@@ -3290,12 +3299,15 @@ begin
     end;
     CodeEl := CreateCode(CreatePara(CreateTD(CreateTR(TableEl))));
   end;
-  AppendText(CodeEl, ' '); // !!!: Dirty trick, necessary for current XML writer
-  If AddEnd then
-    begin
-    AppendKw(CodeEl, 'end');
-    AppendSym(CodeEl, ';');
-    end;
+  if assigned(CodeEl) Then
+     begin
+        AppendText(CodeEl, ' '); // !!!: Dirty trick, necessary for current XML writer
+        If AddEnd then
+          begin
+          AppendKw(CodeEl, 'end');
+          AppendSym(CodeEl, ';');
+          end;
+     end;
 end;
 
 procedure THTMLWriter.CreateClassPageBody(AClass: TPasClassType;
@@ -3383,32 +3395,21 @@ var
       AppendGenericTypes(CodeEl,AClass.GenericTemplateTypes,false);
     AppendSym(CodeEl, '=');
     AppendText(CodeEl, ' ');
-    if AClass.ObjKind<>okSpecialize then
-      AppendKw(CodeEl, ObjKindNames[AClass.ObjKind])
-    else
-      AppendKw(CodeEl, ' specialize ');
+    AppendKw(CodeEl, ObjKindNames[AClass.ObjKind]);
 
     if Assigned(AClass.AncestorType) then
     begin
-      if AClass.ObjKind=okSpecialize then
+      AppendSym(CodeEl, '(');
+      AppendHyperlink(CodeEl, AClass.AncestorType);
+      if AClass.Interfaces.count>0 Then
         begin
-        AppendHyperlink(CodeEl, AClass.AncestorType);
-        AppendGenericTypes(CodeEl,AClass.GenericTemplateTypes,true)
-        end
-      else
-        begin
-        AppendSym(CodeEl, '(');
-        AppendHyperlink(CodeEl, AClass.AncestorType);
-        if AClass.Interfaces.count>0 Then
-          begin
-            for i:=0 to AClass.interfaces.count-1 do
-             begin
-               AppendSym(CodeEl, ', ');
-               AppendHyperlink(CodeEl,TPasClassType(AClass.Interfaces[i]));
-             end;
-          end;
-        AppendSym(CodeEl, ')');
+          for i:=0 to AClass.interfaces.count-1 do
+           begin
+             AppendSym(CodeEl, ', ');
+             AppendHyperlink(CodeEl,TPasClassType(AClass.Interfaces[i]));
+           end;
         end;
+      AppendSym(CodeEl, ')');
     end;
     CreateMemberDeclarations(AClass, AClass.Members,TableEl, not AClass.IsShortDefinition);
 

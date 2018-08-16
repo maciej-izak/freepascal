@@ -51,13 +51,17 @@ unit optloop;
 
     function number_unrolls(node : tnode) : cardinal;
       begin
+        { calculate how often a loop shall be unrolled.
+
+          The term (60*ord(node_count_weighted(node)<15)) is used to get small loops  unrolled more often as
+          the counter management takes more time in this case. }
 {$ifdef i386}
         { multiply by 2 for CPUs with a long pipeline }
         if current_settings.optimizecputype in [cpu_Pentium4] then
-          number_unrolls:=60 div node_count(node)
+          number_unrolls:=trunc(round((60+(60*ord(node_count_weighted(node)<15)))/max(node_count_weighted(node),1)))
         else
 {$endif i386}
-          number_unrolls:=30 div node_count(node);
+          number_unrolls:=trunc(round((30+(60*ord(node_count_weighted(node)<15)))/max(node_count_weighted(node),1)));
 
         if number_unrolls=0 then
           number_unrolls:=1;
@@ -70,9 +74,9 @@ unit optloop;
       end;
       preplaceinfo = ^treplaceinfo;
 
-    function checkbreakcontinue(var n:tnode; arg: pointer): foreachnoderesult;
+    function checkcontrollflowstatements(var n:tnode; arg: pointer): foreachnoderesult;
       begin
-        if n.nodetype in [breakn,continuen] then
+        if n.nodetype in [breakn,continuen,goton,labeln,exitn,raisen] then
           result:=fen_norecurse_true
         else
           result:=fen_false;
@@ -101,7 +105,7 @@ unit optloop;
         unrollblock : tblocknode;
         getridoffor : boolean;
         replaceinfo : treplaceinfo;
-        usesbreakcontinue : boolean;
+        hascontrollflowstatements : boolean;
       begin
         result:=nil;
         if (cs_opt_size in current_settings.optimizerswitches) then
@@ -109,7 +113,14 @@ unit optloop;
         if not(node.nodetype in [forn]) then
           exit;
         unrolls:=number_unrolls(tfornode(node).t2);
-        if unrolls>1 then
+        if (unrolls>1) and
+          ((tfornode(node).left.nodetype<>loadn) or
+           { the address of the counter variable might be taken if it is passed by constref to a
+             subroutine, so really check if it is not taken }
+           ((tfornode(node).left.nodetype=loadn) and (tloadnode(tfornode(node).left).symtableentry is tabstractvarsym) and
+            not(tabstractvarsym(tloadnode(tfornode(node).left).symtableentry).addr_taken) and
+            not(tabstractvarsym(tloadnode(tfornode(node).left).symtableentry).different_scope))
+           ) then
           begin
             { number of executions known? }
             if (tfornode(node).right.nodetype=ordconstn) and (tfornode(node).t1.nodetype=ordconstn) then
@@ -119,21 +130,21 @@ unit optloop;
                 else
                   counts:=tordconstnode(tfornode(node).t1).value-tordconstnode(tfornode(node).right).value+1;
 
-                usesbreakcontinue:=foreachnodestatic(tfornode(node).t2,@checkbreakcontinue,nil);
+                hascontrollflowstatements:=foreachnodestatic(tfornode(node).t2,@checkcontrollflowstatements,nil);
 
                 { don't unroll more than we need,
 
                   multiply unroll by two here because we can get rid
                   of the counter variable completely and replace it by a constant
                   if unrolls=counts }
-                if unrolls*2>counts then
+                if unrolls*2>=counts then
                   unrolls:=counts;
 
                 { create block statement }
                 unrollblock:=internalstatements(unrollstatement);
 
                 { can we get rid completly of the for ? }
-                getridoffor:=(unrolls=counts) and not(usesbreakcontinue) and
+                getridoffor:=(unrolls=counts) and not(hascontrollflowstatements) and
                   { TP/Macpas allows assignments to the for-variables, so we cannot get rid of the for }
                   ([m_tp7,m_mac]*current_settings.modeswitches=[]);
 
@@ -141,7 +152,11 @@ unit optloop;
                   begin
                     replaceinfo.node:=tfornode(node).left;
                     replaceinfo.value:=tordconstnode(tfornode(node).right).value;
-                  end;
+                  end
+                else
+                  { we consider currently unrolling not beneficial, if we cannot get rid of the for completely, this
+                    might change if a more sophisticated heuristics is used (FK) }
+                  exit;
 
                 { let's unroll (and rock of course) }
                 for i:=1 to unrolls do

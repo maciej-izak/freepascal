@@ -1095,7 +1095,7 @@ implementation
             in_writeln_x:
               name:='fpc_writeln_end';
           end;
-          addstatement(Tstatementnode(newstatement),ccallnode.createintern(name,filepara));
+          addstatement(Tstatementnode(newstatement),ccallnode.createintern(name,filepara.getcopy));
         end;
       handle_text_read_write:=found_error;
     end;
@@ -1206,8 +1206,6 @@ implementation
           para := nextpara;
         end;
 
-      { free the file parameter }
-      filepara.free;
       handle_typed_read_write:=found_error;
     end;
 
@@ -1423,9 +1421,20 @@ implementation
         else
           found_error:=handle_text_read_write(filepara,Ttertiarynode(params),tnode(newstatement));
 
+        { free the file parameter (it's copied inside the handle_*_read_write methods) }
+        filepara.free;
+
         { if we found an error, simply delete the generated blocknode }
         if found_error then
-          newblock.free
+          begin
+            { ensure that the tempinfo is freed correctly by destroying a
+              delete node for it
+              Note: this might happen legitimately whe parsing a generic that
+                    passes a undefined type to Write/Read }
+            if assigned(filetemp) then
+              ctempdeletenode.create(filetemp).free;
+            newblock.free
+          end
         else
           begin
             { deallocate the temp for the file para if we used one }
@@ -1730,7 +1739,7 @@ implementation
         { last param must be var }
         destppn:=ppn.left;
         valid_for_var(destppn,true);
-        set_varstate(destppn,vs_written,[]);
+        set_varstate(destppn,vs_written,[vsf_must_be_valid]);
         { first param must be a string or dynamic array ...}
         isarray:=is_dynamic_array(destppn.resultdef);
         if not((destppn.resultdef.typ=stringdef) or
@@ -3161,7 +3170,7 @@ implementation
                            else
                              begin
                                hp:=self;
-                               if isunaryoverloaded(hp) then
+                               if isunaryoverloaded(hp,[]) then
                                  begin
                                    { inc(rec) and dec(rec) assigns result value to argument }
                                    result:=cassignmentnode.create(tcallparanode(left).left.getcopy,hp);
@@ -4725,7 +4734,10 @@ implementation
                begin
                  datatemp:=ctempcreatenode.create_value(first,first.size,tt_normal,false,firstn);
                  addstatement(insertstatement,datatemp);
-                 datan:=caddrnode.create_internal(cvecnode.create(ctemprefnode.create(datatemp),cordconstnode.create(0,sizesinttype,false)));
+                 if is_dynamic_array(first) then
+                   datan:=ctypeconvnode.create_internal(ctemprefnode.create(datatemp),voidpointertype)
+                 else
+                   datan:=caddrnode.create_internal(cvecnode.create(ctemprefnode.create(datatemp),cordconstnode.create(0,sizesinttype,false)));
                  datacountn:=cinlinenode.create(in_length_x,false,ctemprefnode.create(datatemp));
                end
              else if isconstr then
@@ -4733,7 +4745,7 @@ implementation
                  inserttypeconv(firstn,second);
                  datatemp:=ctempcreatenode.create_value(second,second.size,tt_normal,false,firstn);
                  addstatement(insertstatement,datatemp);
-                 datan:=caddrnode.create_internal(cvecnode.create(ctemprefnode.create(datatemp),cordconstnode.create(0,sizesinttype,false)));
+                 datan:=ctypeconvnode.create_internal(ctemprefnode.create(datatemp),voidpointertype);
                  datacountn:=cinlinenode.create(in_length_x,false,ctemprefnode.create(datatemp));
                end
              else

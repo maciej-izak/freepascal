@@ -128,6 +128,25 @@ implementation
         Declaring it as string here results in an error when compiling (PFV) }
       current_procinfo = 'error';
 
+    { get_first_proc_str - returns the token string of the first option that
+      appears in the list }
+    function get_first_proc_str(Options: TProcOptions): ShortString;
+      var
+        X: TProcOption;
+      begin
+        if Options = [] then
+          InternalError(2018051700);
+
+        get_first_proc_str := '';
+
+        for X := Low(TProcOption) to High(TProcOption) do
+          if X in Options then
+            begin
+              get_first_proc_str := ProcOptionKeywords[X];
+              Exit;
+            end;
+      end;
+
     function push_child_hierarchy(obj:tabstractrecorddef):integer;
       var
         _class,hp : tobjectdef;
@@ -410,7 +429,7 @@ implementation
                 consume(_ARRAY);
                 consume(_OF);
                 { define range and type of range }
-                hdef:=carraydef.create(0,-1,sizesinttype);
+                hdef:=carraydef.create_openarray;
                 { array of const ? }
                 if (token=_CONST) and (m_objpas in current_settings.modeswitches) then
                  begin
@@ -564,7 +583,6 @@ implementation
         index : longint;
         hadspecialize,
         firstpart,
-        freegenericparams,
         found,
         searchagain : boolean;
         st,
@@ -652,7 +670,7 @@ implementation
           begin
             lasttoken:=token;
             lastidtoken:=idtoken;
-            if assigned(genericparams) and freegenericparams then
+            if assigned(genericparams) then
               for i:=0 to genericparams.count-1 do
                 begin
                   sym:=ttypesym(genericparams[i]);
@@ -854,7 +872,6 @@ implementation
         aprocsym:=nil;
         srsym:=nil;
         genericparams:=nil;
-        freegenericparams:=true;
         hadspecialize:=false;
 
         if not assigned(genericdef) then
@@ -1106,8 +1123,10 @@ implementation
                  tstoreddef(ttypesym(genericparams[i]).typedef).register_def;
               end;
             insert_generic_parameter_types(pd,nil,genericparams);
+            { the list is no longer required }
+            genericparams.free;
+            genericparams:=nil;
             symtablestack.pop(pd.parast);
-            freegenericparams:=false;
             parse_generic:=true;
             { also generate a dummy symbol if none exists already }
             if assigned(astruct) then
@@ -1132,9 +1151,8 @@ implementation
             { start token recorder for the declaration }
             pd.init_genericdecl;
             current_scanner.startrecordtokens(pd.genericdecltokenbuf);
-          end;
-
-        if assigned(genericdef) and not assigned(genericparams) then
+          end
+        else if assigned(genericdef) then
           insert_generic_parameter_types(pd,tstoreddef(genericdef),generictypelist);
 
         { methods inherit df_generic or df_specialization from the objectdef }
@@ -1682,6 +1700,9 @@ implementation
 
             { add definition to procsym }
             proc_add_definition(result);
+
+            if result.is_generic then
+              astruct.symtable.includeoption(sto_has_generic);
           end;
 
         maybe_parse_hint_directives(result);
@@ -1919,7 +1940,7 @@ begin
   if (not assigned(pd.owner.defowner) or
       not is_java_class_or_interface(tdef(pd.owner.defowner))) and
      (po_external in pd.procoptions) then
-    Message1(parser_e_proc_dir_conflict,'EXTERNAL');
+    Message2(parser_e_proc_dir_conflict,'EXTERNAL','"VIRTUAL"');
 
   if pd.typ<>procdef then
     internalerror(2003042610);
@@ -2004,7 +2025,7 @@ begin
           not is_objc_class_or_protocol(tprocdef(pd).struct) and
           not is_cppclass(tprocdef(pd).struct) and
           not is_java_class_or_interface(tprocdef(pd).struct) then
-    Message1(parser_e_proc_dir_conflict,'OVERRIDE');
+    Message2(parser_e_proc_dir_conflict,'OVERRIDE','"EXTERNAL"');
 end;
 
 procedure pd_overload(pd:tabstractprocdef);
@@ -2036,7 +2057,7 @@ begin
   if not is_objc_class_or_protocol(tprocdef(pd).struct) then
     begin
       if po_external in pd.procoptions then
-        Message1(parser_e_proc_dir_conflict,'MESSAGE');
+        Message2(parser_e_proc_dir_conflict,'MESSAGE','"EXTERNAL"');
       paracnt:=0;
       pd.parast.SymList.ForEachCall(@check_msg_para,@paracnt);
       if paracnt<>1 then
@@ -2382,7 +2403,7 @@ type
    end;
 const
   {Should contain the number of procedure directives we support.}
-  num_proc_directives=50;
+  num_proc_directives=51;
   proc_direcdata:array[1..num_proc_directives] of proc_dir_rec=
    (
     (
@@ -2849,6 +2870,15 @@ const
       mutexclpocall : [];
       mutexclpotype : [potype_constructor,potype_destructor,potype_class_constructor,potype_class_destructor];
       mutexclpo     : [po_interrupt]
+    ),(
+      idtok:_VECTORCALL;
+      pd_flags : [pd_interface,pd_implemen,pd_body,pd_procvar];
+      handler  : nil;
+      pocall   : pocall_vectorcall;
+      pooption : [];
+      mutexclpocall : [];
+      mutexclpotype : [potype_constructor,potype_destructor,potype_class_constructor,potype_class_destructor];
+      mutexclpo     : [po_interrupt]
     )
    );
 
@@ -2871,18 +2901,29 @@ const
       end;
 
 
+    function find_proc_directive_index(tok: ttoken): longint; inline;
+      begin
+        result:=-1;
+        for result:=1 to num_proc_directives do
+          if proc_direcdata[result].idtok=tok then
+            exit;
+        result:=-1;
+      end;
+
+
     function parse_proc_direc(pd:tabstractprocdef;var pdflags:tpdflags):boolean;
       {
         Parse the procedure directive, returns true if a correct directive is found
       }
       var
         p     : longint;
-        found : boolean;
-        name  : TIDString;
+        name,
+        other : TIDString;
+        po_comp : tprocoptions;
+        tokenloc : TFilePosInfo;
       begin
         parse_proc_direc:=false;
         name:=tokeninfo^[idtoken].str;
-        found:=false;
 
       { Hint directive? Then exit immediatly }
         if (m_hintdirective in current_settings.modeswitches) then
@@ -2899,7 +2940,6 @@ const
                    { could the new token still be a directive? }
                    if token<>_ID then
                      exit;
-                   name:=tokeninfo^[idtoken].str;
                  end
                else
                  exit;
@@ -2913,15 +2953,10 @@ const
           exit;
 
       { retrieve data for directive if found }
-        for p:=1 to num_proc_directives do
-         if proc_direcdata[p].idtok=idtoken then
-          begin
-            found:=true;
-            break;
-          end;
+      p:=find_proc_directive_index(idtoken);
 
       { Check if the procedure directive is known }
-        if not found then
+        if p=-1 then
          begin
             { parsing a procvar type the name can be any
               next variable !! }
@@ -2955,28 +2990,46 @@ const
            is_javainterface(tdef(symtablestack.top.defowner)) then
           exit;
 
-        { Conflicts between directives ? }
-        if (pd.proctypeoption in proc_direcdata[p].mutexclpotype) or
-           (pd.proccalloption in proc_direcdata[p].mutexclpocall) or
-           ((pd.procoptions*proc_direcdata[p].mutexclpo)<>[]) then
-         begin
-           Message1(parser_e_proc_dir_conflict,name);
-           exit;
-         end;
+        { Keep track of the token's position in the file so it's correctly indicated if an error occurs. }
+        tokenloc := current_tokenpos;
+
+        { consume directive, and turn flag on }
+        consume(token);
+        parse_proc_direc:=true;
+
+        { Conflicts between directives? }
+        if (pd.proctypeoption in proc_direcdata[p].mutexclpotype) then
+          begin
+            MessagePos2(tokenloc, parser_e_proc_dir_conflict,name,ProcTypeOptionKeywords[pd.proctypeoption]);
+            exit;
+          end;
+
+        if (pd.proccalloption in proc_direcdata[p].mutexclpocall) then
+          begin
+            MessagePos2(tokenloc, parser_e_proc_dir_conflict,name,'"' + UpCase(proccalloptionStr[pd.proccalloption]) + '"');
+            exit;
+          end;
+
+        po_comp := (pd.procoptions*proc_direcdata[p].mutexclpo);
+        if (po_comp<>[]) then
+          begin
+            MessagePos2(tokenloc, parser_e_proc_dir_conflict,name,get_first_proc_str(po_comp));
+            exit;
+          end;
 
         { set calling convention }
         if proc_direcdata[p].pocall<>pocall_none then
          begin
            if (po_hascallingconvention in pd.procoptions) then
             begin
-              Message2(parser_w_proc_overriding_calling,
+              MessagePos2(tokenloc, parser_w_proc_overriding_calling,
                 proccalloptionStr[pd.proccalloption],
                 proccalloptionStr[proc_direcdata[p].pocall]);
             end;
            { check if the target processor supports this calling convention }
            if not(proc_direcdata[p].pocall in supported_calling_conventions) then
              begin
-               Message1(parser_e_illegal_calling_convention,proccalloptionStr[proc_direcdata[p].pocall]);
+               MessagePos1(tokenloc, parser_e_illegal_calling_convention,proccalloptionStr[proc_direcdata[p].pocall]);
                { recover }
                proc_direcdata[p].pocall:=pocall_stdcall;
              end;
@@ -3019,29 +3072,26 @@ const
            { check if method and directive not for record/class helper }
            if is_objectpascal_helper(tprocdef(pd).struct) and
              (pd_nothelper in proc_direcdata[p].pd_flags) then
+             exit;
          end;
-
-        { consume directive, and turn flag on }
-        consume(token);
-        parse_proc_direc:=true;
 
         { Check the pd_flags if the directive should be allowed }
         if (pd_interface in pdflags) and
            not(pd_interface in proc_direcdata[p].pd_flags) then
           begin
-            Message1(parser_e_proc_dir_not_allowed_in_interface,name);
+            MessagePos1(tokenloc, parser_e_proc_dir_not_allowed_in_interface,name);
             exit;
           end;
         if (pd_implemen in pdflags) and
            not(pd_implemen in proc_direcdata[p].pd_flags) then
           begin
-            Message1(parser_e_proc_dir_not_allowed_in_implementation,name);
+            MessagePos1(tokenloc, parser_e_proc_dir_not_allowed_in_implementation,name);
             exit;
           end;
         if (pd_procvar in pdflags) and
            not(pd_procvar in proc_direcdata[p].pd_flags) then
           begin
-            Message1(parser_e_proc_dir_not_allowed_in_procvar,name);
+            MessagePos1(tokenloc, parser_e_proc_dir_not_allowed_in_procvar,name);
             exit;
           end;
 
@@ -3513,6 +3563,7 @@ const
         fwparacnt,
         curridx,
         fwidx,
+        virtualdirinfo,
         i       : longint;
         po_comp : tprocoptions;
         paracompopt: tcompare_paras_options;
@@ -3520,6 +3571,7 @@ const
         symentry: TSymEntry;
         item : tlinkedlistitem;
       begin
+        virtualdirinfo:=-1;
         forwardfound:=false;
 
         { check overloaded functions if the same function already exists }
@@ -3697,7 +3749,22 @@ const
                    if (po_external in fwpd.procoptions) then
                      MessagePos(currpd.fileinfo,parser_e_proc_already_external);
 
-                   { Check parameters }
+                   { check for conflicts with "virtual" if this is a virtual
+                     method, as "virtual" cannot be repeated in the
+                     implementation and hence does not get checked against }
+                   if (po_virtualmethod in fwpd.procoptions) then
+                     begin
+                       if virtualdirinfo=-1 then
+                         begin
+                           virtualdirinfo:=find_proc_directive_index(_VIRTUAL);
+                           if virtualdirinfo=-1 then
+                             internalerror(2018010101);
+                         end;
+                       po_comp := (proc_direcdata[virtualdirinfo].mutexclpo * currpd.procoptions);
+                       if po_comp<>[] then
+                         MessagePos2(currpd.fileinfo,parser_e_proc_dir_conflict,tokeninfo^[_VIRTUAL].str,get_first_proc_str(po_comp));
+                     end;
+                    { Check parameters }
                    if (m_repeat_forward in current_settings.modeswitches) or
                       (currpd.minparacount>0) then
                     begin

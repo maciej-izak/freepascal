@@ -121,6 +121,9 @@ interface
           function docompare(p: tnode) : boolean; override;
           procedure changestringtype(def:tdef);
           function fullcompare(p: tstringconstnode): longint;
+          { returns whether this platform uses the nil pointer to represent
+            empty dynamic strings }
+          class function emptydynstrnil: boolean; virtual;
        end;
        tstringconstnodeclass = class of tstringconstnode;
 
@@ -231,6 +234,7 @@ implementation
         stringVal: string;
         pWideStringVal: pcompilerwidestring;
       begin
+        stringVal:='';
         if is_constcharnode(p) then
           begin
             SetLength(stringVal,1);
@@ -337,6 +341,21 @@ implementation
             internalerror(2008022401);
          inherited create(realconstn);
          typedef:=def;
+         case tfloatdef(def).floattype of
+           s32real:
+             v:=single(v);
+           s64real:
+             v:=double(v);
+           s80real,
+           sc80real,
+           s64comp,
+           s64currency:
+             v:=extended(v);
+           s128real:
+             internalerror(2013102701);
+           else
+             internalerror(2013102702);
+         end;
          value_real:=v;
          value_currency:=v;
          lab_real:=nil;
@@ -1011,6 +1030,11 @@ implementation
           result:=comparewidestrings(pcompilerwidestring(value_str),pcompilerwidestring(p.value_str))
         else
           result:=compareansistrings(value_str,p.value_str,len,p.len);
+      end;
+
+    class function tstringconstnode.emptydynstrnil: boolean;
+      begin
+        result:=true;
       end;
 
 {*****************************************************************************

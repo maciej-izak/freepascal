@@ -332,32 +332,6 @@ begin
   Opsize:=S_NO;
 end;
 
-
-const
-{$ifdef x86_64}
-  topsize2memsize: array[topsize] of integer =
-    (0, 8,16,32,64,8,8,16,8,16,32,
-     16,32,64,
-     16,32,64,0,0,
-     64,
-     0,0,0,
-     80,
-     128,
-     256
-    );
-{$else}
-topsize2memsize: array[topsize] of integer =
-  (0, 8,16,32,64,8,8,16,
-   16,32,64,
-   16,32,64,0,0,
-   64,
-   0,0,0,
-   80,
-   128,
-   256
-  );
-{$endif}
-
 procedure Tx86Instruction.AddReferenceSizes;
 { this will add the sizes for references like [esi] which do not
   have the size set yet, it will take only the size if the other
@@ -1266,8 +1240,11 @@ begin
           ai.loadsymbol(i-1,operands[i].opr.symbol,operands[i].opr.symofs);
        OPR_LOCAL :
          with operands[i].opr do
-           ai.loadlocal(i-1,localsym,localsymofs,localindexreg,
-                        localscale,localgetoffset,localforceref);
+           begin
+             ai.loadlocal(i-1,localsym,localsymofs,localindexreg,
+                          localscale,localgetoffset,localforceref);
+             ai.oper[i-1]^.localoper^.localsegment:=localsegment;
+           end;
        OPR_REFERENCE:
          begin
            if (opcode<>A_XLAT) and not is_x86_string_op(opcode) then

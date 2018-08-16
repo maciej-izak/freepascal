@@ -56,13 +56,15 @@ interface
          maxCrecordalign : longint;
        end;
 
-       tasmflags = (af_none,
-         af_outputbinary,
-         af_needar,af_smartlink_sections,
-         af_labelprefix_only_inside_procedure,
-         af_supports_dwarf,
-         af_no_debug,
-         af_stabs_use_function_absolute_addresses
+       tasmflags = (af_none
+         ,af_outputbinary
+         ,af_needar
+         ,af_smartlink_sections
+         ,af_labelprefix_only_inside_procedure
+         ,af_supports_dwarf
+         ,af_no_debug
+         ,af_stabs_use_function_absolute_addresses
+         ,af_no_stabs
        );
 
        pasminfo = ^tasminfo;
@@ -237,7 +239,8 @@ interface
        systems_netbsd  = [system_i386_netbsd,
                           system_m68k_netbsd,
                           system_powerpc_netbsd,
-                          system_x86_64_netbsd];
+                          system_x86_64_netbsd,
+                          system_arm_netbsd];
        systems_openbsd = [system_i386_openbsd,
                           system_x86_64_openbsd];
 
@@ -334,7 +337,7 @@ interface
        systems_weak_linking = systems_darwin + systems_solaris + systems_linux + systems_android;
 
        systems_internal_sysinit = [system_i386_win32,system_x86_64_win64,
-                                   system_i386_linux,system_powerpc64_linux,system_sparc64_linux,
+                                   system_i386_linux,system_powerpc64_linux,system_sparc64_linux,system_x86_64_linux,
                                    system_m68k_atari,system_m68k_palmos
                                   ]+systems_darwin+systems_amigalike;
 
@@ -470,7 +473,7 @@ function GetOSRelDate:Longint;
   both old 3.0.X definition and new definition using pcint type.
   Problem solved using a special type called
   FPSysCtlFirstArgType. }
-{$ifdef VER3_0}
+{$if defined(VER3_0_0) or defined(VER3_0_2)}  
 type
   FPSysCtlFirstArgType = PChar;
 {$else}
@@ -971,6 +974,10 @@ begin
     {$ifdef linux}
       {$define default_target_set}
       default_target(system_arm_linux);
+    {$endif}
+    {$ifdef netbsd}
+      {$define default_target_set}
+      default_target(system_arm_netbsd);
     {$endif}
     {$ifdef android}
       {$define default_target_set}

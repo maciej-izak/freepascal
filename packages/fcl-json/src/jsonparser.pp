@@ -67,10 +67,14 @@ procedure DefJSONParserHandler(AStream: TStream; const AUseUTF8: Boolean; out
 
 Var
   P : TJSONParser;
+  AOptions: TJSONOptions;
 
 begin
   Data:=Nil;
-  P:=TJSONParser.Create(AStream,[joUTF8]);
+  AOptions:=[];
+  if AUseUTF8 then
+    Include(AOptions,joUTF8);
+  P:=TJSONParser.Create(AStream,AOptions);
   try
     Data:=P.Parse;
   finally
@@ -120,12 +124,12 @@ begin
   if (FStruct is TJSONObject) and (FKey='') then
     FKey:=Akey
   else
-    DoError('Duplicatekey or no object')
+    DoError('Duplicatekey or no object');
 end;
 
 procedure TJSONParser.StringValue(const AValue: TJSONStringType);
 begin
-  NewValue(CreateJSON(AValue))
+  NewValue(CreateJSON(AValue));
 end;
 
 procedure TJSONParser.NullValue;
@@ -146,6 +150,7 @@ end;
 procedure TJSONParser.NumberValue(const AValue: TJSONStringType);
 begin
   // Do nothing
+  if AValue='' then ;
 end;
 
 procedure TJSONParser.IntegerValue(const AValue: integer);

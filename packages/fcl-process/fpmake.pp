@@ -25,7 +25,7 @@ begin
     P.Description := 'Process (execution) related parts of Free Component Libraries (FCL), FPC''s OOP library.';
     P.Options.Add('-S2h');
     P.NeedLibC:= false;
-    P.OSes:=AllOSes-[embedded,msdos,win16,go32v2,nativent,macos,palmos];
+    P.OSes:=AllOSes-[embedded,msdos,win16,go32v2,nativent,macos,palmos,atari];
 
     P.SourcePath.Add('src');
     P.IncludePath.Add('src/unix',AllUnixOSes);
@@ -58,6 +58,9 @@ begin
       T.ResourceStrings:=True;
     T:=P.Targets.AddUnit('dbugintf.pp');
       T.ResourceStrings:=True;
+    P.ExamplePath.Add('examples');
+      T:=P.Targets.AddExampleProgram('ipcclient.pp');
+      T:=P.Targets.AddExampleProgram('ipcserver.pp');
 
 {$ifndef ALLPACKAGES}
     Run;

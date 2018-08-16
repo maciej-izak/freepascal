@@ -69,6 +69,8 @@ interface
     function reverse_byte(b: byte): byte;
     {# Return @var(w) with the bit order reversed }
     function reverse_word(w: word): word;
+    {# Return @var(l) with the bit order reversed }
+    function reverse_longword(l: longword): longword;
 
     function next_prime(l: longint): longint;
 
@@ -291,6 +293,21 @@ implementation
         TWordRec(reverse_word).hi := reverse_byte(TWordRec(w).lo);
         TWordRec(reverse_word).lo := reverse_byte(TWordRec(w).hi);
       end;
+
+
+    function reverse_longword(l: longword): longword;
+      type
+        TLongWordRec = packed record
+          b: array[0..3] of Byte;
+        end;
+
+      begin
+        TLongWordRec(reverse_longword).b[0] := reverse_byte(TLongWordRec(l).b[3]);
+        TLongWordRec(reverse_longword).b[1] := reverse_byte(TLongWordRec(l).b[2]);
+        TLongWordRec(reverse_longword).b[2] := reverse_byte(TLongWordRec(l).b[1]);
+        TLongWordRec(reverse_longword).b[3] := reverse_byte(TLongWordRec(l).b[0]);
+      end;
+
 
     function align(i,a:longint):longint;{$ifdef USEINLINE}inline;{$endif}
     {
@@ -620,6 +637,7 @@ implementation
       var
         i  : longint;
       begin
+        Result:='';
         setlength(upper,length(s));
         for i:=1 to length(s) do
           upper[i]:=uppertbl[s[i]];
@@ -655,6 +673,7 @@ implementation
       var
         i : longint;
       begin
+        Result:='';
         setlength(lower,length(s));
         for i:=1 to length(s) do
           lower[i]:=lowertbl[s[i]];
@@ -910,7 +929,7 @@ implementation
       return if value is a power of 2. And if correct return the power
     }
       begin
-        if (value = 0) or (value and (value - 1) <> 0) then
+        if (value <= 0) or (value and (value - 1) <> 0) then
           exit(false);
         power:=BsfQWord(value);
         result:=true;
@@ -1060,6 +1079,7 @@ implementation
         t: string;
         ch: Char;
     begin
+      t:='';
       DePascalQuote:= false;
       len:= length(s);
       if (len >= 1) and (s[1] = '''') then

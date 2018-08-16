@@ -26,7 +26,8 @@ unit scandir;
   interface
 
     uses
-      globtype;
+      globtype,
+      systems;
 
     const
       switchesstatestackmax = 20;
@@ -36,6 +37,10 @@ unit scandir;
         localsw: tlocalswitches;
         verbosity: longint;
         pmessage : pmessagestaterecord;
+        alignment : talignmentinfo;
+        setalloc,
+        packenum,
+        packrecords : shortint;
       end;
 
     type
@@ -52,7 +57,7 @@ unit scandir;
     uses
       SysUtils,
       cutils,cfileutl,
-      globals,systems,widestr,cpuinfo,
+      globals,widestr,cpuinfo,
       verbose,comphook,ppu,
       scanner,switches,
       fmodule,
@@ -422,6 +427,12 @@ unit scandir;
         if (switch='+') and
            not(target_info.system in systems_support_checkpointer) then
           Message1(scan_e_unsupported_switch,'CHECKPOINTER+');
+      end;
+
+
+    procedure dir_excessprecision;
+      begin
+        do_localswitch(cs_excessprecision);
       end;
 
 
@@ -911,6 +922,9 @@ unit scandir;
               if (hs='NOTE') then
                 w:=scan_n_user_defined
             else
+              if (hs='INFO') then
+                w:=scan_i_user_defined
+            else
               Message1(scan_w_illegal_directive,hs);
           end;
         { Only print message when there was no error }
@@ -968,8 +982,10 @@ unit scandir;
             current_scanner.skipspace;
             current_scanner.readstring;
             s:=pattern;
-            if c in ['+','-'] then
-              s:=s+current_scanner.readstate;
+            { don't combine the assignments to s as the method call will be
+              done before "pattern" is assigned to s and the method changes
+              "pattern" }
+            s:=s+current_scanner.readoptionalstate('+');
             if not SetCompileModeSwitch(s,false) then
               Message1(scan_w_illegal_switch,s)
           end;
@@ -1172,6 +1188,10 @@ unit scandir;
       Dec(switchesstatestackpos);
       recordpendinglocalfullswitch(switchesstatestack[switchesstatestackpos].localsw);
       recordpendingverbosityfullswitch(switchesstatestack[switchesstatestackpos].verbosity);
+      recordpendingalignmentfullswitch(switchesstatestack[switchesstatestackpos].alignment);
+      recordpendingpackenum(switchesstatestack[switchesstatestackpos].packenum);
+      recordpendingpackrecords(switchesstatestack[switchesstatestackpos].packrecords);
+      recordpendingsetalloc(switchesstatestack[switchesstatestackpos].setalloc);
       pendingstate.nextmessagerecord:=switchesstatestack[switchesstatestackpos].pmessage;
       { Reset verbosity and forget previous pmeesage }
       RestoreLocalVerbosity(nil);
@@ -1209,6 +1229,10 @@ unit scandir;
       switchesstatestack[switchesstatestackpos].localsw:= current_settings.localswitches;
       switchesstatestack[switchesstatestackpos].pmessage:= current_settings.pmessage;
       switchesstatestack[switchesstatestackpos].verbosity:=status.verbosity;
+      switchesstatestack[switchesstatestackpos].alignment:=current_settings.alignment;
+      switchesstatestack[switchesstatestackpos].setalloc:=current_settings.setalloc;
+      switchesstatestack[switchesstatestackpos].packenum:=current_settings.packenum;
+      switchesstatestack[switchesstatestackpos].packrecords:=current_settings.packrecords;
       Inc(switchesstatestackpos);
     end;
 
@@ -1891,6 +1915,7 @@ unit scandir;
         AddDirective('ENDREGION',directive_all, @dir_endregion);
         AddDirective('ERROR',directive_all, @dir_error);
         AddDirective('ERRORC',directive_mac, @dir_error);
+        AddDirective('EXCESSPRECISION',directive_all, @dir_excessprecision);
         AddDirective('EXTENDEDSYNTAX',directive_all, @dir_extendedsyntax);
         AddDirective('EXTERNALSYM',directive_all, @dir_externalsym);
         AddDirective('F',directive_all, @dir_forcefarcalls);

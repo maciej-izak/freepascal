@@ -15,7 +15,7 @@
 
  **********************************************************************}
 
-unit dateutils;
+unit DateUtils;
 
 interface
 
@@ -364,6 +364,10 @@ Function CompareTime(const A, B: TDateTime): TValueRelationship;
 Function SameDateTime(const A, B: TDateTime): Boolean;
 Function SameDate(const A, B: TDateTime): Boolean;
 Function SameTime(const A, B: TDateTime): Boolean;
+function DateTimeInRange(ADateTime: TDateTime; AStartDateTime, AEndDateTime: TDateTime; aInclusive: Boolean = True): Boolean;
+function TimeInRange(ATime: TTime; AStartTime, AEndTime: TTime; AInclusive: Boolean = True): Boolean;
+function DateInRange(ADate: TDate; AStartDate, AEndDate: TDate; AInclusive: Boolean = True): Boolean;
+
 
 { For a given date these Functions tell you the which day of the week of the
   month (or year).  If its a Thursday, they will tell you if its the first,
@@ -405,8 +409,8 @@ Function TryModifiedJulianDateToDateTime(const AValue: Double; out ADateTime: TD
     Unix timestamp support.
   ---------------------------------------------------------------------}
 
-Function DateTimeToUnix(const AValue: TDateTime): Int64;
-Function UnixToDateTime(const AValue: Int64): TDateTime;
+Function DateTimeToUnix(const AValue: TDateTime; AInputIsUTC: Boolean = True): Int64;
+Function UnixToDateTime(const AValue: Int64; aReturnUTC : Boolean = true): TDateTime;
 Function UnixTimeStampToMac(const AValue: Int64): Int64;
 
 { ---------------------------------------------------------------------
@@ -1257,6 +1261,50 @@ Function WithinPastMilliSeconds(const ANow, AThen: TDateTime; const AMilliSecond
 begin
   Result:=MilliSecondsBetween(ANow,AThen)<=AMilliSeconds;
 end;
+
+
+ 
+function DateTimeInRange(ADateTime: TDateTime; AStartDateTime, AEndDateTime: TDateTime; aInclusive: Boolean = True): Boolean;
+
+begin
+  if aInclusive then
+    Result:=(AStartDateTime<=ADateTime) and (ADateTime<=AEndDateTime)
+  else
+    Result:=(AStartDateTime<ADateTime) and (ADateTime<AEndDateTime);
+end;
+
+
+function TimeInRange(ATime: TTime; AStartTime, AEndTime: TTime; AInclusive: Boolean = True): Boolean;
+
+var
+ LTime, LStartTime, LEndTime: TTime;
+ 
+begin
+  LTime:=TimeOf(ATime);
+  LStartTime:=TimeOf(AStartTime);
+  LEndTime:=TimeOf(AEndTime);
+  if LEndTime<LStartTime then
+    if AInclusive then
+      Result:=(LStartTime<=LTime) or (LTime<=LEndTime)
+    else
+      Result:=(LStartTime<LTime) or (LTime<LEndTime)
+  else
+    if AInclusive then
+      Result:=(LStartTime<=LTime) and (LTime<=LEndTime)
+    else
+      Result:=(LStartTime<LTime) and (LTime<LEndTime);
+end;
+
+
+function DateInRange(ADate: TDate; AStartDate, AEndDate: TDate; AInclusive: Boolean = True): Boolean;
+
+begin
+  if AInclusive then
+    Result:=(DateOf(AStartDate)<=DateOf(ADate)) and (DateOf(ADate)<=DateOf(AEndDate))
+  else
+    Result:=(DateOf(AStartDate)<DateOf(ADate)) and (DateOf(ADate)<DateOf(AEndDate));
+end;
+
 
 
 { ---------------------------------------------------------------------
@@ -2180,16 +2228,25 @@ end;
     Unix timestamp support.
   ---------------------------------------------------------------------}
 
-Function DateTimeToUnix(const AValue: TDateTime): Int64;
+Function DateTimeToUnix(const AValue: TDateTime; AInputIsUTC: Boolean = True): Int64;
+
+Var
+  T : TDateTime;
 
 begin
-  Result:=Round(DateTimeDiff(RecodeMillisecond(AValue,0),UnixEpoch)*SecsPerDay);
+  T:=aValue;
+  if Not aInputisUTC then
+    T:=IncMinute(T,GetLocalTimeOffset);
+  Result:=Round(DateTimeDiff(RecodeMillisecond(T,0),UnixEpoch)*SecsPerDay);
 end;
 
 
-Function UnixToDateTime(const AValue: Int64): TDateTime;
+Function UnixToDateTime(const AValue: Int64; aReturnUTC : Boolean = true): TDateTime;
+
 begin
   Result:=IncSecond(UnixEpoch, AValue);
+  if Not aReturnUTC then
+    Result:=IncMinute(Result,-GetLocalTimeOffset);
 end;
 
 

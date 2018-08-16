@@ -682,8 +682,8 @@ begin
         if (AElement.Frame.Shape=fsRectangle) or (FL in AElement.Frame.Lines) then
           begin
           Style.Add(ColorToStyle(Format('border-%s-color',[FNames[FL]]),AElement.Frame.Color));
-          Style.Add('border-%s-width: %dpx;',[FNames[FL],AElement.Frame.Width]);
-          Style.Add('border-%s-style: %s;',[FNames[FL],FStyles[AElement.Frame.Pen]]);
+          Style.Add(Format('border-%s-width: %dpx;',[FNames[FL],AElement.Frame.Width]));
+          Style.Add(Format('border-%s-style: %s;',[FNames[FL],FStyles[AElement.Frame.Pen]]));
           end;
       end;
     if AExtra<>'' then
@@ -1069,6 +1069,7 @@ var
   BS,S,aFamily,aStyle,aWeight : String;
   bDiv,span : THTMLElement;
   FixedPos : Boolean;
+  L : THTMLLinkElement;
 
 begin
   lMemo := TFPReportMemo(AMemo);
@@ -1143,9 +1144,19 @@ begin
         S:=S+Format(' font-family: "%s";',[txtblk.FontName]);
       S:=S+ColorToStyle('color',TxtBlk.FGColor);
       ApplyStyle(bDiv,S);
-      span:=FDoc.CreateSpanElement;
-      span.appendChild(FDoc.CreateTextNode(txtBlk.Text));
-      bDiv.AppendChild(span);
+      if txtBlk is TFPHTTPTextBlock then
+        begin
+        L:=FDoc.CreateLinkElement;
+        L.HRef:=TFPHTTPTextBlock(txtBlk).URL;
+        L.AppendChild(FDoc.CreateTextNode(txtBlk.Text));
+        bDiv.AppendChild(L);
+        end
+      else
+        begin
+        span:=FDoc.CreateSpanElement;
+        span.appendChild(FDoc.CreateTextNode(txtBlk.Text));
+        bDiv.AppendChild(span);
+        end;
       end;
     end;
 end;

@@ -74,10 +74,14 @@ uses
               A_MOVZX:
                 Result:=OptPass1Movx(p);
               A_VMOVAPS,
-              A_VMOVAPD:
+              A_VMOVAPD,
+              A_VMOVUPS,
+              A_VMOVUPD:
                 result:=OptPass1VMOVAP(p);
               A_MOVAPD,
-              A_MOVAPS:
+              A_MOVAPS,
+              A_MOVUPD,
+              A_MOVUPS:
                 result:=OptPass1MOVAP(p);
               A_VDIVSD,
               A_VDIVSS,
@@ -108,6 +112,10 @@ uses
                 result:=OptPass1LEA(p);
               A_SUB:
                 result:=OptPass1Sub(p);
+              A_SHL,A_SAL:
+                result:=OptPass1SHLSAL(p);
+              A_SETcc:
+                result:=OptPass1SETcc(p);
             end;
           end;
         end;
@@ -144,11 +152,19 @@ uses
               case taicpu(p).opcode of
                 A_MOV:
                   Result:=PostPeepholeOptMov(p);
+                A_MOVZX:
+                  Result:=PostPeepholeOptMovzx(p);
                 A_CMP:
                   Result:=PostPeepholeOptCmp(p);
                 A_OR,
                 A_TEST:
                   Result:=PostPeepholeOptTestOr(p);
+                A_XOR:
+                  Result:=PostPeepholeOptXor(p);
+                A_CALL:
+                  Result:=PostPeepholeOptCall(p);
+                A_LEA:
+                  Result:=PostPeepholeOptLea(p);
               end;
             end;
         end;

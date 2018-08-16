@@ -1285,7 +1285,7 @@ unit cgcpu;
                a_load_reg_reg(list,paraloc^.size,paraloc^.size,r,paraloc^.register);
              LOC_REFERENCE,LOC_CREFERENCE:
                begin
-                  reference_reset_base(ref,paraloc^.reference.index,paraloc^.reference.offset,2,[]);
+                  reference_reset_base(ref,paraloc^.reference.index,paraloc^.reference.offset,ctempposinvalid,2,[]);
                   a_load_reg_ref(list,paraloc^.size,paraloc^.size,r,ref);
                end;
              else
@@ -1395,6 +1395,19 @@ unit cgcpu;
                 push_const(list,pushsize,a);
               end;
           end
+        else if (tcgsize2size[cgpara.Size]>2) and
+                (cgpara.location^.loc in [LOC_REGISTER,LOC_CREGISTER]) and
+                (cgpara.location^.Next<>nil) then
+          begin
+            if (tcgsize2size[cgpara.Size]<>4) or
+               (tcgsize2size[cgpara.location^.Size]<>2) or
+                not (cgpara.location^.Next^.Loc in [LOC_REGISTER,LOC_CREGISTER]) or
+               (tcgsize2size[cgpara.location^.Next^.Size]<>2) or
+               (cgpara.location^.Next^.Next<>nil) then
+              internalerror(2018041801);
+            a_load_const_reg(list,cgpara.location^.size,a and $FFFF,cgpara.location^.register);
+            a_load_const_reg(list,cgpara.location^.Next^.size,a shr 16,cgpara.location^.Next^.register);
+          end
         else
           inherited a_load_const_cgpara(list,size,a,cgpara);
       end;
@@ -1465,7 +1478,7 @@ unit cgcpu;
                 cgpara.check_simple_location;
                 len:=align(cgpara.intsize,cgpara.alignment);
                 g_stackpointer_alloc(list,len);
-                reference_reset_base(href,NR_STACK_POINTER_REG,0,4,[]);
+                reference_reset_base(href,NR_STACK_POINTER_REG,0,ctempposinvalid,4,[]);
                 g_concatcopy(list,r,href,len);
               end
             else
@@ -1765,8 +1778,8 @@ unit cgcpu;
                       getcpuregister(list, NR_AX);
                       list.concat(taicpu.op_ref_reg(A_MOV, S_B, tmpref, NR_AL));
                       list.concat(taicpu.op_none(A_CBW));
-                      add_mov(taicpu.op_reg_reg(A_MOV, S_W, NR_AX, reg));
                       ungetcpuregister(list, NR_AX);
+                      add_mov(taicpu.op_reg_reg(A_MOV, S_W, NR_AX, reg));
                     end;
                 end;
               OS_16,OS_S16:
@@ -1797,10 +1810,10 @@ unit cgcpu;
                   getcpuregister(list, NR_DX);
                   list.concat(taicpu.op_none(A_CBW));
                   list.concat(taicpu.op_none(A_CWD));
-                  add_mov(taicpu.op_reg_reg(A_MOV, S_W, NR_AX, reg));
                   ungetcpuregister(list, NR_AX);
-                  add_mov(taicpu.op_reg_reg(A_MOV, S_W, NR_DX, GetNextReg(reg)));
+                  add_mov(taicpu.op_reg_reg(A_MOV, S_W, NR_AX, reg));
                   ungetcpuregister(list, NR_DX);
+                  add_mov(taicpu.op_reg_reg(A_MOV, S_W, NR_DX, GetNextReg(reg)));
                 end;
               OS_16:
                 begin
@@ -1892,8 +1905,8 @@ unit cgcpu;
                           getcpuregister(list, NR_AX);
                           add_mov(taicpu.op_reg_reg(A_MOV, S_B, reg1, NR_AL));
                           list.concat(taicpu.op_none(A_CBW));
-                          add_mov(taicpu.op_reg_reg(A_MOV, S_W, NR_AX, reg2));
                           ungetcpuregister(list, NR_AX);
+                          add_mov(taicpu.op_reg_reg(A_MOV, S_W, NR_AX, reg2));
                         end;
                     end;
                   OS_16,OS_S16:
@@ -1928,10 +1941,10 @@ unit cgcpu;
                       getcpuregister(list, NR_DX);
                       list.concat(taicpu.op_none(A_CBW));
                       list.concat(taicpu.op_none(A_CWD));
-                      add_mov(taicpu.op_reg_reg(A_MOV, S_W, NR_AX, reg2));
                       ungetcpuregister(list, NR_AX);
-                      add_mov(taicpu.op_reg_reg(A_MOV, S_W, NR_DX, GetNextReg(reg2)));
+                      add_mov(taicpu.op_reg_reg(A_MOV, S_W, NR_AX, reg2));
                       ungetcpuregister(list, NR_DX);
+                      add_mov(taicpu.op_reg_reg(A_MOV, S_W, NR_DX, GetNextReg(reg2)));
                     end;
                   OS_16:
                     begin
@@ -1945,11 +1958,11 @@ unit cgcpu;
                       add_mov(taicpu.op_reg_reg(A_MOV, S_W, reg1, NR_AX));
                       getcpuregister(list, NR_DX);
                       list.concat(taicpu.op_none(A_CWD));
+                      ungetcpuregister(list, NR_AX);
                       if reg1<>reg2 then
                         add_mov(taicpu.op_reg_reg(A_MOV, S_W, NR_AX, reg2));
-                      ungetcpuregister(list, NR_AX);
-                      add_mov(taicpu.op_reg_reg(A_MOV, S_W, NR_DX, GetNextReg(reg2)));
                       ungetcpuregister(list, NR_DX);
+                      add_mov(taicpu.op_reg_reg(A_MOV, S_W, NR_DX, GetNextReg(reg2)));
                     end;
                   OS_32,OS_S32:
                     begin
@@ -2341,7 +2354,7 @@ unit cgcpu;
           { Restore SP position before SP change }
           if current_settings.x86memorymodel=mm_huge then
             stacksize:=stacksize + 2;
-          reference_reset_base(ref,NR_BP,-stacksize,2,[]);
+          reference_reset_base(ref,NR_BP,-stacksize,ctempposinvalid,2,[]);
           list.concat(Taicpu.op_ref_reg(A_LEA,S_W,ref,NR_SP));
           sp_moved:=true;
         end;
@@ -2709,16 +2722,16 @@ unit cgcpu;
                       list.concat(taicpu.op_reg_reg(A_MOV,S_W,reference.index,NR_DI));
 
                       if reference.index=NR_SP then
-                        reference_reset_base(href,NR_DI,reference.offset+return_address_size+2,sizeof(pint),[])
+                        reference_reset_base(href,NR_DI,reference.offset+return_address_size+2,ctempposinvalid,sizeof(pint),[])
                       else
-                        reference_reset_base(href,NR_DI,reference.offset+return_address_size,sizeof(pint),[]);
+                        reference_reset_base(href,NR_DI,reference.offset+return_address_size,ctempposinvalid,sizeof(pint),[]);
                       href.segment:=NR_SS;
                       a_op_const_ref(list,OP_SUB,size,ioffset,href);
                       list.concat(taicpu.op_reg(A_POP,S_W,NR_DI));
                     end
                   else
                     begin
-                      reference_reset_base(href,reference.index,reference.offset+return_address_size,sizeof(pint),[]);
+                      reference_reset_base(href,reference.index,reference.offset+return_address_size,ctempposinvalid,sizeof(pint),[]);
                       href.segment:=NR_SS;
                       a_op_const_ref(list,OP_SUB,size,ioffset,href);
                     end;

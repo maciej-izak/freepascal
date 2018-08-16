@@ -90,7 +90,7 @@ interface
       );
 
       ppcSuffix : array[TCpu] of string=(
-        '386','m68k','ppc','sparc','x86_64','arm','ppc64','avr','armeb', 'armel', 'mips', 'mipsel', 'mips64', 'mips64el', 'jvm','8086','aarch64','wasm','sparc64'
+        '386','68k','ppc','sparc','x64','arm','ppc64','avr','armeb', 'armel', 'mips', 'mipsel', 'mips64', 'mips64el', 'jvm','8086','a64','wasm','sparc64'
       );
 
       OSStr : array[TOS] of string=(
@@ -121,7 +121,7 @@ interface
         { freebsd } ( true,  false, false, false, true,  false, false, false, false, false, false, false, false, false,   false, false, false, false, false),
         { beos }    ( true,  false, false, false, false, false, false, false, false, false, false, false, false, false,   false, false, false, false, false),
         { haiku }   ( true,  false, false, false, false, false, false, false, false, false, false, false, false, false,   false, false, false, false, false),
-        { netbsd }  ( true,  true,  true,  true,  true,  false, false, false, false, false, false, false, false, false,   false, false, false, false, false),
+        { netbsd }  ( true,  true,  true,  true,  true,  true,  false, false, false, false, false, false, false, false,   false, false, false, false, false),
         { amiga }   ( false, true,  true,  false, false, false, false, false, false, false, false, false, false, false,   false, false, false, false, false),
         { atari }   ( false, true,  false, false, false, false, false, false, false, false, false, false, false, false,   false, false, false, false, false),
         { solaris } ( true,  false, false, true,  true,  false, false, false, false, false, false, false, false, false,   false, false, false, false, false),
